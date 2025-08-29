@@ -10,7 +10,7 @@ async function testDynamicModelLoading() {
   console.log('🔧 测试动态模型加载功能...\n');
   
   try {
-    const configLoader = ConfigLoader.getInstance();
+    const configLoader = new ConfigLoader();
     console.log('✅ ConfigLoader 实例创建成功');
     
     // 测试模型显示名称

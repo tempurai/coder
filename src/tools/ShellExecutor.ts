@@ -3,42 +3,51 @@ import * as util from 'util';
 import { z } from 'zod';
 import { globalConfirmationManager } from './ConfirmationManager';
 import { CommandValidator, type CommandValidationResult } from '../security/CommandValidator';
+import { ConfigLoader } from '../config/ConfigLoader';
 
 const execAsync = util.promisify(exec);
 
-export const shellExecutorTool = {
-    id: 'shell_executor',
-    name: 'Shell Executor',
-    description: `Execute shell commands directly. This is the PRIMARY tool for most operations.
+/**
+ * 创建 Shell 执行器工具
+ * @param configLoader 配置加载器实例
+ * @returns Shell 执行器工具对象
+ */
+export const createShellExecutorTool = (configLoader: ConfigLoader) => {
+    const validator = new CommandValidator(configLoader);
     
-    Use this for:
-    - Git operations: git status, git add, git commit, git diff
-    - File operations: find, grep, ls, cat, mkdir
-    - Code analysis: tsc --noEmit, npm run lint, npm test
-    - Package management: npm install, pnpm add
-    - Any system command that helps with development
-    
-    IMPORTANT: Always explain what command you're running and why.`,
-    parameters: z.object({
-        command: z.string().describe('The shell command to execute'),
-        description: z.string().describe('Brief explanation of what this command does and why'),
-        workingDirectory: z.string().optional().describe('Directory to execute command in (default: current)'),
-        timeout: z.number().default(30000).describe('Timeout in milliseconds'),
-        captureError: z.boolean().default(true).describe('Whether to capture and return stderr'),
-    }),
-    execute: async ({ command, description, workingDirectory, timeout, captureError }: {
-        command: string;
-        description: string;
-        workingDirectory?: string;
-        timeout: number;
-        captureError: boolean;
-    }) => {
-        try {
-            // 1. 安全验证：检查命令是否被安全策略允许
-            const validator = CommandValidator.getInstance();
-            const validationResult: CommandValidationResult = validator.validateCommand(command);
-            
-            if (!validationResult.allowed) {
+    return {
+        execute: {
+            id: 'shell_executor',
+            name: 'Shell Executor',
+            description: `Execute shell commands directly. This is the PRIMARY tool for most operations.
+        
+        Use this for:
+        - Git operations: git status, git add, git commit, git diff
+        - File operations: find, grep, ls, cat, mkdir
+        - Code analysis: tsc --noEmit, npm run lint, npm test
+        - Package management: npm install, pnpm add
+        - Any system command that helps with development
+        
+        IMPORTANT: Always explain what command you're running and why.`,
+            parameters: z.object({
+                command: z.string().describe('The shell command to execute'),
+                description: z.string().describe('Brief explanation of what this command does and why'),
+                workingDirectory: z.string().optional().describe('Directory to execute command in (default: current)'),
+                timeout: z.number().default(30000).describe('Timeout in milliseconds'),
+                captureError: z.boolean().default(true).describe('Whether to capture and return stderr'),
+            }),
+            execute: async ({ command, description, workingDirectory, timeout, captureError }: {
+                command: string;
+                description: string;
+                workingDirectory?: string;
+                timeout: number;
+                captureError: boolean;
+            }) => {
+            try {
+                // 1. 安全验证：检查命令是否被安全策略允许
+                const validationResult: CommandValidationResult = validator.validateCommand(command);
+                
+                if (!validationResult.allowed) {
                 return {
                     success: false,
                     error: `Security policy violation: ${validationResult.reason}`,
@@ -105,10 +114,9 @@ export const shellExecutorTool = {
             };
         }
     },
-};
-
-export const multiCommandTool = {
-    id: 'multi_command',
+    
+    multiCommand: {
+        id: 'multi_command',
     name: 'Multi Command Executor',
     description: `Execute multiple shell commands in sequence. Use this for complex workflows.
     
@@ -133,7 +141,6 @@ export const multiCommandTool = {
         const results = [];
         
         // 1. 安全验证：批量验证所有命令
-        const validator = CommandValidator.getInstance();
         const validationResults = validator.validateCommands(commands.map(cmd => cmd.command));
         
         // 检查是否有命令被安全策略阻止
@@ -240,5 +247,17 @@ export const multiCommandTool = {
             workingDirectory: workingDirectory || process.cwd(),
             cancelled: false
         };
-    },
+    }
 };
+
+/**
+ * 向后兼容的 Shell 执行器工具
+ * @deprecated 建议使用 createShellExecutorTool(configLoader) 代替
+ */
+export const shellExecutorTool = createShellExecutorTool(new ConfigLoader());
+
+/**
+ * 向后兼容的多命令工具
+ * @deprecated 建议使用 createShellExecutorTool(configLoader).multiCommand 代替
+ */
+export const multiCommandTool = shellExecutorTool.multiCommand;

@@ -7,10 +7,14 @@ export interface ToolCallRecord {
   toolName: string;
   /** 工具参数（序列化后的字符串，用于比较） */
   parameters: string;
+  /** 原始参数对象（用于语义相似度分析） */
+  rawParameters: any;
   /** 调用时间戳 */
   timestamp: number;
   /** 调用序号 */
   sequence: number;
+  /** 参数指纹（用于快速比较） */
+  parameterFingerprint: string;
 }
 
 /**
@@ -20,15 +24,19 @@ export interface LoopDetectionResult {
   /** 是否检测到循环 */
   isLoop: boolean;
   /** 循环类型 */
-  loopType?: 'exact_repeat' | 'alternating_pattern' | 'parameter_cycle' | 'tool_sequence';
+  loopType?: 'exact_repeat' | 'alternating_pattern' | 'parameter_cycle' | 'tool_sequence' | 'semantic_similarity';
   /** 循环长度（连续重复次数） */
   loopLength?: number;
   /** 循环开始位置 */
   loopStart?: number;
+  /** 相似度分数（0-1，仅适用于语义相似性检测） */
+  similarityScore?: number;
   /** 详细描述 */
   description?: string;
   /** 建议行动 */
   suggestion?: string;
+  /** 循环检测消息 */
+  message?: string;
 }
 
 /**
@@ -47,6 +55,10 @@ export interface LoopDetectionConfig {
   timeWindowMs: number;
   /** 参数相似度阈值（0-1） */
   parameterSimilarityThreshold: number;
+  /** 语义相似度阈值（0-1） */
+  semanticSimilarityThreshold: number;
+  /** 启用语义相似度检测 */
+  enableSemanticDetection: boolean;
 }
 
 /**
@@ -86,6 +98,8 @@ export class LoopDetectionService {
       parameterCycleThreshold: 5,
       timeWindowMs: 30000, // 30秒
       parameterSimilarityThreshold: 0.9,
+      semanticSimilarityThreshold: 0.85,
+      enableSemanticDetection: true,
       ...config
     };
   }
@@ -100,6 +114,8 @@ export class LoopDetectionService {
     const record: ToolCallRecord = {
       toolName: toolCall.toolName,
       parameters: this.serializeParameters(toolCall.parameters),
+      rawParameters: toolCall.parameters,
+      parameterFingerprint: this.generateParameterFingerprint(toolCall.parameters),
       timestamp: Date.now(),
       sequence: ++this.sequence
     };
@@ -108,9 +124,360 @@ export class LoopDetectionService {
     this.addToHistory(record);
 
     // 执行循环检测
-    const result = this.detectLoop();
+    const result = this.detectLoop(toolCall.toolName, toolCall.parameters);
 
     return result;
+  }
+
+  /**
+   * 检测循环（外部调用接口）
+   * @param toolName 工具名称
+   * @param parameters 参数
+   * @returns 检测结果
+   */
+  public detectLoop(toolName: string, parameters: any): LoopDetectionResult {
+    if (this.history.length < 2) {
+      return { isLoop: false };
+    }
+
+    // 检测精确重复
+    const exactRepeatResult = this.detectExactRepeat();
+    if (exactRepeatResult.isLoop) {
+      return exactRepeatResult;
+    }
+
+    // 检测语义相似度（如果启用）
+    if (this.config.enableSemanticDetection) {
+      const semanticResult = this.detectSemanticSimilarity(toolName, parameters);
+      if (semanticResult.isLoop) {
+        return semanticResult;
+      }
+    }
+
+    // 检测交替模式
+    const alternatingResult = this.detectAlternatingPattern();
+    if (alternatingResult.isLoop) {
+      return alternatingResult;
+    }
+
+    // 检测参数循环
+    const parameterCycleResult = this.detectParameterCycle();
+    if (parameterCycleResult.isLoop) {
+      return parameterCycleResult;
+    }
+
+    // 检测工具序列循环
+    const sequenceResult = this.detectToolSequence();
+    if (sequenceResult.isLoop) {
+      return sequenceResult;
+    }
+
+    return { isLoop: false };
+  }
+
+  /**
+   * 生成参数指纹
+   * @param parameters 参数对象
+   * @returns 参数指纹字符串
+   */
+  private generateParameterFingerprint(parameters: any): string {
+    try {
+      // 提取关键字段创建指纹
+      const keyFields = this.extractKeyFields(parameters);
+      return JSON.stringify(keyFields);
+    } catch {
+      return this.serializeParameters(parameters);
+    }
+  }
+
+  /**
+   * 提取参数中的关键字段
+   * @param parameters 参数对象
+   * @returns 关键字段对象
+   */
+  private extractKeyFields(parameters: any): Record<string, any> {
+    if (typeof parameters !== 'object' || parameters === null) {
+      return { value: parameters };
+    }
+
+    const keyFields: Record<string, any> = {};
+    
+    // 常见的关键字段
+    const importantKeys = ['command', 'query', 'path', 'file', 'url', 'message', 'content', 'action', 'method'];
+    
+    for (const key of importantKeys) {
+      if (key in parameters) {
+        keyFields[key] = parameters[key];
+      }
+    }
+
+    // 如果没有找到关键字段，返回所有字段
+    if (Object.keys(keyFields).length === 0) {
+      return parameters;
+    }
+
+    return keyFields;
+  }
+
+  /**
+   * 检测语义相似度
+   * @param toolName 当前工具名称
+   * @param parameters 当前参数
+   * @returns 检测结果
+   */
+  private detectSemanticSimilarity(toolName: string, parameters: any): LoopDetectionResult {
+    const recentSameTool = this.history
+      .slice(-10) // 检查最近10次调用
+      .filter(record => record.toolName === toolName)
+      .slice(-5); // 最多比较5次
+
+    if (recentSameTool.length < 2) {
+      return { isLoop: false };
+    }
+
+    const currentFingerprint = this.generateParameterFingerprint(parameters);
+    
+    for (let i = recentSameTool.length - 2; i >= 0; i--) {
+      const previousRecord = recentSameTool[i];
+      const similarity = this.calculateSemanticSimilarity(
+        currentFingerprint,
+        previousRecord.parameterFingerprint,
+        parameters,
+        previousRecord.rawParameters
+      );
+
+      if (similarity >= this.config.semanticSimilarityThreshold) {
+        // 检查时间间隔，避免误报快速连续的相似调用
+        const timeGap = Date.now() - previousRecord.timestamp;
+        if (timeGap > 5000) { // 5秒以上间隔才认为是语义循环
+          return {
+            isLoop: true,
+            loopType: 'semantic_similarity',
+            similarityScore: similarity,
+            description: `检测到语义相似的循环：工具 '${toolName}' 使用了语义相似的参数`,
+            message: `语义相似度: ${(similarity * 100).toFixed(1)}%`,
+            suggestion: `当前操作与之前的操作在语义上相似。建议检查是否真的需要重复执行，或尝试不同的参数。`
+          };
+        }
+      }
+    }
+
+    return { isLoop: false };
+  }
+
+  /**
+   * 计算语义相似度
+   * @param fingerprint1 参数指纹1
+   * @param fingerprint2 参数指纹2
+   * @param params1 原始参数1
+   * @param params2 原始参数2
+   * @returns 相似度分数 (0-1)
+   */
+  private calculateSemanticSimilarity(
+    fingerprint1: string, 
+    fingerprint2: string,
+    params1: any,
+    params2: any
+  ): number {
+    // 如果指纹完全相同，相似度为1
+    if (fingerprint1 === fingerprint2) {
+      return 1.0;
+    }
+
+    try {
+      const obj1 = JSON.parse(fingerprint1);
+      const obj2 = JSON.parse(fingerprint2);
+
+      // 计算字段重叠度
+      const keys1 = Object.keys(obj1);
+      const keys2 = Object.keys(obj2);
+      const commonKeys = keys1.filter(key => keys2.includes(key));
+      
+      if (commonKeys.length === 0) {
+        return 0;
+      }
+
+      let totalSimilarity = 0;
+      let weightSum = 0;
+
+      for (const key of commonKeys) {
+        const value1 = obj1[key];
+        const value2 = obj2[key];
+        const weight = this.getFieldWeight(key);
+        
+        let fieldSimilarity = 0;
+        
+        if (typeof value1 === 'string' && typeof value2 === 'string') {
+          fieldSimilarity = this.calculateStringSimilarity(value1, value2);
+        } else if (value1 === value2) {
+          fieldSimilarity = 1.0;
+        } else if (typeof value1 === typeof value2) {
+          fieldSimilarity = 0.5; // 同类型但不同值
+        }
+        
+        totalSimilarity += fieldSimilarity * weight;
+        weightSum += weight;
+      }
+
+      return weightSum > 0 ? totalSimilarity / weightSum : 0;
+    } catch {
+      // 如果解析失败，使用字符串相似度
+      return this.calculateStringSimilarity(fingerprint1, fingerprint2);
+    }
+  }
+
+  /**
+   * 获取字段权重
+   * @param fieldName 字段名
+   * @returns 权重值
+   */
+  private getFieldWeight(fieldName: string): number {
+    const weights: Record<string, number> = {
+      command: 1.0,
+      query: 1.0,
+      message: 1.0,
+      content: 1.0,
+      path: 0.8,
+      file: 0.8,
+      url: 0.8,
+      action: 0.9,
+      method: 0.9,
+    };
+    
+    return weights[fieldName.toLowerCase()] || 0.5;
+  }
+
+  /**
+   * 计算字符串相似度（使用编辑距离）
+   * @param str1 字符串1
+   * @param str2 字符串2
+   * @returns 相似度分数 (0-1)
+   */
+  private calculateStringSimilarity(str1: string, str2: string): number {
+    if (str1 === str2) return 1.0;
+    if (str1.length === 0 || str2.length === 0) return 0;
+
+    // 使用简化的编辑距离算法
+    const editDistance = this.calculateEditDistance(str1.toLowerCase(), str2.toLowerCase());
+    const maxLength = Math.max(str1.length, str2.length);
+    
+    return 1 - (editDistance / maxLength);
+  }
+
+  /**
+   * 计算编辑距离
+   * @param str1 字符串1
+   * @param str2 字符串2
+   * @returns 编辑距离
+   */
+  private calculateEditDistance(str1: string, str2: string): number {
+    const matrix: number[][] = [];
+
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1, // substitution
+            matrix[i][j - 1] + 1,     // insertion
+            matrix[i - 1][j] + 1      // deletion
+          );
+        }
+      }
+    }
+
+    return matrix[str2.length][str1.length];
+  }
+
+  /**
+   * 为不同类型的循环提供针对性建议
+   * @param loopResult 循环检测结果
+   * @returns 建议字符串
+   */
+  public suggestBreakStrategy(loopResult: LoopDetectionResult): string {
+    if (!loopResult.isLoop) {
+      return '当前没有检测到循环，可以继续正常执行。';
+    }
+
+    const baseStrategies = {
+      exact_repeat: [
+        '停止重复相同的操作',
+        '检查上一次执行的结果是否达到预期',
+        '如果结果不正确，分析失败原因并调整参数',
+        '考虑是否需要不同的工具或方法',
+        '请求用户确认是否继续或提供新的指令'
+      ],
+      alternating_pattern: [
+        '停止在两个工具之间交替执行',
+        '分析两个工具的执行结果是否相互冲突',
+        '检查是否需要按特定顺序执行这些工具',
+        '考虑合并操作或使用单一工具完成任务',
+        '寻求用户指导以打破交替模式'
+      ],
+      parameter_cycle: [
+        '停止在不同参数间循环',
+        '分析哪些参数组合已经尝试过',
+        '确定有效的参数范围或约束',
+        '考虑问题是否需要不同的解决方案',
+        '请求用户提供更具体的参数指导'
+      ],
+      tool_sequence: [
+        '停止重复相同的工具序列',
+        '分析整个序列的执行结果',
+        '检查序列中是否有步骤失败或产生了错误结果',
+        '考虑调整序列顺序或使用不同的工具组合',
+        '寻求用户确认预期的工作流程'
+      ],
+      semantic_similarity: [
+        '当前操作与之前的操作在意图上相似',
+        '检查之前相似操作的结果是否满足需求',
+        '如果需要重复执行，请明确说明原因',
+        '考虑使用更精确或不同的参数',
+        '确认当前操作确实是必要的'
+      ]
+    };
+
+    const strategies = baseStrategies[loopResult.loopType!] || ['请分析当前情况并调整策略'];
+    
+    let suggestion = `**检测到 ${loopResult.loopType} 类型的循环**\n\n`;
+    suggestion += `**建议的解决策略：**\n`;
+    
+    strategies.forEach((strategy, index) => {
+      suggestion += `${index + 1}. ${strategy}\n`;
+    });
+
+    // 添加特定于循环类型的额外建议
+    if (loopResult.loopType === 'semantic_similarity' && loopResult.similarityScore) {
+      suggestion += `\n**语义相似度：** ${(loopResult.similarityScore * 100).toFixed(1)}%\n`;
+      suggestion += `相似度越高，重复执行的必要性越需要仔细考虑。`;
+    }
+
+    if (loopResult.loopLength && loopResult.loopLength > 5) {
+      suggestion += `\n**注意：** 已重复 ${loopResult.loopLength} 次，强烈建议立即停止并重新评估方法。`;
+    }
+
+    return suggestion;
+  }
+
+  /**
+   * 重置循环检测历史
+   * @param reason 重置原因
+   */
+  public resetDetectionHistory(reason: string): void {
+    console.log(`🔄 重置循环检测历史: ${reason}`);
+    const previousCount = this.history.length;
+    this.history = [];
+    this.sequence = 0;
+    console.log(`✅ 已清除 ${previousCount} 条历史记录`);
   }
 
   /**
@@ -170,10 +537,10 @@ export class LoopDetectionService {
   }
 
   /**
-   * 执行循环检测
+   * 执行循环检测（内部方法）
    * @returns 检测结果
    */
-  private detectLoop(): LoopDetectionResult {
+  private detectLoopInternal(): LoopDetectionResult {
     if (this.history.length < 2) {
       return { isLoop: false };
     }

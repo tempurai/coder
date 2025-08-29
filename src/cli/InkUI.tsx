@@ -289,8 +289,8 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ agent }) => {
 };
 
 // 启动函数
-export const startInkUI = () => {
-  const configLoader = ConfigLoader.getInstance();
+export const startInkUI = async () => {
+  const configLoader = new ConfigLoader();
   const config = configLoader.getConfig();
   
   // 验证配置
@@ -301,12 +301,17 @@ export const startInkUI = () => {
     process.exit(1);
   }
 
-  const agent = new SimpleAgent(config, config.customContext);
+  // 创建语言模型实例
+  const model = await configLoader.createLanguageModel();
+  const agent = new SimpleAgent(config, model, config.customContext);
   
   render(<CodeAssistantApp agent={agent} />);
 };
 
 // 如果直接运行此文件则启动
 if (require.main === module) {
-  startInkUI();
+  startInkUI().catch(error => {
+    console.error('❌ Failed to start Ink UI:', error);
+    process.exit(1);
+  });
 }

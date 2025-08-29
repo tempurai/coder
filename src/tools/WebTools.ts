@@ -1,7 +1,7 @@
 import { request } from 'undici';
 import { convert } from 'html-to-text';
 import { URL } from 'url';
-import { ConfigLoader } from '../config/ConfigLoader';
+import { ConfigLoader, Config } from '../config/ConfigLoader';
 
 /**
  * Web 搜索结果中的单个来源
@@ -187,8 +187,9 @@ const truncateContent = (content: string, maxLength: number = MAX_CONTENT_LENGTH
 
 /**
  * Web 搜索工具 - 使用 Tavily AI 进行智能搜索
+ * 创建 Web 搜索工具实例，使用提供的配置
  */
-export const webSearchTool = {
+export const createWebSearchTool = (config: Config) => ({
   id: 'web_search',
   name: 'web_search',
   description: 'Search the web for current information using Tavily AI. Returns a summary and relevant sources.',
@@ -221,8 +222,7 @@ export const webSearchTool = {
         };
       }
       
-      // 获取 Tavily API Key（只从配置文件获取，不再支持环境变量）
-      const config = ConfigLoader.getInstance().getConfig();
+      // 使用传入的配置获取 Tavily API Key
       const apiKey = config.tavilyApiKey;
       
       if (!apiKey) {
@@ -284,12 +284,19 @@ export const webSearchTool = {
       };
     }
   }
-};
+});
+
+/**
+ * 向后兼容的 web 搜索工具
+ * @deprecated 建议使用 createWebSearchTool(config) 代替
+ */
+export const webSearchTool = createWebSearchTool({} as Config);
 
 /**
  * URL 获取工具 - 安全地获取并提取网页内容
+ * 创建 URL 获取工具实例，使用提供的配置
  */
-export const urlFetchTool = {
+export const createUrlFetchTool = (config: Config) => ({
   id: 'url_fetch',
   name: 'url_fetch',
   description: 'Fetch and extract text content from a web URL. Includes security checks to prevent access to private networks.',
@@ -479,4 +486,10 @@ export const urlFetchTool = {
       };
     }
   }
-};
+});
+
+/**
+ * 向后兼容的 URL 获取工具
+ * @deprecated 建议使用 createUrlFetchTool(config) 代替
+ */
+export const urlFetchTool = createUrlFetchTool({} as Config);

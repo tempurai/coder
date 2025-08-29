@@ -10,12 +10,8 @@ import { ConfigLoader, Config } from '../config/ConfigLoader';
 import { SimpleAgent } from '../agents/SimpleAgent';
 import { globalConfirmationManager } from '../tools/ConfirmationManager';
 import * as readline from 'readline';
-import { ContextManager } from '../context/ContextManager';
-import { ProjectSummaryProvider } from '../context/providers/ProjectSummaryProvider';
-import { ReactiveFileContextProvider } from '../context/providers/ReactiveFileContextProvider';
-import { WatchedFilesContextProvider } from '../context/providers/WatchedFilesContextProvider';
 import { FileWatcherService } from '../services/FileWatcherService';
-import { extractFilePaths } from './InputPreprocessor';
+import { SessionService } from '../session/SessionService';
 
 /**
  * CLI状态枚举
@@ -28,7 +24,7 @@ enum CLIState {
 }
 
 /**
- * 对话历史项接口
+ * 对话历史项接口（用于向后兼容显示）
  */
 interface HistoryItem {
   role: 'user' | 'assistant';
@@ -56,31 +52,25 @@ interface IDEContext {
  * Tempurai CLI主类
  */
 export class TempuraiCLI {
-  private readonly agent: SimpleAgent;
+  private readonly sessionService: SessionService;
   private readonly rl: readline.Interface;
   private readonly config: Config;
-  private readonly reactiveFileContextProvider: ReactiveFileContextProvider;
-  private readonly watchedFilesContextProvider: WatchedFilesContextProvider;
-  private readonly fileWatcherService: FileWatcherService;
-  private history: HistoryItem[] = [];
+  private readonly configLoader: ConfigLoader;
+  private history: HistoryItem[] = []; // 保留用于UI显示
   private currentState: CLIState = CLIState.SECURITY_CONFIRMATION;
   private isProcessing: boolean = false;
   private readonly workingDirectory: string;
-  private readonly gitBranch: string = 'main';
+  private gitBranch: string = 'main';
   private ideContext: IDEContext = { openFiles: [] }; // IDE上下文状态
 
   constructor(
     config: Config, 
-    agent: SimpleAgent, 
-    reactiveFileContextProvider: ReactiveFileContextProvider,
-    watchedFilesContextProvider: WatchedFilesContextProvider,
-    fileWatcherService: FileWatcherService
+    configLoader: ConfigLoader,
+    sessionService: SessionService
   ) {
     this.config = config;
-    this.agent = agent;
-    this.reactiveFileContextProvider = reactiveFileContextProvider;
-    this.watchedFilesContextProvider = watchedFilesContextProvider;
-    this.fileWatcherService = fileWatcherService;
+    this.configLoader = configLoader;
+    this.sessionService = sessionService;
     this.workingDirectory = process.cwd();
     
     this.rl = readline.createInterface({
@@ -99,11 +89,9 @@ export class TempuraiCLI {
    * 异步初始化 MCP 工具
    */
   private async initializeMcpTools(): Promise<void> {
-    try {
-      await this.agent.initializeAsync();
-    } catch (error) {
-      console.error('⚠️ MCP 工具初始化失败，将继续使用基础功能:', error instanceof Error ? error.message : '未知错误');
-    }
+    // MCP工具初始化现在由SessionService管理
+    // 这里保留方法用于向后兼容
+    console.log('🔄 MCP工具由会话服务管理');
   }
 
   /**
@@ -146,8 +134,26 @@ export class TempuraiCLI {
    * 获取目录信息
    */
   private getDirectoryInfo(): string {
+    // 尝试动态获取Git分支
+    this.updateGitBranch();
     const projectName = path.basename(this.workingDirectory);
     return `${projectName} git:(${this.gitBranch})`;
+  }
+  
+  /**
+   * 更新Git分支信息
+   */
+  private updateGitBranch(): void {
+    try {
+      const { exec } = require('child_process');
+      exec('git branch --show-current', { cwd: this.workingDirectory }, (error: any, stdout: string) => {
+        if (!error && stdout.trim()) {
+          this.gitBranch = stdout.trim();
+        }
+      });
+    } catch (error) {
+      // 保持默认分支名称
+    }
   }
 
   /**
@@ -220,7 +226,12 @@ export class TempuraiCLI {
    */
   private displayPrompt(): void {
     if (this.currentState === CLIState.INTERACTIVE && !this.isProcessing) {
-      process.stdout.write('\n> ');
+      this.updateGitBranch(); // 更新分支信息
+      const projectName = path.basename(this.workingDirectory);
+      const promptPrefix = this.gitBranch !== 'main' && this.gitBranch !== 'master' 
+        ? `\n${projectName} git:(${this.gitBranch})`
+        : `\n${projectName}`;
+      process.stdout.write(`${promptPrefix} > `);
     }
   }
 
@@ -241,36 +252,18 @@ export class TempuraiCLI {
     this.currentState = CLIState.PROCESSING;
 
     try {
-      this.addToHistory('user', input);
-      
-      // 智能提取文件路径并注入上下文
-      console.log('\n🔍 正在分析用户输入中的文件引用...');
-      const extractedFilePaths = await extractFilePaths(input);
-      
-      if (extractedFilePaths.length > 0) {
-        console.log(`📄 发现 ${extractedFilePaths.length} 个文件引用: ${extractedFilePaths.join(', ')}`);
-        this.reactiveFileContextProvider.addFiles(extractedFilePaths);
-        
-        // 开始监听这些文件
-        for (const filePath of extractedFilePaths) {
-          const success = this.fileWatcherService.watchFile(filePath);
-          if (success && this.fileWatcherService.isWatching(filePath)) {
-            console.log(`👁️ 开始监听文件变更: ${filePath}`);
-          }
-        }
-      }
+      // 使用SessionService处理用户输入
+      const processedInput = await this.sessionService.processUserInput(input);
       
       // 准备发送给Agent的消息，包含IDE上下文信息
-      let messageToAgent = input;
+      let messageToAgent = processedInput.originalInput;
       if (this.ideContext.activeFile || this.ideContext.openFiles.length > 0) {
         const contextInfo = this.formatIDEContext();
-        messageToAgent = `${contextInfo}\n\n${input}`;
+        messageToAgent = `${contextInfo}\n\n${processedInput.originalInput}`;
       }
       
-      console.log('\n🤔 Processing your request...\n');
-      console.log('📝 Response:');
-      
-      const stream = this.agent.processStream(messageToAgent);
+      // 使用SessionService处理Agent响应流
+      const stream = this.sessionService.processAgentStream(messageToAgent);
       let fullResponse = '';
       
       for await (const event of stream) {
@@ -279,19 +272,16 @@ export class TempuraiCLI {
           const newContent = event.content.substring(fullResponse.length);
           process.stdout.write(newContent);
           fullResponse = event.content;
-        } else if (event.type === 'tool-call') {
-          console.log(`\n🔧 使用工具: ${event.toolName}`);
-        } else if (event.type === 'tool-result') {
-          console.log(`✓ 工具执行完成: ${event.toolName}`);
-        } else if (event.type === 'error') {
-          console.error(`\n❌ ${event.content}`);
         }
+        // 其他事件由SessionService处理和显示
       }
       
       if (!fullResponse.endsWith('\n')) {
         console.log('');
       }
       
+      // 为UI显示保留简化的历史记录
+      this.addToHistory('user', input);
       this.addToHistory('assistant', fullResponse);
       
     } catch (error) {
@@ -330,8 +320,8 @@ export class TempuraiCLI {
     }
     
     if (['/clear', 'clear'].includes(command)) {
-      this.history = [];
-      this.agent.clearLoopDetectionHistory(); // 同时清除循环检测历史
+      this.history = []; // 清除UI显示历史
+      this.sessionService.clearSession(); // 清除会话服务历史
       console.log('\n✨ Conversation history and loop detection history cleared.');
       this.displayPrompt();
       return true;
@@ -339,6 +329,11 @@ export class TempuraiCLI {
     
     if (['/loops', 'loops'].includes(command)) {
       this.displayLoopStats();
+      return true;
+    }
+    
+    if (['/session', 'session'].includes(command)) {
+      this.displaySessionStats();
       return true;
     }
     
@@ -439,6 +434,7 @@ export class TempuraiCLI {
     console.log('│   /help     - Show this help message                      │');
     console.log('│   /status   - Show current setup                          │');
     console.log('│   /config   - Show configuration                          │');
+    console.log('│   /session  - Show session statistics                     │');
     console.log('│   /loops    - Show loop detection statistics              │');
     console.log('│   /context  - Set active file context (/context <path>)  │');
     console.log('│   /clear    - Clear conversation and loop history         │');
@@ -477,15 +473,15 @@ export class TempuraiCLI {
    * 显示配置
    */
   private displayConfig(): void {
-    const mcpStatus = this.agent.getMcpStatus();
+    const sessionStats = this.sessionService.getSessionStats();
+    const mcpStatus = sessionStats.mcpStatus;
     const mcpInfo = `${mcpStatus.toolCount} loaded (${mcpStatus.connectionCount} connections)`;
-    const configLoader = ConfigLoader.getInstance();
-    const loopStats = this.agent.getLoopDetectionStats();
+    const loopStats = sessionStats.loopDetectionStats;
     
     console.log('\n┌────────────────────────────────────────────────────────────┐');
     console.log('│ 🔧 Configuration:                                         │');
     console.log('│                                                            │');
-    console.log(`│   Model: ${configLoader.getModelDisplayName().padEnd(49)} │`);
+    console.log(`│   Model: ${this.getModelDisplayName().padEnd(49)} │`);
     console.log(`│   Temperature: ${String(this.config.temperature).padEnd(43)} │`);
     console.log(`│   Max Tokens: ${String(this.config.maxTokens).padEnd(44)} │`);
     console.log(`│   API Key: ${(this.config.apiKey ? '✅ Loaded' : '❌ Missing').padEnd(46)} │`);
@@ -507,12 +503,41 @@ export class TempuraiCLI {
   }
 
   /**
+   * 显示会话统计信息
+   */
+  private displaySessionStats(): void {
+    const stats = this.sessionService.getSessionStats();
+    const fileWatcherStats = this.sessionService.getFileWatcherStats();
+    
+    console.log('\n┌────────────────────────────────────────────────────────────┐');
+    console.log('│ 📊 Session Statistics:                                  │');
+    console.log('│                                                            │');
+    console.log(`│   Total Interactions: ${String(stats.totalInteractions).padEnd(35)} │`);
+    console.log(`│   Total Tokens Used: ${String(stats.totalTokensUsed).padEnd(36)} │`);
+    console.log(`│   Average Response Time: ${String(stats.averageResponseTime)}ms`.padEnd(59) + ' │');
+    console.log(`│   Unique Files Accessed: ${String(stats.uniqueFilesAccessed).padEnd(33)} │`);
+    console.log(`│   Session Duration: ${String(stats.sessionDuration)}s`.padEnd(59) + ' │');
+    console.log('│                                                            │');
+    console.log('│ 📁 File Watching:                                        │');
+    console.log(`│   Watched Files: ${String(fileWatcherStats.watchedFileCount).padEnd(42)} │`);
+    console.log(`│   Recent Changes: ${String(fileWatcherStats.recentChangesCount).padEnd(41)} │`);
+    console.log(`│   Total Change Events: ${String(fileWatcherStats.totalChangeEvents).padEnd(35)} │`);
+    console.log('│                                                            │');
+    console.log('│ Commands:                                                  │');
+    console.log('│   /session - Show this session statistics                   │');
+    console.log('│   /clear   - Clear session history                          │');
+    console.log('└────────────────────────────────────────────────────────────┘');
+    this.displayPrompt();
+  }
+
+  /**
    * 显示循环检测统计信息
    */
   private displayLoopStats(): void {
-    const stats = this.agent.getLoopDetectionStats();
-    const timespan = stats.recentTimespan > 0 
-      ? `${Math.round(stats.recentTimespan / 1000)}s`
+    const sessionStats = this.sessionService.getSessionStats();
+    const stats = sessionStats.loopDetectionStats;
+    const timespan = sessionStats.sessionDuration > 0 
+      ? `${sessionStats.sessionDuration}s`
       : 'N/A';
     
     console.log('\n┌────────────────────────────────────────────────────────────┐');
@@ -553,6 +578,13 @@ export class TempuraiCLI {
   }
 
   /**
+   * 获取模型显示名称
+   */
+  private getModelDisplayName(): string {
+    return this.configLoader.getModelDisplayName();
+  }
+
+  /**
    * 启动CLI
    */
   public start(): void {
@@ -580,12 +612,11 @@ export class TempuraiCLI {
 /**
  * 处理子命令
  */
-function handleSubcommands(args: string[], config: Config): boolean {
+function handleSubcommands(args: string[], config: Config, configLoader: ConfigLoader): boolean {
   const [subcommand, ...subArgs] = args;
   
   switch (subcommand) {
     case 'config':
-      const configLoader = ConfigLoader.getInstance();
       console.log('🔧 Tempurai Configuration:');
       console.log(`   Model: ${configLoader.getModelDisplayName()}`);
       console.log(`   Temperature: ${config.temperature}`);
@@ -657,7 +688,7 @@ async function validateModelConfig(configLoader: ConfigLoader): Promise<boolean>
  */
 async function main(): Promise<void> {
   try {
-    const configLoader = ConfigLoader.getInstance();
+    const configLoader = new ConfigLoader();
     const config = configLoader.getConfig();
     
     const args = process.argv.slice(2);
@@ -687,7 +718,7 @@ async function main(): Promise<void> {
     }
     
     // 处理其他子命令
-    if (handleSubcommands(args, config)) {
+    if (handleSubcommands(args, config, configLoader)) {
       return;
     }
     
@@ -701,18 +732,6 @@ async function main(): Promise<void> {
     const model = await configLoader.createLanguageModel();
     console.log(`✅ 模型已初始化: ${configLoader.getModelDisplayName()}`);
     
-    // 创建上下文管理器并注册项目摘要提供者
-    const contextManager = new ContextManager({
-        verbose: false, // 可以根据需要开启详细日志
-        timeout: 3000,  // 3秒超时
-        maxTotalLength: 15000, // 15k字符限制
-        includeMetadata: true
-    });
-    
-    // 注册项目摘要提供者
-    const projectSummaryProvider = new ProjectSummaryProvider();
-    contextManager.registerProvider(projectSummaryProvider);
-    
     // 创建文件监听服务
     const fileWatcherService = new FileWatcherService({
       verbose: false, // 可以根据需要开启详细日志
@@ -721,28 +740,18 @@ async function main(): Promise<void> {
     });
     console.log('✅ 文件监听服务已创建');
     
-    // 注册响应式文件上下文提供者
-    const reactiveFileContextProvider = new ReactiveFileContextProvider();
-    contextManager.registerProvider(reactiveFileContextProvider);
-    
-    // 注册监听文件上下文提供者
-    const watchedFilesContextProvider = new WatchedFilesContextProvider(fileWatcherService);
-    contextManager.registerProvider(watchedFilesContextProvider);
-    
-    console.log('✅ 上下文管理器已初始化，并注册了所有上下文提供者');
-    
-    // 创建Agent实例（现在需要传递 ContextManager）
-    const agent = new SimpleAgent(config, model, contextManager, config.customContext);
+    // 创建Agent实例（使用新的ProjectContext系统）
+    const agent = new SimpleAgent(config, model, config.customContext);
     console.log('✅ Agent已创建，正在进行异步初始化...');
     
+    // 创建会话管理服务
+    const sessionService = new SessionService(agent, fileWatcherService, config);
+    console.log('✅ 会话管理服务已初始化');
+    
+    console.log('✅ 新的架构已初始化：CLI ↔ SessionService ↔ Agent');
+    
     // 启动交互模式
-    const cli = new TempuraiCLI(
-      config, 
-      agent, 
-      reactiveFileContextProvider, 
-      watchedFilesContextProvider,
-      fileWatcherService
-    );
+    const cli = new TempuraiCLI(config, configLoader, sessionService);
     cli.start();
     
   } catch (error) {

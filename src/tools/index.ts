@@ -4,7 +4,7 @@ export * from './SmartDiffEngine';
 export * from './EnhancedWriteTools';
 export * from './EnhancedDiffDisplay';
 export * from './ConfirmationManager';
-export * from './CheckpointManager';
+export * from './GitWorkflowTools';
 export * from './AdvancedDiffAlgorithm';
 
 // 核心工具(非冲突导出)

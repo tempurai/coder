@@ -2,7 +2,8 @@ import { Agent } from '@mastra/core';
 import { Config } from '../config/ConfigLoader';
 import type { LanguageModel } from 'ai';
 import { LoopDetectionService, LoopDetectionResult } from '../services/LoopDetectionService';
-import { ContextManager } from '../context/ContextManager';
+import { SimpleProjectContextProvider } from '../context/SimpleProjectContextProvider';
+import * as path from 'path';
 
 // Agent流可以产出的事件类型
 export type AgentStreamEvent = 
@@ -13,16 +14,18 @@ export type AgentStreamEvent =
 
 // 增强工具集
 import { shellExecutorTool, multiCommandTool } from '../tools/ShellExecutor';
-import { smartDiffApplyTool, generateDiffTool, validateCodeTool } from '../tools/SmartDiffEngine';
-import { enhancedWriteTools, previewChangesTool } from '../tools/EnhancedWriteTools';
-// Web 工具集
+// Git工作流工具集
+import { gitWorkflowTools } from '../tools/GitWorkflowTools';
+// 简化的文件工具集
+import { simpleFileTools } from '../tools/SimpleFileTools';
+// Web工具集
 import { webSearchTool, urlFetchTool } from '../tools/WebTools';
-// MCP 工具集
+// MCP工具集
 import { loadMcpTools, mcpToolLoader, McpTool } from '../tools/McpToolLoader';
 // 传统工具(后备)
 import { findFilesTool, searchInFilesTool } from '../tools/FileTools';
 import { gitStatusTool, gitLogTool, gitDiffTool } from '../tools/GitTools';
-import { findFunctionsTool, findImportsTool, getProjectStructureTool } from '../tools/CodeTools';
+import { findFunctionsTool, findImportsTool, getProjectStructureTool, analyzeCodeStructureTool } from '../tools/CodeTools';
 
 /**
  * 可配置工具接口
@@ -44,30 +47,39 @@ interface AgentInitOptions {
   customContext?: string;
 }
 
+/**
+ * MCP工具状态接口
+ */
+interface McpStatus {
+    isLoaded: boolean;
+    toolCount: number;
+    connectionCount: number;
+    tools: string[];
+    error?: string;
+}
+
 export class SimpleAgent {
     private agent: Agent;
     private config: Config;
     private model: LanguageModel;
     private mcpTools: McpTool[] = [];
+    private mcpStatus: McpStatus = { isLoaded: false, toolCount: 0, connectionCount: 0, tools: [] };
     private loopDetector: LoopDetectionService;
-    private contextManager: ContextManager;
+    private simpleContextProvider: SimpleProjectContextProvider;
 
     /**
      * 初始化SimpleAgent
      * @param config 应用配置对象
      * @param model 语言模型实例
-     * @param contextManager 上下文管理器实例
      * @param customContext 可选的用户自定义上下文（向后兼容）
      */
     constructor(
         config: Config, 
         model: LanguageModel, 
-        contextManager: ContextManager, 
         customContext?: string
     ) {
         this.config = config;
         this.model = model;
-        this.contextManager = contextManager;
         
         // 初始化循环检测服务
         this.loopDetector = new LoopDetectionService({
@@ -78,83 +90,133 @@ export class SimpleAgent {
             timeWindowMs: 60000 // 1分钟窗口
         });
         
-        // 创建一个临时的 agent，真正的 agent 将在 initializeAsync 中创建
-        this.agent = new Agent({
-            name: 'TempuraiAgent',
-            instructions: 'Initializing...',
-            model: this.model as any,
-            tools: {}
-        });
+        // 初始化简单项目上下文提供者
+        this.simpleContextProvider = new SimpleProjectContextProvider();
         
-        // 异步初始化将在稍后调用
-        this.initializeAsync(customContext);
+        // 立即创建带有所有内置工具的Agent - 消除双重初始化
+        this.agent = this.createAgentWithBuiltinTools(customContext);
+        
+        // 异步加载MCP工具，但不依赖Agent创建
+        this.loadMcpToolsAsync();
     }
 
     /**
-     * 异步初始化 Agent、MCP 工具和其他异步资源
+     * 异步初始化方法（向后兼容，现在主要用于等待MCP工具加载完成）
      * @param customContext 可选的用户自定义上下文
+     * @deprecated 不再需要调用此方法，Agent已在构造函数中完全初始化
      */
     async initializeAsync(customContext?: string): Promise<void> {
+        // 等待MCP工具加载完成（如果正在进行中）
+        await this.waitForMcpTools();
+        console.log('✅ 异步初始化完成（向后兼容）');
+    }
+
+    /**
+     * 创建带有内置工具的Agent（单次初始化核心方法）
+     * @param customContext 用户自定义上下文
+     * @returns Agent实例
+     */
+    private createAgentWithBuiltinTools(customContext?: string): Agent {
         try {
-            console.log('🔄 正在初始化异步资源...');
+            const instructions = this.buildSystemInstructionsSync(customContext);
+            return new Agent({
+                name: 'EnhancedCodeAssistant',
+                instructions,
+                model: this.model as any, 
+                tools: this.getBuiltinTools(),
+            });
+        } catch (error) {
+            console.warn('⚠️ 创建Agent时发生错误，使用基础配置:', error instanceof Error ? error.message : '未知错误');
+            // 回退到最基础的Agent
+            return new Agent({
+                name: 'TempuraiAgent',
+                instructions: 'Code assistant (basic mode)',
+                model: this.model as any,
+                tools: {}
+            });
+        }
+    }
+
+    /**
+     * 异步加载MCP工具的后台任务
+     */
+    private async loadMcpToolsAsync(): Promise<void> {
+        try {
+            console.log('🔄 开始加载MCP工具...');
+            this.mcpStatus = { isLoaded: false, toolCount: 0, connectionCount: 0, tools: [], error: undefined };
             
-            // 首先创建基础 agent
-            this.agent = await this.createBaseAgent(customContext);
-            console.log('✅ 基础 Agent 初始化完成');
-            
-            // 加载 MCP 工具
             this.mcpTools = await loadMcpTools(this.config);
-            console.log(`✅ MCP 工具加载完成: ${this.mcpTools.length} 个工具`);
+            console.log(`✅ MCP工具加载完成: ${this.mcpTools.length}个工具`);
             
-            // 如果有 MCP 工具，重新创建包含所有工具的 agent
+            // 动态添加MCP工具到现有Agent
             if (this.mcpTools.length > 0) {
-                this.agent = await this.createAgentWithAllTools(customContext);
-                console.log('✅ 完整 Agent（包含 MCP 工具）初始化完成');
+                const mcpToolsMap: Record<string, any> = {};
+                for (const mcpTool of this.mcpTools) {
+                    mcpToolsMap[mcpTool.name] = mcpTool;
+                }
+                this.addToolsToAgent(mcpToolsMap);
             }
             
-            console.log('✅ 异步初始化完成');
+            // 更新状态
+            const connectionStatus = mcpToolLoader.getConnectionStatus();
+            this.mcpStatus = {
+                isLoaded: true,
+                toolCount: this.mcpTools.length,
+                connectionCount: connectionStatus.connected,
+                tools: this.mcpTools.map(tool => tool.name)
+            };
+            
+            console.log('✅ MCP工具集成完成');
         } catch (error) {
-            console.error('❌ 异步初始化失败:', error instanceof Error ? error.message : '未知错误');
-            // 继续使用基础 agent，不阻塞启动
+            const errorMessage = error instanceof Error ? error.message : '未知错误';
+            console.error('❌ MCP工具加载失败:', errorMessage);
+            
+            this.mcpStatus = {
+                isLoaded: true, // 标记为已尝试加载
+                toolCount: 0,
+                connectionCount: 0,
+                tools: [],
+                error: errorMessage
+            };
         }
     }
 
     /**
-     * 创建基础 agent（不包含 MCP 工具）
-     * @param customContext 用户自定义上下文
-     * @returns Agent 实例
+     * 动态添加工具到现有Agent（核心扩展方法）
+     * @param tools 要添加的工具映射
      */
-    private async createBaseAgent(customContext?: string): Promise<Agent> {
-        const instructions = await this.buildSystemInstructions(customContext);
-        return new Agent({
-            name: 'EnhancedCodeAssistant',
-            instructions,
-            model: this.model as any, 
-            tools: this.getBuiltinTools(),
-        });
+    addToolsToAgent(tools: Record<string, any>): void {
+        try {
+            // 获取当前Agent的工具集
+            const currentTools = (this.agent as any).tools || {};
+            
+            // 合并新工具
+            const mergedTools = { ...currentTools, ...tools };
+            
+            // 更新Agent的工具集（直接修改内部属性）
+            (this.agent as any).tools = mergedTools;
+            
+            const toolNames = Object.keys(tools);
+            console.log(`🔧 已动态添加 ${toolNames.length} 个工具: ${toolNames.join(', ')}`);
+        } catch (error) {
+            console.error('❌ 动态添加工具失败:', error instanceof Error ? error.message : '未知错误');
+        }
     }
 
     /**
-     * 创建包含所有工具（内置 + MCP）的 agent
-     * @param customContext 用户自定义上下文
-     * @returns Agent 实例
+     * 等待MCP工具加载完成
+     * @param timeoutMs 等待超时时间（毫秒）
      */
-    private async createAgentWithAllTools(customContext?: string): Promise<Agent> {
-        const instructions = await this.buildSystemInstructions(customContext);
-        const builtinTools = this.getBuiltinTools();
-        const allTools = { ...builtinTools };
-
-        // 添加 MCP 工具
-        for (const mcpTool of this.mcpTools) {
-            allTools[mcpTool.name] = mcpTool;
+    private async waitForMcpTools(timeoutMs: number = 10000): Promise<void> {
+        const startTime = Date.now();
+        
+        while (!this.mcpStatus.isLoaded && (Date.now() - startTime) < timeoutMs) {
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
-
-        return new Agent({
-            name: 'EnhancedCodeAssistant',
-            instructions,
-            model: this.model as any, 
-            tools: allTools,
-        });
+        
+        if (!this.mcpStatus.isLoaded) {
+            console.warn('⚠️ MCP工具加载超时，继续使用内置工具');
+        }
     }
 
     /**
@@ -163,35 +225,38 @@ export class SimpleAgent {
      */
     private getBuiltinTools(): Record<string, any> {
         return {
-            // 🎆 ENHANCED PRIMARY TOOLS
-            enhanced_write: this.createConfigurableTool(enhancedWriteTools.enhanced_write),
-            preview_changes: enhancedWriteTools.preview_changes,
-            smart_string_replace: this.createSmartStringReplaceTool(enhancedWriteTools.smart_string_replace),
+            // 🚀 GIT WORKFLOW TOOLS (PRIMARY)
+            start_task: gitWorkflowTools.start_task,
+            commit_changes: gitWorkflowTools.commit_changes,
+            end_task: gitWorkflowTools.end_task,
+            discard_task: gitWorkflowTools.discard_task,
+            get_workflow_status: gitWorkflowTools.get_workflow_status,
+            
+            // 📝 SIMPLE FILE TOOLS
+            write_file: simpleFileTools.write_file,
+            amend_file: simpleFileTools.amend_file,
+            read_file: simpleFileTools.read_file,
             
             // 🌐 WEB ACCESS TOOLS
             web_search: webSearchTool,
             url_fetch: urlFetchTool,
             
-            // 🔧 CORE EXECUTION TOOLS  
+            // 🔧 SHELL EXECUTION TOOLS  
             shell_executor: this.createConfigurableShellTool(shellExecutorTool),
             multi_command: this.createConfigurableShellTool(multiCommandTool),
             
-            // ⚙️ DIFF AND VALIDATION TOOLS
-            smart_diff_apply: this.createConfigurableSmartDiffTool(smartDiffApplyTool),
-            generate_diff: generateDiffTool,
-            validate_code: validateCodeTool,
-            
-            // 🛡️ FALLBACK TOOLS
+            // 🔍 CODE ANALYSIS TOOLS
             find_files: findFilesTool,
             search_in_files: searchInFilesTool,
-            
-            // 📜 LEGACY TOOLS (minimal usage)
-            git_status: gitStatusTool,
-            git_log: gitLogTool, 
-            git_diff: gitDiffTool,
             find_functions: findFunctionsTool,
             find_imports: findImportsTool,
             get_project_structure: getProjectStructureTool,
+            analyze_code_structure: analyzeCodeStructureTool,
+            
+            // 📜 GIT TOOLS (for reference)
+            git_status: gitStatusTool,
+            git_log: gitLogTool, 
+            git_diff: gitDiffTool,
         };
     }
 
@@ -204,140 +269,112 @@ export class SimpleAgent {
     }
     
     /**
-     * 构建系统指令（异步版本，支持动态上下文）
+     * 构建带有静态项目上下文的系统指令
      * @param customContext 用户自定义上下文
      * @returns 完整的系统指令字符串
      */
-    private async buildSystemInstructions(customContext?: string): Promise<string> {
-        const baseInstructions = `You are an enhanced ReAct (Reason + Act) code assistant with advanced file modification and internet access capabilities.
-        
-        ## 🔥 ENHANCED FEATURES
-        - **Preview-First Approach**: ALWAYS show changes before applying
-        - **Interactive Confirmation**: Wait for user approval before file modifications
-        - **Checkpoint System**: Create backups before dangerous operations
-        - **Enhanced Diff Display**: Beautiful, colored diff output
-        - **Dual Write Modes**: diff mode for targeted changes, direct mode for full replacements
-        - **Internet Access**: Real-time web search and content fetching capabilities
-        - **Plugin System**: Dynamic MCP tool loading for unlimited extensibility
-        - **Context Awareness**: Dynamic project and environment context through pluggable providers
-        
-        ## 🔌 MCP PLUGIN SYSTEM
-        You have access to dynamically loaded external tools via the Model Context Protocol (MCP):
-        
-        **Available MCP Tools**: ${this.mcpTools.length > 0 ? this.mcpTools.map(tool => `${tool.name} - ${tool.description}`).join('\n        - ') : 'None configured'}
-        
-        **MCP Tool Usage Guidelines**:
-        - MCP tools extend your capabilities beyond built-in functions
-        - Each MCP tool may have unique parameters and behaviors
-        - Use MCP tools when built-in tools don't meet specific needs
-        - MCP tools are executed remotely and may have different performance characteristics
-        
-        **🚀 Dynamic Capabilities**: Your tool set is not fixed! Users can add new MCP servers to dynamically expand your abilities without code changes.
-        
-        ## 🌐 INTERNET ACCESS CAPABILITIES
-        When you need to get current information, verify facts, or research topics:
-        
-        **🔍 web_search tool**: Use when you need to:
-        - Get real-time information about current events
-        - Look up latest documentation or API changes
-        - Research new technologies, frameworks, or libraries
-        - Verify facts you're uncertain about
-        - Find solutions to specific problems
-        
-        **📄 url_fetch tool**: Use when you need to:
-        - Read the full content of a specific webpage
-        - Extract detailed information from documentation
-        - Analyze blog posts, articles, or GitHub issues
-        - Get complete context from links found via web_search
-        
-        **Usage Guidelines:**
-        - Always search for current information rather than relying on potentially outdated training data
-        - Use web_search first to find relevant sources, then url_fetch for detailed content
-        - Be transparent about when you're using internet search vs. your training knowledge
-        - Combine web research with your existing programming expertise for comprehensive solutions
-        
-        ## 📝 FILE MODIFICATION WORKFLOW
-        1. **ALWAYS PREVIEW FIRST**: Use 'enhanced_write' with preview=true to show what will change
-        2. **FORMAT RESPONSE**: Clearly explain what you're doing and why
-        3. **WAIT FOR CONFIRMATION**: Let the CLI handle user confirmation
-        4. **NEVER WRITE DIRECTLY**: Never use enhanced_write with preview=false unless explicitly instructed
-        
-        ## 🎯 TOOL PRIORITY
-        1. **PRIMARY**: enhanced_write, preview_changes, smart_string_replace, web_search, url_fetch
-        2. **SECONDARY**: shell_executor, read_file, smart_diff_apply
-        3. **FALLBACK**: All other tools when needed
-        
-        ## 📊 RESPONSE FORMAT
-        When planning file changes:
-        🎯 **Goal**: [What you're trying to achieve]
-        📄 **Files affected**: [List of files]
-        🔧 **Mode**: diff/direct
-        🔍 **Preview**: [Use enhanced_write with preview=true]
-        
-        When conducting research:
-        🌐 **Research**: [What you're looking up]
-        🔍 **Search**: [Key terms being searched]
-        📄 **Sources**: [URLs or documents being examined]
-        
-        ## 🚪 CHECKPOINT USAGE
-        - Create checkpoints before:
-          * Multiple file modifications
-          * Risky refactoring operations  
-          * Major structural changes
-        - Use: checkpoint(action='create', files=[...], description='...')
-        
-        ## ⚠️ SAFETY RULES
-        - NEVER modify files without showing preview first
-        - NEVER use write_file for existing files (use enhanced_write)
-        - ALWAYS explain your reasoning before taking action
-        - CREATE CHECKPOINTS for multi-file operations
-        - Web access is automatically secured against private networks
-        
-        ## 📈 USER CONFIGURATION
-        - Model: ${this.getModelDisplayName()}
-        - Temperature: ${this.config.temperature}
-        - Shell timeout: ${this.config.tools.shellExecutor.defaultTimeout}ms
-        - Max retries: ${this.config.tools.shellExecutor.maxRetries}
-        - Context lines: ${this.config.tools.smartDiff.contextLines}
-        - Web search: ${this.config.tavilyApiKey ? 'Enabled (Tavily)' : 'Disabled (no API key)'}
-        
-        Be efficient, safe, and user-friendly! Use your internet access capabilities to provide the most current and accurate information.`;
+    private buildSystemInstructionsSync(customContext?: string): string {
+        // 获取静态项目上下文
+        const staticProjectContext = this.simpleContextProvider.getStaticContext();
+        const baseInstructions = `You are a professional software developer AI assistant that works just like a human developer using Git workflows.
 
-        // 使用 ContextManager 获取动态上下文信息
-        let dynamicContext = '';
-        try {
-            dynamicContext = await this.contextManager.getCombinedContext();
-        } catch (error) {
-            console.warn('⚠️ Failed to get dynamic context:', error instanceof Error ? error.message : 'Unknown error');
-            // 无法获取上下文时的提示信息
-            dynamicContext = '项目上下文暂时不可用，但这不影响正常工作。';
-        }
+${staticProjectContext}
 
-        let instructionsWithContext = baseInstructions;
-        
-        // 添加动态上下文信息
-        if (dynamicContext.trim()) {
-            instructionsWithContext = `${baseInstructions}
+## 🚀 CORE DEVELOPMENT WORKFLOW
 
-## 🎯 CONTEXTUAL AWARENESS
-${dynamicContext}
+You operate as a **Git-Native Developer** - every coding task follows professional Git branch workflows:
 
-这些上下文信息可以帮助你：
-- 理解项目的当前状态和结构
-- 感知开发环境和工具配置
-- 了解最近的活动和变化
-- 提供更精准、符合项目特点的建议
+### 📋 THE 6-STEP PROCESS:
+1. **start_task** → Create feature/fix branch for the work
+2. **explore & analyze** → Use read_file, analyze_code_structure, find_functions to understand
+3. **code & modify** → Use write_file, amend_file to implement changes
+4. **stage & commit** → Use commit_changes with meaningful commit messages
+5. **test validation** → Use shell_executor to run tests, builds, lints
+6. **end_task** → Merge to main and cleanup, or discard_task if problems
 
-记住：利用这些上下文信息来提供更准确、更相关的帮助。`;
-        }
-        
+### 🔧 PRIMARY TOOL HIERARCHY:
+1. **🚀 Git Workflow Tools** (start_task, commit_changes, end_task, discard_task, get_workflow_status)
+2. **📝 Simple File Tools** (write_file, amend_file, read_file)
+3. **🔍 Code Analysis Tools** (analyze_code_structure, find_functions, find_imports, get_project_structure)
+4. **💻 Shell Execution** (shell_executor, multi_command)
+5. **🌐 Web Research** (web_search, url_fetch)
+
+## 🎯 WORKFLOW PRINCIPLES
+
+### ✅ ALWAYS DO:
+- Start EVERY coding task with `start_task` - creates your working branch
+- Use meaningful branch names (feature/add-auth, fix/memory-leak, refactor/simplify-context)
+- Make focused, atomic commits with clear messages
+- Run tests/builds before ending tasks
+- End with `end_task` to merge and cleanup
+
+### ❌ NEVER DO:
+- Modify files on main branch (always work on task branches)
+- Skip the Git workflow - it's not optional
+- Make commits without meaningful messages
+- Leave branches hanging (always end_task or discard_task)
+
+## 🔌 ADVANCED CAPABILITIES
+
+### MCP Plugin System:
+Available external tools: ${this.mcpTools.length > 0 ? this.mcpTools.map(tool => `${tool.name} - ${tool.description}`).join('\n- ') : 'Loading...'}
+
+### Internet Research:
+- **web_search**: Current information, documentation, solutions
+- **url_fetch**: Detailed content analysis from specific URLs
+- Always research before implementing to use latest practices
+
+### Code Intelligence:
+- **analyze_code_structure**: AST parsing for deep code understanding
+- Get function signatures, class structures, imports/exports
+- Use before making complex modifications
+
+## 💬 COMMUNICATION STYLE
+
+### When Starting Work:
+```
+🚀 **Starting Task**: [Brief description]
+📝 **Branch**: feature/[descriptive-name]
+🎯 **Goal**: [What we're achieving]
+```
+
+### During Development:
+```
+🔍 **Analysis**: [What you discovered]
+📝 **Changes**: [What you're modifying]
+💾 **Commit**: [Commit message]
+```
+
+### When Testing:
+```
+🧪 **Testing**: [What tests you're running]
+✅ **Results**: [Test outcomes]
+```
+
+### When Completing:
+```
+✅ **Task Complete**: [Summary of changes]
+🔀 **Merged**: [Branch merged to main]
+🧹 **Cleanup**: [Branch deleted]
+```
+
+## 📊 CONFIGURATION
+- Model: ${this.getModelDisplayName()}
+- Temperature: ${this.config.temperature}
+- Shell timeout: ${this.config.tools.shellExecutor.defaultTimeout}ms
+- Max retries: ${this.config.tools.shellExecutor.maxRetries}
+- Web search: ${this.config.tavilyApiKey ? 'Enabled (Tavily)' : 'Disabled (no API key)'}
+
+You are a professional developer. Work professionally, communicate clearly, and always follow the Git workflow. Every task is a new branch, every change is committed, every completion is merged.`;
+
         // 如果有自定义上下文，添加到指令末尾
         if (customContext && customContext.trim()) {
-            return `${instructionsWithContext}\n\n--- USER-DEFINED CONTEXT ---\n${customContext.trim()}`;
+            return `${baseInstructions}\n\n--- USER-DEFINED CONTEXT ---\n${customContext.trim()}`;
         }
         
-        return instructionsWithContext;
+        return baseInstructions;
     }
+
     
     /**
      * 创建可配置的通用工具
@@ -467,6 +504,8 @@ ${dynamicContext}
                 yield { type: 'error', content: '❌ 错误: 查询内容不能为空' };
                 return;
             }
+
+            // 直接使用现有Agent，无需动态上下文
 
             // 生成回复
             const response = await this.agent.generate([{
@@ -678,15 +717,25 @@ ${dynamicContext}
     }
     
     /**
-     * 获取 MCP 工具状态
+     * 获取 MCP 工具状态（更新版本）
      * @returns MCP 工具状态信息
      */
-    getMcpStatus(): { toolCount: number; connectionCount: number; tools: string[] } {
-        const status = mcpToolLoader.getConnectionStatus();
+    getMcpStatus(): McpStatus {
+        return { ...this.mcpStatus };
+    }
+
+    /**
+     * 获取详细的MCP状态信息（向后兼容）
+     * @returns 详细的MCP状态信息
+     */
+    getMcpStatusDetailed(): { toolCount: number; connectionCount: number; tools: string[]; isLoaded: boolean; error?: string } {
+        const connectionStatus = mcpToolLoader.getConnectionStatus();
         return {
             toolCount: this.mcpTools.length,
-            connectionCount: status.connected,
-            tools: this.mcpTools.map(tool => tool.name)
+            connectionCount: connectionStatus.connected,
+            tools: this.mcpTools.map(tool => tool.name),
+            isLoaded: this.mcpStatus.isLoaded,
+            error: this.mcpStatus.error
         };
     }
 

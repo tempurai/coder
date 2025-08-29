@@ -12,7 +12,7 @@ async function testIntegratedLoopDetection() {
   
   try {
     // 初始化配置和模型
-    const configLoader = ConfigLoader.getInstance();
+    const configLoader = new ConfigLoader();
     const config = configLoader.getConfig();
     
     console.log('⚙️ 正在初始化模拟模型和 Agent...');

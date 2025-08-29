@@ -165,11 +165,10 @@ const DEFAULT_CONFIG: Config = {
 };
 
 /**
- * 配置加载器单例类
+ * 配置加载器类
  * 负责从用户配置文件中加载配置，支持默认值和用户自定义覆盖
  */
 export class ConfigLoader {
-  private static instance: ConfigLoader | null = null;
   private config: Config;
   private readonly configDir: string;
   private readonly configFilePath: string;
@@ -177,9 +176,9 @@ export class ConfigLoader {
   private readonly deepMerge: (target: any, source: any) => any;
 
   /**
-   * 私有构造函数，确保单例模式
+   * 构造函数
    */
-  private constructor() {
+  public constructor() {
     this.configDir = path.join(os.homedir(), '.temurai');
     this.configFilePath = path.join(this.configDir, 'config.json');
     this.contextFilePath = path.join(this.configDir, '.temurai.md');
@@ -190,17 +189,6 @@ export class ConfigLoader {
     });
 
     this.config = this.loadConfiguration();
-  }
-
-  /**
-   * 获取ConfigLoader单例实例
-   * @returns ConfigLoader实例
-   */
-  public static getInstance(): ConfigLoader {
-    if (!ConfigLoader.instance) {
-      ConfigLoader.instance = new ConfigLoader();
-    }
-    return ConfigLoader.instance;
   }
 
   /**

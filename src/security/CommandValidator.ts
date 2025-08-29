@@ -1,4 +1,4 @@
-import { ConfigLoader } from '../config/ConfigLoader';
+import { ConfigLoader, Config } from '../config/ConfigLoader';
 
 /**
  * 命令验证结果接口
@@ -48,25 +48,22 @@ const DANGEROUS_PATTERNS = [
  * 负责根据配置的安全策略验证shell命令是否允许执行
  */
 export class CommandValidator {
-  private static instance: CommandValidator | null = null;
-  private config = ConfigLoader.getInstance().getConfig();
+  private config: Config;
 
   /**
-   * 获取CommandValidator单例实例
+   * 构造函数
+   * @param configLoader 配置加载器实例
    */
-  public static getInstance(): CommandValidator {
-    if (!CommandValidator.instance) {
-      CommandValidator.instance = new CommandValidator();
-    }
-    return CommandValidator.instance;
+  constructor(configLoader: ConfigLoader) {
+    this.config = configLoader.getConfig();
   }
 
   /**
    * 刷新配置缓存
    * 当配置文件更新后应调用此方法
    */
-  public refreshConfig(): void {
-    this.config = ConfigLoader.getInstance().getConfig();
+  public refreshConfig(configLoader: ConfigLoader): void {
+    this.config = configLoader.getConfig();
   }
 
   /**
@@ -292,14 +289,18 @@ export class CommandValidator {
 /**
  * 便捷的全局验证函数
  * 提供快速的命令验证访问
+ * @deprecated 建议直接使用 CommandValidator 实例
  */
-export function validateCommand(commandLine: string): CommandValidationResult {
-  return CommandValidator.getInstance().validateCommand(commandLine);
+export function validateCommand(commandLine: string, configLoader: ConfigLoader): CommandValidationResult {
+  const validator = new CommandValidator(configLoader);
+  return validator.validateCommand(commandLine);
 }
 
 /**
  * 便捷的批量验证函数
+ * @deprecated 建议直接使用 CommandValidator 实例
  */
-export function validateCommands(commands: string[]): CommandValidationResult[] {
-  return CommandValidator.getInstance().validateCommands(commands);
+export function validateCommands(commands: string[], configLoader: ConfigLoader): CommandValidationResult[] {
+  const validator = new CommandValidator(configLoader);
+  return validator.validateCommands(commands);
 }

@@ -12,7 +12,7 @@ async function testConfigurationSystem() {
   
   // 测试配置加载
   console.log('1. 测试配置加载:');
-  const configLoader = ConfigLoader.getInstance();
+  const configLoader = new ConfigLoader();
   const config = configLoader.getConfig();
   
   console.log('✅ 配置已加载');
@@ -25,7 +25,7 @@ async function testConfigurationSystem() {
   
   // 测试命令验证器
   console.log('2. 测试命令验证器:');
-  const validator = CommandValidator.getInstance();
+  const validator = new CommandValidator(configLoader);
   
   // 测试允许的命令
   const testCases = [

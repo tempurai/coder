@@ -1,0 +1,51 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Output directories
+dist/
+build/
+coverage/
+.out/
+.tmp/
+.cache/
+
+# Environment variables
+.env
+.env.test
+.env.production
+.env.local
+
+# Logs
+logs
+*.log
+*.log.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+
+# CLI specific
+bin/
+*.exe
+*.out
+*.app
+
+# Optional lock files (pick one package manager)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+dist/
+.claude/
+.tempurai/
+
+listed.txt

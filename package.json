@@ -1,0 +1,65 @@
+{
+  "name": "tempurai",
+  "version": "1.0.0",
+  "description": "AI-assisted programming CLI tool",
+  "main": "dist/index.js",
+  "bin": {
+    "tempurai": "dist/cli/index.js"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "jest",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "dev": "ts-node src/cli/index.ts",
+    "prepare": "npm run build",
+    "postpack": "rm -f *.tgz"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/html-to-text": "^9.0.4",
+    "@types/node": "^24.3.0",
+    "concurrently": "^9.2.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.9",
+    "@ai-sdk/cohere": "^2.0.7",
+    "@ai-sdk/google": "^2.0.11",
+    "@ai-sdk/mistral": "^2.0.12",
+    "@ai-sdk/openai": "^2.0.23",
+    "@babel/parser": "^7.28.3",
+    "@babel/traverse": "^7.28.3",
+    "@fastify/deepmerge": "^3.1.0",
+    "@mastra/core": "^0.15.2",
+    "@modelcontextprotocol/sdk": "^1.17.4",
+    "@types/babel__traverse": "^7.28.0",
+    "@types/react": "^19.1.12",
+    "@typescript-eslint/parser": "^8.41.0",
+    "@typescript-eslint/typescript-estree": "^8.41.0",
+    "acorn": "^8.15.0",
+    "acorn-walk": "^8.3.4",
+    "ai": "^5.0.28",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "html-to-text": "^9.0.5",
+    "ink": "^6.2.3",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "mastra": "^0.11.2",
+    "prettier": "^3.6.2",
+    "react": "^19.1.1",
+    "socket.io": "^4.8.1",
+    "undici": "^7.15.0",
+    "zod": "^3.25.76"
+  }
+}

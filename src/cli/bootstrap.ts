@@ -8,7 +8,7 @@ import { getContainer } from '../di/container.js';
 import { TYPES } from '../di/container.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
 import { SessionService } from '../session/SessionService.js';
-import { startEnhancedInkUI } from './InkUI.js';
+import { startInkUI } from './InkUI.js';
 
 /**
  * 应用启动模式
@@ -93,7 +93,7 @@ export class ApplicationBootstrap {
       console.log('✅ 新的依赖注入架构已初始化');
 
       // 启动InkUI界面
-      await startEnhancedInkUI(sessionService);
+      await startInkUI(sessionService);
 
     } catch (error) {
       console.error('❌ 启动代码编辑界面失败:', error instanceof Error ? error.message : '未知错误');

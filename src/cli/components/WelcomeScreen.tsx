@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../themes/index.js';
 
 interface WelcomeScreenProps {
@@ -9,53 +9,52 @@ interface WelcomeScreenProps {
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onDismiss }) => {
   const { currentTheme } = useTheme();
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      onDismiss();
-    }, 3000); // Auto-dismiss after 3 seconds
+  useInput(() => onDismiss());
 
-    return () => clearTimeout(timer);
+  React.useEffect(() => {
+    const t = setTimeout(onDismiss, 3000);
+    return () => clearTimeout(t);
   }, [onDismiss]);
 
-  const logoLines = [
-    "╔════════════════════════════════════════╗",
-    "║                                        ║",
-    "║        ████████                       ║",
-    "║           ██   ██████  ██    ██ ██████ ║",
-    "║           ██   ██      ███  ███ ██     ║", 
-    "║           ██   ████    ████████ ████   ║",
-    "║           ██   ██      ██  ██ ██ ██     ║",
-    "║           ██   ██████  ██    ██ ██████ ║",
-    "║                                        ║",
-    "║    ███████ ████████ ██   ██ ████████   ║",
-    "║    ██         ██    ██   ██    ██      ║",
-    "║    ███████    ██    ███████    ██      ║",
-    "║         ██    ██    ██   ██    ██      ║",
-    "║    ███████    ██    ██   ██ ████████   ║",
-    "║                                        ║",
-    "║              TEMPURAI                  ║",
-    "║        AI-Powered Code Assistant       ║",
-    "║                                        ║",
-    "╚════════════════════════════════════════╝"
-  ];
+  const logo = String.raw`
+   _____                                    _ 
+|_   _|                                  (_)
+  | | ___ _ __ ___  _ __  _   _ _ __ __ _ _ 
+  | |/ _ \ '_ \` _ \| '_ \| | | | '__/ _\` | |
+  | |  __/ | | | | | |_) | |_| | | | (_| | |
+  \_/\___|_| |_| |_| .__/ \__,_|_|  \__,_|_|
+                   | |                      
+                   |_|                      
+  `.trim();
+
+  const c = currentTheme?.colors ?? ({} as any);
+  const border = c.ui?.border ?? 'gray';
+  const primary = c.primary ?? 'cyan';
+  const textSecondary = c.text?.secondary ?? 'white';
+  const textMuted = c.text?.muted ?? 'gray';
+
+  // 固定宽度：可按需调整，例如 72
+  const FIXED_WIDTH = 72;
 
   return (
-    <Box flexDirection="column" alignItems="center" justifyContent="center" minHeight={25}>
-      <Box flexDirection="column" alignItems="center" marginBottom={2}>
-        {logoLines.map((line, index) => (
-          <Text key={index} color={currentTheme.colors.primary}>
-            {line}
-          </Text>
-        ))}
-      </Box>
-      
-      <Box flexDirection="column" alignItems="center" marginTop={1}>
-        <Text color={currentTheme.colors.text.secondary}>
-          Initializing enhanced interface...
-        </Text>
-        <Text color={currentTheme.colors.text.muted}>
-          Press any key to continue
-        </Text>
+    <Box width='100%' justifyContent='flex-start' minHeight={25}>
+      <Box width={FIXED_WIDTH} flexDirection='column' alignItems='flex-start'>
+        {/* ASCII Logo，带左右边框与内边距 */}
+        <Box borderStyle='round' borderColor={border} paddingX={2} paddingY={1} marginY={1} width='100%' justifyContent='center'>
+          <Box flexDirection='column' alignItems='center'>
+            {logo.split('\n').map((line, i) => (
+              <Text key={i} color={primary}>
+                {line}
+              </Text>
+            ))}
+          </Box>
+        </Box>
+
+        {/* 文案区 */}
+        <Box flexDirection='column' alignItems='center' width='100%' borderStyle='round' borderColor={border} paddingX={2} paddingY={1}>
+          <Text color={textSecondary}>Initializing enhanced interface...</Text>
+          <Text color={textMuted}>Press any key to continue</Text>
+        </Box>
       </Box>
     </Box>
   );

@@ -33,6 +33,10 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }, []);
 
+  // Utility function to mask sensitive information
+  const mask = (val?: string) =>
+    val ? `${val.slice(0, 6)}…${val.slice(-4)}` : 'not set';
+
   // Handle keyboard shortcuts
   useInput((input: string, key: any) => {
     // Always handle exit
@@ -80,8 +84,8 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   // Handle theme selection
   const handleThemeSelected = useCallback(() => {
-    setIsFirstRun(false);
     setAppState('ready');
+    // Keep isFirstRun true to show startup info
   }, []);
 
   // Subscribe to events from SessionService
@@ -229,6 +233,11 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         return;
       }
 
+      // Hide startup info after first interaction
+      if (isFirstRun) {
+        setIsFirstRun(false);
+      }
+
       // Handle special commands
       if (handleSpecialCommands(userInput)) {
         setInput('');
@@ -298,14 +307,26 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   return (
     <Box flexDirection='column'>
       <TaskContainer events={events}>
+        {/* Startup info - show on first run */}
+        {isFirstRun && (
+          <Box marginY={1} padding={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
+            <Text color={currentTheme.colors.info}>• Welcome!</Text>
+            <Text></Text>
+            <Text>  Type /help for help, /status for your current setup</Text>
+            <Text></Text>
+            <Text color={currentTheme.colors.text.muted}>cwd: {process.cwd()}</Text>
+            <Text></Text>
+            <Text>  Overrides (via env):</Text>
+            <Text></Text>
+            <Text color={currentTheme.colors.text.muted}>  • API Key: {mask(process.env.API_KEY || process.env.OPENAI_API_KEY)}</Text>
+            <Text color={currentTheme.colors.text.muted}>  • API Base URL: {process.env.API_BASE_URL || process.env.OPENAI_BASE_URL || 'not set'}</Text>
+          </Box>
+        )}
+        
         {/* Current Activity Indicator */}
         {isProcessing && (
           <Box marginY={1}>
-            <ProgressIndicator 
-              phase="processing"
-              message={currentActivity}
-              isActive={isProcessing}
-            />
+            <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
           </Box>
         )}
 
@@ -315,17 +336,13 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
             {Array.from(reactIterations.entries())
               .sort(([a], [b]) => a - b)
               .map(([iterationNum, data]) => (
-                <ReActIteration
-                  key={iterationNum}
-                  data={data}
-                  showDetails={expandedIterations.has(iterationNum)}
-                />
+                <ReActIteration key={iterationNum} data={data} showDetails={expandedIterations.has(iterationNum)} />
               ))}
           </Box>
         )}
       </TaskContainer>
 
-      {/* Enhanced Input Section */}
+      {/* Input Section */}
       <Box marginTop={2} borderTop borderColor={currentTheme.colors.ui.border} paddingTop={1}>
         <DynamicInput value={input} onChange={setInput} onSubmit={handleSubmit} placeholder='Ask me anything or type ? for help...' isProcessing={isProcessing} />
       </Box>
@@ -342,8 +359,8 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => {
   );
 };
 
-// Enhanced startup function
-export const startEnhancedInkUI = async (sessionService: SessionService) => {
-  console.log('🎨 Starting Enhanced InkUI Interface...');
+// startup function
+export const startInkUI = async (sessionService: SessionService) => {
+  console.log('🎨 Starting InkUI Interface...');
   render(<CodeAssistantApp sessionService={sessionService} />);
 };

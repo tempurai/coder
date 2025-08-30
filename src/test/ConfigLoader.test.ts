@@ -29,7 +29,7 @@ describe('ConfigLoader Enhanced Initialization', () => {
       jest.spyOn(os, 'homedir').mockReturnValue(os.tmpdir());
 
       try {
-        await ConfigLoader.initializeConfigOnStartup();
+        (new ConfigInitializer()).createProjectFiles();
 
         // Check if config file was created
         expect(fs.existsSync(testConfigFile)).toBe(true);
@@ -58,7 +58,7 @@ describe('ConfigLoader Enhanced Initialization', () => {
         fs.writeFileSync(testConfigFile, '{"model": "existing"}', 'utf8');
         const originalContent = fs.readFileSync(testConfigFile, 'utf8');
 
-        await ConfigLoader.initializeConfigOnStartup();
+        (new ConfigInitializer()).createProjectFiles();
 
         // File should not have been overwritten
         const newContent = fs.readFileSync(testConfigFile, 'utf8');
@@ -76,7 +76,7 @@ describe('ConfigLoader Enhanced Initialization', () => {
 
       try {
         const initializer = new ConfigInitializer();
-        await initializer.initializeConfig();
+        await initializer.createProjectFiles();
 
         // Check if config file was created
         expect(fs.existsSync(testConfigFile)).toBe(true);
@@ -104,7 +104,7 @@ describe('ConfigLoader Enhanced Initialization', () => {
         fs.writeFileSync(testConfigFile, '{"model": "test"}', 'utf8');
 
         const initializer = new ConfigInitializer();
-        expect(initializer.configExists()).toBe(true);
+        expect(initializer.globalConfigExists()).toBe(true);
       } finally {
         (os.homedir as jest.Mock).mockRestore();
       }
@@ -116,11 +116,11 @@ describe('ConfigLoader Enhanced Initialization', () => {
 
       try {
         const initializer = new ConfigInitializer();
-        initializer.createConfigSync();
+        initializer.createProjectFiles();
 
         // Check if config file was created (but not context file)
         expect(fs.existsSync(testConfigFile)).toBe(true);
-        
+
         const configContent = fs.readFileSync(testConfigFile, 'utf8');
         expect(configContent).toContain('gpt-4o-mini');
       } finally {

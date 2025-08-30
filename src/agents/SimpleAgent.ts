@@ -395,7 +395,7 @@ You MUST respond in this exact XML format. No other format is acceptable:
 ## 📊 CONFIGURATION
 - Model: ${this.getModelDisplayName()}
 - Temperature: ${this.config.temperature}
-- Web search: ${this.config.tavilyApiKey ? 'Available (Tavily)' : 'Not available'}
+- Web search: ${this.config.tools.tavilyApiKey ? 'Available (Tavily)' : 'Not available'}
 - MCP Tools: ${this.mcpTools.length} external tools loaded
 
 You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and execute precisely.`;

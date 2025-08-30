@@ -121,7 +121,7 @@ export const createWebSearchTool = (config: Config) => tool({
         };
       }
 
-      if (!config.tavilyApiKey) {
+      if (!config.tools.tavilyApiKey) {
         return {
           summary: '',
           sources: [],
@@ -136,7 +136,7 @@ export const createWebSearchTool = (config: Config) => tool({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          api_key: config.tavilyApiKey,
+          api_key: config.tools.tavilyApiKey,
           query: query.trim(),
           search_depth: 'basic',
           include_answer: true,

@@ -146,7 +146,7 @@ export class ConfigValidator {
         if (config.apiKey || (config.models && config.models.length > 0 && config.models[0].apiKey)) score += 2;
 
         // API密钥配置 (20%)
-        if (config.tavilyApiKey) score += 1;
+        if (config.tools.tavilyApiKey) score += 1;
 
         // 工具配置完整性 (30%)
         if (config.tools?.shellExecutor) score += 1;

@@ -1,31 +1,16 @@
 {
-  "models": [{
-    "provider": "openai",
-    "name": "gpt-4o-mini",
-    "apiKey": "your-openai-api-key-here"
-  }],
+  "models": [
+    {
+      "provider": "openai",
+      "name": "gpt-4o-mini",
+      "apiKey": "your-openai-api-key-here"
+    }
+  ],
   "temperature": 0.3,
   "maxTokens": 4096,
-  "tavilyApiKey": "your-tavily-api-key-here",
-  "mcpServers": {
-    "filesystem": {
-      "name": "filesystem",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"],
-      "env": {
-        "NODE_ENV": "production"
-      }
-    },
-    "brave-search": {
-      "name": "brave-search",
-      "command": "uvx",
-      "args": ["mcp-server-brave-search"],
-      "env": {
-        "BRAVE_API_KEY": "your-brave-search-api-key"
-      }
-    }
-  },
+  "mcpServers": {},
   "tools": {
+    "tavilyApiKey": "your-tavily-api-key-here",
     "shellExecutor": {
       "defaultTimeout": 30000,
       "maxRetries": 3,

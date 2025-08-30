@@ -1,0 +1,56 @@
+{
+  "models": [
+    {
+      "_comment": "OpenAI GPT 模型（默认使用第一个模型）",
+      "provider": "openai",
+      "name": "gpt-4o-mini",
+      "apiKey": "your-openai-api-key-here"
+    },
+    {
+      "_comment": "Google Gemini 模型示例",
+      "provider": "google",
+      "name": "gemini-1.5-pro",
+      "apiKey": "your-google-api-key-here"
+    }
+  ],
+  "temperature": 0.3,
+  "maxTokens": 4096,
+  "tools": {
+    "tavilyApiKey": "your-tavily-api-key-here",
+    "shellExecutor": {
+      "defaultTimeout": 30000,
+      "maxRetries": 3,
+      "security": {
+        "allowlist": ["git", "npm", "node", "pnpm", "yarn", "ls", "cat", "echo", "mkdir", "touch"],
+        "blocklist": ["rm", "sudo", "chmod", "chown", "dd", "format", "del", "deltree"],
+        "allowUnlistedCommands": false,
+        "allowDangerousCommands": false
+      }
+    },
+    "webTools": {
+      "requestTimeout": 15000,
+      "maxContentLength": 10000,
+      "userAgent": "Tempurai-Bot/1.0 (Security-Enhanced)",
+      "enableCache": false
+    }
+  },
+  "mcpServers": {
+    "_comment": "取消注释以下配置来启用 MCP 服务器",
+    "_filesystem_example": {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/safe/allowed/path"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
+    "_brave_search_example": {
+      "name": "brave-search",
+      "command": "uvx",
+      "args": ["mcp-server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "your-brave-search-api-key"
+      }
+    }
+  }
+}

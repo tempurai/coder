@@ -180,7 +180,7 @@ export class ApplicationBootstrap {
     console.log(`   最大Token: ${config.maxTokens}`);
     console.log(`   API密钥: ${config.apiKey ? '✅ 已加载' : '❌ 缺失'}`);
     console.log(`   自定义上下文: ${config.customContext ? '✅ 已加载' : '❌ 未找到'}`);
-    console.log(`   网页搜索: ${config.tavilyApiKey ? '✅ 启用' : '❌ 禁用'}`);
+    console.log(`   网页搜索: ${config.tools.tavilyApiKey ? '✅ 启用' : '❌ 禁用'}`);
     console.log(`   配置文件: ${configLoader.getConfigPath()}`);
   }
 
@@ -241,9 +241,6 @@ export function parseArguments(args: string[]): LaunchContext {
  * @param args 命令行参数
  */
 export async function bootstrapApplication(args: string[] = []): Promise<void> {
-  // 在任何其他操作之前初始化配置
-  await ConfigLoader.initializeConfigOnStartup();
-  
   const context = parseArguments(args);
   const bootstrap = new ApplicationBootstrap();
   await bootstrap.launch(context);

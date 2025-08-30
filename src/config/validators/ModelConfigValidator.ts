@@ -186,8 +186,8 @@ export class ModelConfigValidator {
         }
 
         // 检查Tavily API密钥格式
-        if (config.tavilyApiKey) {
-            if (config.tavilyApiKey.length < 10) {
+        if (config.tools.tavilyApiKey) {
+            if (config.tools.tavilyApiKey.length < 10) {
                 result.warnings.push('Tavily API key seems too short');
             }
         } else {

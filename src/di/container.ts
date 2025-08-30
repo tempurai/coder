@@ -2,26 +2,20 @@ import 'reflect-metadata';
 import { Container } from 'inversify';
 import { Config, ConfigLoader } from '../config/ConfigLoader.js';
 import { DefaultModelFactory } from '../models/index.js';
-import { SimpleAgent } from '../agents/SimpleAgent.js';
-import { ReActAgent } from '../agents/ReActAgent.js';
+import { ToolAgent } from '../agents/tool_agent/ToolAgent.js';
+import { ReActAgent } from '../agents/react_agent/ReActAgent.js';
 import { SessionService } from '../session/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
-import { IReActAgentFactory, ISnapshotManagerFactory } from './interfaces.js';
+import { ISnapshotManagerFactory } from './interfaces.js';
 import { TYPES } from './types.js';
 import type { LanguageModel } from 'ai';
 
-// Re-export TYPES for backward compatibility
 export { TYPES } from './types.js';
 
-/**
- * 创建和配置依赖注入容器
- * @returns 配置好的Container实例
- */
 export function createContainer(): Container {
   const container = new Container();
 
-  // 1) 配置相关 - 标准构造函数注入
   container.bind<ConfigLoader>(TYPES.ConfigLoader)
     .to(ConfigLoader)
     .inSingletonScope();
@@ -33,21 +27,17 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  // 2) 模型工厂 - 负责创建各种AI模型
   container.bind<DefaultModelFactory>(TYPES.ModelFactory)
     .to(DefaultModelFactory)
     .inSingletonScope();
 
-  // 3) 语言模型 - 通过ModelFactory创建，使用第一个模型配置
   container.bind<LanguageModel>(TYPES.LanguageModel)
     .toDynamicValue(async () => {
       const config = container.get<Config>(TYPES.Config);
       const modelFactory = container.get<DefaultModelFactory>(TYPES.ModelFactory);
-      
       if (!config.models || config.models.length === 0) {
-        throw new Error('No models configured. Please add at least one model to the models array in your configuration.');
+        throw new Error('No models configured. Please add at least one model to your configuration.');
       }
-      
       const firstModel = config.models[0];
       console.log('🔄 正在初始化AI模型...');
       const model = await modelFactory.createModel(firstModel);
@@ -56,46 +46,21 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  // 4) 文件监听服务 - 使用toDynamicValue配置默认选项
   container.bind<FileWatcherService>(TYPES.FileWatcherService)
-    .toDynamicValue(() => {
-      const fileWatcherService = new FileWatcherService({
-        verbose: false,
-        debounceMs: 500,
-        maxWatchedFiles: 50,
-      });
-      console.log('✅ 文件监听服务已创建');
-      return fileWatcherService;
-    })
+    .to(FileWatcherService)
     .inSingletonScope();
 
-  // 4) SimpleAgent - 标准构造函数注入（同步创建）
-  container.bind<SimpleAgent>(TYPES.SimpleAgent)
-    .to(SimpleAgent)
+  container.bind<ToolAgent>(TYPES.ToolAgent)
+    .to(ToolAgent)
     .inSingletonScope();
 
-  // 5) UIEventEmitter - 事件系统
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter)
-    .toDynamicValue(() => new UIEventEmitter())
+    .to(UIEventEmitter)
     .inSingletonScope();
 
-  // 6) ReActAgent - 标准构造函数注入
-  container.bind<ReActAgent>(TYPES.ReActAgent)
-    .to(ReActAgent)
-    .inSingletonScope();
-
-  // 6) SessionService - 标准构造函数注入
   container.bind<SessionService>(TYPES.SessionService)
     .to(SessionService)
     .inSingletonScope();
-
-  // 7) 工厂函数 - 使用 toFactory（避免循环依赖）
-  container.bind<IReActAgentFactory>(TYPES.ReActAgentFactory)
-    .toFactory(() => {
-      return async (agent: SimpleAgent) => {
-        return container.get<ReActAgent>(TYPES.ReActAgent);
-      };
-    });
 
   container.bind<ISnapshotManagerFactory>(TYPES.SnapshotManagerFactory)
     .toFactory(() => {
@@ -105,39 +70,28 @@ export function createContainer(): Container {
       };
     });
 
-  // 8) 异步初始化的服务（用于需要完全初始化的实例）
-  container.bind<() => Promise<SimpleAgent>>(TYPES.InitializedSimpleAgent)
+  // 创建一个工厂来确保 ToolAgent 在被使用前已完成异步初始化
+  container.bind<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent)
     .toFactory(() => {
+      let initializedAgent: ToolAgent | null = null;
       return async () => {
-        const agent = container.get<SimpleAgent>(TYPES.SimpleAgent);
-        const config = container.get<Config>(TYPES.Config);
+        if (initializedAgent) return initializedAgent;
 
-        console.log('✅ Agent已创建，开始异步初始化...');
-        await agent.initializeAsync(config.customContext);
-        console.log('✅ Agent异步初始化完成');
-
-        const initStatus = agent.getInitializationStatus();
-        if (!initStatus.allLoaded) {
-          console.warn('⚠️ Agent初始化不完整，某些功能可能受限');
-          if (initStatus.error) {
-            console.warn(`⚠️ 初始化错误: ${initStatus.error}`);
-          }
-        } else {
-          console.log(`✅ 所有工具已加载完成 (${initStatus.toolCount}个工具)`);
-        }
-
+        const agent = container.get<ToolAgent>(TYPES.ToolAgent);
+        console.log('✅ ToolAgent已创建，开始异步初始化...');
+        await agent.initializeAsync();
+        console.log('✅ ToolAgent异步初始化完成');
+        initializedAgent = agent;
         return agent;
       };
     });
 
+  // 创建一个工厂来获取完全初始化好的 SessionService
   container.bind<() => Promise<SessionService>>(TYPES.InitializedSessionService)
     .toFactory(() => {
       return async () => {
-        // 获取完全初始化的SimpleAgent
-        const agentFactory = container.get<() => Promise<SimpleAgent>>(TYPES.InitializedSimpleAgent);
-        const agent = await agentFactory();
-
-        // 然后获取SessionService并手动设置依赖
+        const agentFactory = container.get<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent);
+        await agentFactory(); // 确保 ToolAgent 已初始化
         const sessionService = container.get<SessionService>(TYPES.SessionService);
         console.log('✅ 会话管理服务已初始化');
         return sessionService;
@@ -148,15 +102,8 @@ export function createContainer(): Container {
   return container;
 }
 
-/**
- * 全局容器实例（延迟初始化）
- */
 let _container: Container | null = null;
 
-/**
- * 获取全局容器实例
- * @returns Container实例
- */
 export function getContainer(): Container {
   if (!_container) {
     _container = createContainer();
@@ -164,9 +111,6 @@ export function getContainer(): Container {
   return _container;
 }
 
-/**
- * 清理和重置容器（主要用于测试）
- */
 export function resetContainer(): void {
   if (_container) {
     _container.unbindAll();

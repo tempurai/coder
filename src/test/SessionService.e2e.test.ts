@@ -1,6 +1,6 @@
 import { Container } from 'inversify';
 import { SessionService, TaskExecutionResult, ProcessedInput, SessionStats } from '../session/SessionService.js';
-import { SimpleAgent } from '../agents/SimpleAgent.js';
+import { SimpleAgent } from '../agents/tool_agent/ToolAgent.js';
 import { createTestContainer } from './testContainer.js';
 import { mockAISDK } from './MockAISDK.js';
 import { TEST_CONFIG, MOCK_LLM_RESPONSES } from './config.js';
@@ -14,14 +14,14 @@ describe('SessionService E2E Tests', () => {
   beforeEach(async () => {
     // Reset mock state before each test
     mockAISDK.reset();
-    
+
     // Create fresh container for each test
     container = createTestContainer();
-    
+
     // Get initialized session service from factory
     const sessionFactory = container.get<() => Promise<SessionService>>(TYPES.InitializedSessionService);
     sessionService = await sessionFactory();
-    
+
     // Get agent for direct testing
     agent = container.get<SimpleAgent>(TYPES.SimpleAgent);
   });
@@ -55,7 +55,7 @@ describe('SessionService E2E Tests', () => {
 
     test('should process user input', async () => {
       const input = 'Test input message';
-      
+
       const result = await sessionService.processUserInput(input);
 
       expect(result).toBeDefined();
@@ -112,7 +112,7 @@ describe('SessionService E2E Tests', () => {
     test('should track session stats', async () => {
       // Add a small delay to ensure session duration is measurable
       await new Promise(resolve => setTimeout(resolve, 10));
-      
+
       // Process a few tasks to generate stats
       await sessionService.processTask('Test task 1');
       await sessionService.processTask('Test task 2');
@@ -137,7 +137,7 @@ describe('SessionService E2E Tests', () => {
   describe('Event System', () => {
     test('should emit task events', (done) => {
       let eventCount = 0;
-      
+
       sessionService.events.on('task_started', () => {
         eventCount++;
         if (eventCount === 1) {
@@ -181,9 +181,9 @@ describe('SessionService E2E Tests', () => {
   describe('Performance', () => {
     test('should complete tasks in reasonable time', async () => {
       const start = Date.now();
-      
+
       await sessionService.processTask('Simple performance test');
-      
+
       const duration = Date.now() - start;
       expect(duration).toBeLessThan(10000); // 10 seconds max
     });
@@ -196,7 +196,7 @@ describe('SessionService E2E Tests', () => {
       ];
 
       const results = await Promise.all(promises);
-      
+
       expect(results).toHaveLength(3);
       results.forEach(result => {
         expect(result).toBeDefined();

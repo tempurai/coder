@@ -12,35 +12,29 @@ interface EventStreamProps {
 
 export const EventStream: React.FC<EventStreamProps> = ({ events }) => {
   return (
-    <Box flexDirection="column" marginY={1}>
+    <Box flexDirection='column' marginY={1}>
       {events.map((event, index) => {
         switch (event.type) {
           case UIEventType.ReActIteration:
             return (
               <EventItem key={event.id} event={event} index={index}>
-                <Box marginLeft={2}>
+                <Text>
                   🔄 Iteration {(event as any).iteration}/{(event as any).maxIterations}
-                </Box>
+                </Text>
               </EventItem>
             );
 
           case UIEventType.ThoughtGenerated:
             return (
               <EventItem key={event.id} event={event} index={index}>
-                <ThoughtSection 
-                  thought={(event as any).thought} 
-                  iteration={(event as any).iteration}
-                />
+                <ThoughtSection thought={(event as any).thought} iteration={(event as any).iteration} />
               </EventItem>
             );
 
           case UIEventType.PlanUpdated:
             return (
               <EventItem key={event.id} event={event} index={index}>
-                <PlanSection 
-                  plan={(event as any).plan}
-                  iteration={(event as any).iteration}
-                />
+                <PlanSection plan={(event as any).plan} iteration={(event as any).iteration} />
               </EventItem>
             );
 
@@ -48,10 +42,10 @@ export const EventStream: React.FC<EventStreamProps> = ({ events }) => {
           case UIEventType.ToolCallStarted:
             return (
               <EventItem key={event.id} event={event} index={index}>
-                <ActionSection 
+                <ActionSection
                   action={{
                     tool: (event as any).toolName || (event as any).tool,
-                    args: (event as any).args
+                    args: (event as any).args,
                   }}
                   iteration={(event as any).iteration}
                 />
@@ -61,12 +55,12 @@ export const EventStream: React.FC<EventStreamProps> = ({ events }) => {
           case UIEventType.ToolCallCompleted:
             return (
               <EventItem key={event.id} event={event} index={index}>
-                <ActionSection 
+                <ActionSection
                   action={{
                     tool: (event as any).toolName,
                     args: {},
                     result: (event as any).result,
-                    error: (event as any).error
+                    error: (event as any).error,
                   }}
                   iteration={(event as any).iteration}
                 />
@@ -76,19 +70,17 @@ export const EventStream: React.FC<EventStreamProps> = ({ events }) => {
           case UIEventType.ObservationMade:
             return (
               <EventItem key={event.id} event={event} index={index}>
-                <Box marginLeft={2} paddingX={1} borderStyle="single" borderColor="blue">
-                  <Box flexDirection="column">
+                <Box marginLeft={2} paddingX={1} borderStyle='single' borderColor='blue'>
+                  <Box flexDirection='column'>
                     <Box marginBottom={1}>
-                      <Text color="blue" bold>👁️ Observation</Text>
+                      <Text color='blue' bold>
+                        👁️ Observation
+                      </Text>
                     </Box>
-                    <Text>
-                      {(event as any).observation}
-                    </Text>
+                    <Text>{(event as any).observation}</Text>
                     {(event as any).analysis && (
                       <Box marginTop={1}>
-                        <Text color="dim">
-                          Analysis: {(event as any).analysis}
-                        </Text>
+                        <Text color='dim'>Analysis: {(event as any).analysis}</Text>
                       </Box>
                     )}
                   </Box>

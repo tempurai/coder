@@ -4,7 +4,7 @@ import { TYPES } from '../di/types.js';
 import { TEST_CONFIG } from './config.js';
 import { mockAISDK } from './MockAISDK.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
-import { SimpleAgent } from '../agents/SimpleAgent.js';
+import { SimpleAgent } from '../agents/tool_agent/ToolAgent.js';
 import { SessionService } from '../session/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/index.js';
@@ -48,8 +48,8 @@ class MockSimpleAgent extends SimpleAgent {
   }
 
   async processInput(
-    input: string, 
-    files: string[] = [], 
+    input: string,
+    files: string[] = [],
     progressCallback?: (chunk: any) => void,
     eventCallback?: (event: any) => void
   ): Promise<string> {
@@ -61,8 +61,8 @@ class MockSimpleAgent extends SimpleAgent {
   }
 
   async processInputStream(
-    input: string, 
-    files: string[] = [], 
+    input: string,
+    files: string[] = [],
     progressCallback?: (chunk: any) => void,
     eventCallback?: (event: any) => void
   ): Promise<AsyncIterable<string>> {
@@ -81,24 +81,24 @@ export function createTestContainer(): Container {
 
   // Bind configuration
   container.bind<any>(TYPES.Config).toConstantValue(TEST_CONFIG);
-  
+
   // Bind mock language model
   container.bind<LanguageModel>(TYPES.LanguageModel).toDynamicValue(() => {
     return mockAISDK.createMockModel() as unknown as LanguageModel;
   }).inSingletonScope();
-  
+
   // Bind mock config loader
   container.bind<ConfigLoader>(TYPES.ConfigLoader).to(MockConfigLoader).inSingletonScope();
-  
+
   // Bind mock agent
   container.bind<SimpleAgent>(TYPES.SimpleAgent).to(MockSimpleAgent).inSingletonScope();
-  
+
   // Bind file watcher service
   container.bind<FileWatcherService>(TYPES.FileWatcherService).to(FileWatcherService).inSingletonScope();
-  
+
   // Bind event emitter
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter).toDynamicValue(() => new UIEventEmitter()).inSingletonScope();
-  
+
   // Mock factories that return promises
   container.bind(TYPES.SnapshotManagerFactory).toDynamicValue(() => {
     return async () => ({
@@ -158,7 +158,7 @@ export function createTestContainer(): Container {
 
       // Initialize the agent
       await agent.initializeAsync();
-      
+
       return sessionService;
     };
   });

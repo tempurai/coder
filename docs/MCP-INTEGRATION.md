@@ -13,7 +13,7 @@ Tempurai Coder 现在支持模型上下文协议 (MCP)，允许动态加载外�
 
 ## 配置 MCP 服务器
 
-在您的配置文件 (`~/.temurai/config.json`) 中添加 `mcpServers` 字段：
+在您的配置文件 (`~/.tempurai/config.json`) 中添加 `mcpServers` 字段：
 
 ```json
 {
@@ -21,7 +21,7 @@ Tempurai Coder 现在支持模型上下文协议 (MCP)，允许动态加载外�
   "apiKey": "your-openai-api-key",
   "mcpServers": {
     "filesystem": {
-      "name": "filesystem", 
+      "name": "filesystem",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/safe/directory"],
       "env": {
@@ -30,7 +30,7 @@ Tempurai Coder 现在支持模型上下文协议 (MCP)，允许动态加载外�
     },
     "brave-search": {
       "name": "brave-search",
-      "command": "uvx", 
+      "command": "uvx",
       "args": ["mcp-server-brave-search"],
       "env": {
         "BRAVE_API_KEY": "your-brave-api-key"
@@ -52,6 +52,7 @@ Tempurai Coder 现在支持模型上下文协议 (MCP)，允许动态加载外�
 ## 热门 MCP 服务器
 
 ### 1. 文件系统服务器
+
 ```json
 {
   "filesystem": {
@@ -62,13 +63,15 @@ Tempurai Coder 现在支持模型上下文协议 (MCP)，允许动态加载外�
   }
 }
 ```
+
 提供安全的文件系统访问能力。
 
 ### 2. GitHub 服务器
+
 ```json
 {
   "github": {
-    "name": "github", 
+    "name": "github",
     "command": "uvx",
     "args": ["mcp-server-github"],
     "env": {
@@ -77,19 +80,22 @@ Tempurai Coder 现在支持模型上下文协议 (MCP)，允许动态加载外�
   }
 }
 ```
+
 与 GitHub API 交互，管理仓库和问题。
 
 ### 3. 数据库服务器
+
 ```json
 {
   "sqlite": {
     "name": "sqlite",
-    "command": "uvx", 
+    "command": "uvx",
     "args": ["mcp-server-sqlite", "--db-path", "/path/to/database.db"],
     "env": {}
   }
 }
 ```
+
 查询和操作 SQLite 数据库。
 
 ## 查看已加载的 MCP 工具
@@ -110,16 +116,19 @@ Tempurai Coder 现在支持模型上下文协议 (MCP)，允许动态加载外�
 ## 故障排除
 
 ### 1. 工具未加载
+
 - 检查 MCP 服务器的命令和参数是否正确
 - 确认所需的依赖已安装 (如 `npx`, `uvx`)
 - 查看启动日志中的错误信息
 
 ### 2. 连接失败
+
 - 验证环境变量是否正确设置
 - 检查文件路径权限
 - 确认 MCP 服务器版本兼容性
 
 ### 3. 性能问题
+
 - MCP 工具调用可能比本地工具慢
 - 考虑为频繁使用的功能使用内置工具
 - 监控连接数量，避免过多服务器
@@ -127,6 +136,7 @@ Tempurai Coder 现在支持模型上下文协议 (MCP)，允许动态加载外�
 ## 开发自定义 MCP 服务器
 
 您可以使用任何语言开发自己的 MCP 服务器。参考官方文档：
+
 - [MCP 规范](https://modelcontextprotocol.io/docs)
 - [Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)

@@ -33,16 +33,16 @@ export interface SnapshotInfo {
 
 /**
  * 快照管理器 - 基于影子Git仓库
- * 类似Qwen Code的实现，创建独立的Git仓库来管理项目状态快照
+ * 实现真正的影子Git仓库：独立的.git目录，但工作树是项目根目录
  */
 export class SnapshotManager {
     private projectRoot: string;
-    private shadowRepoPath: string;
+    private shadowGitDir: string;
     private isInitialized: boolean = false;
 
     constructor(projectRoot: string, shadowDir: string = '.tempurai') {
         this.projectRoot = path.resolve(projectRoot);
-        this.shadowRepoPath = path.join(this.projectRoot, shadowDir, 'snapshots');
+        this.shadowGitDir = path.join(this.projectRoot, shadowDir, 'snapshots', '.git');
     }
 
     /**
@@ -52,18 +52,18 @@ export class SnapshotManager {
         if (this.isInitialized) return;
 
         try {
-            // 创建影子仓库目录
-            await fs.mkdir(this.shadowRepoPath, { recursive: true });
+            // 创建影子Git目录
+            await fs.mkdir(path.dirname(this.shadowGitDir), { recursive: true });
 
-            // 检查是否已经是Git仓库
+            // 检查是否已经初始化
             try {
-                await execAsync('git rev-parse --git-dir', { cwd: this.shadowRepoPath });
+                await this.execGitCommand('rev-parse --git-dir');
                 console.log('📁 影子Git仓库已存在');
             } catch {
                 // 初始化新的Git仓库
-                await execAsync('git init', { cwd: this.shadowRepoPath });
-                await execAsync('git config user.name "Tempurai Snapshot"', { cwd: this.shadowRepoPath });
-                await execAsync('git config user.email "snapshot@tempurai.local"', { cwd: this.shadowRepoPath });
+                await this.execGitCommand('init --bare');
+                await this.execGitCommand('config user.name "Tempurai Snapshot"');
+                await this.execGitCommand('config user.email "snapshot@tempurai.local"');
                 console.log('🆕 影子Git仓库已初始化');
             }
 
@@ -85,40 +85,44 @@ export class SnapshotManager {
         console.log(`📸 创建快照: ${description}`);
 
         try {
-            // 复制项目文件到影子仓库（排除.git和其他不需要的目录）
-            await this.copyProjectFiles();
-
-            // 将所有文件添加到Git
-            await execAsync('git add -A', { cwd: this.shadowRepoPath });
+            // 将所有文件添加到影子Git（排除主项目的.git和影子目录）
+            await this.execGitCommand('add -A');
+            await this.execGitCommand('reset HEAD .git/ .tempurai/ || true'); // 排除这些目录，失败不影响
 
             // 检查是否有变更需要提交
-            const { stdout: statusOutput } = await execAsync('git status --porcelain', {
-                cwd: this.shadowRepoPath
-            });
-
-            if (!statusOutput.trim()) {
-                // 没有变更，可能是重复快照
-                console.log('📝 项目状态无变化，跳过快照');
-                return {
-                    success: true,
-                    snapshotId,
-                    description: `${description} (no changes)`,
-                    timestamp,
-                    filesCount: 0
-                };
+            let statusOutput = '';
+            try {
+                const { stdout } = await this.execGitCommand('diff --cached --name-only');
+                statusOutput = stdout.trim();
+            } catch (error) {
+                // 如果这是第一次提交，diff --cached可能会失败，我们继续
+                console.log('首次提交或diff命令失败，继续创建快照');
             }
 
             // 创建提交
             const commitMessage = `📸 Snapshot: ${description}\n\nCreated: ${timestamp.toISOString()}\nID: ${snapshotId}`;
-            await execAsync(`git commit -m "${commitMessage}"`, { cwd: this.shadowRepoPath });
+            try {
+                await this.execGitCommand(`commit -m "${commitMessage}"`);
+            } catch (error) {
+                // 如果没有变更需要提交
+                if (error instanceof Error && error.message.includes('nothing to commit')) {
+                    console.log('📝 项目状态无变化，跳过快照');
+                    return {
+                        success: true,
+                        snapshotId,
+                        description: `${description} (no changes)`,
+                        timestamp,
+                        filesCount: 0
+                    };
+                }
+                throw error;
+            }
 
             // 获取提交哈希
-            const { stdout: commitHash } = await execAsync('git rev-parse HEAD', {
-                cwd: this.shadowRepoPath
-            });
+            const { stdout: commitHash } = await this.execGitCommand('rev-parse HEAD');
 
             // 统计文件数量
-            const filesCount = statusOutput.trim().split('\n').length;
+            const filesCount = statusOutput ? statusOutput.split('\n').length : 0;
 
             console.log(`✅ 快照已创建: ${snapshotId} (${filesCount} 文件)`);
 
@@ -149,9 +153,8 @@ export class SnapshotManager {
 
         try {
             // 查找对应的commit hash
-            const { stdout: logOutput } = await execAsync(
-                `git log --grep="ID: ${snapshotId}" --format="%H" -1`,
-                { cwd: this.shadowRepoPath }
+            const { stdout: logOutput } = await this.execGitCommand(
+                `log --grep="ID: ${snapshotId}" --format="%H" -1`
             );
 
             const commitHash = logOutput.trim();
@@ -162,18 +165,30 @@ export class SnapshotManager {
                 };
             }
 
-            // 检出到指定commit
-            await execAsync(`git checkout ${commitHash}`, { cwd: this.shadowRepoPath });
+            // 保存当前工作目录的变更（如果有的话）
+            try {
+                // 检查主项目Git仓库是否有未提交变更
+                const { stdout: mainStatus } = await execAsync('git status --porcelain', {
+                    cwd: this.projectRoot
+                });
 
-            // 复制文件回项目目录
-            const restoredFiles = await this.restoreProjectFiles();
+                if (mainStatus.trim()) {
+                    console.log('⚠️ 警告: 主项目有未提交变更，恢复快照可能会覆盖这些变更');
+                    // 这里可以选择先stash主项目的变更
+                }
+            } catch {
+                // 主项目可能不是Git仓库，继续
+            }
 
-            console.log(`✅ 快照已恢复: ${snapshotId} (${restoredFiles} 文件)`);
+            // 强制检出到指定commit（这会重置工作目录）
+            await this.execGitCommand(`checkout ${commitHash} -- .`);
+
+            console.log(`✅ 快照已恢复: ${snapshotId}`);
 
             return {
                 success: true,
                 snapshotId,
-                restoredFiles
+                restoredFiles: 0 // 影子Git不需要计算具体文件数
             };
 
         } catch (error) {
@@ -191,9 +206,8 @@ export class SnapshotManager {
         await this.initialize();
 
         try {
-            const { stdout: logOutput } = await execAsync(
-                'git log --format="%H|%s|%aI" --grep="📸 Snapshot:"',
-                { cwd: this.shadowRepoPath }
+            const { stdout: logOutput } = await this.execGitCommand(
+                'log --format="%H|%s|%aI" --grep="📸 Snapshot:"'
             );
 
             if (!logOutput.trim()) {
@@ -214,7 +228,7 @@ export class SnapshotManager {
                         commitHash,
                         description: descMatch[1],
                         timestamp: new Date(dateStr),
-                        filesCount: 0 // 需要时可以从commit统计
+                        filesCount: 0 // 可以通过git diff统计，但为性能考虑暂时设为0
                     });
                 }
             }
@@ -235,9 +249,13 @@ export class SnapshotManager {
         let cleanedCount = 0;
         for (const snapshot of snapshots) {
             if (snapshot.timestamp < cutoffDate) {
-                // 这里可以实现删除旧快照的逻辑
-                // 为了简单起见，我们保留所有快照
-                cleanedCount++;
+                try {
+                    // 这里可以实现删除旧提交的逻辑
+                    // 为了安全起见，暂时不自动删除
+                    cleanedCount++;
+                } catch {
+                    // 删除失败，继续下一个
+                }
             }
         }
 
@@ -253,54 +271,11 @@ export class SnapshotManager {
     }
 
     /**
-     * 复制项目文件到影子仓库
+     * 执行影子Git命令
      */
-    private async copyProjectFiles(): Promise<void> {
-        // 获取项目中应该包含的文件（排除.git等）
-        const { stdout: fileList } = await execAsync(
-            'find . -type f ! -path "./.git/*" ! -path "./.tempurai/*" ! -path "./node_modules/*" ! -name "*.log"',
-            { cwd: this.projectRoot }
-        );
-
-        // 清空影子仓库的文件（保留.git）
-        await execAsync('find . -type f ! -path "./.git/*" -delete', { cwd: this.shadowRepoPath });
-
-        // 复制文件
-        for (const relativePath of fileList.trim().split('\n').filter(f => f)) {
-            const sourcePath = path.join(this.projectRoot, relativePath);
-            const targetPath = path.join(this.shadowRepoPath, relativePath);
-
-            // 确保目标目录存在
-            await fs.mkdir(path.dirname(targetPath), { recursive: true });
-
-            // 复制文件
-            await fs.copyFile(sourcePath, targetPath);
-        }
-    }
-
-    /**
-     * 从影子仓库恢复文件到项目目录
-     */
-    private async restoreProjectFiles(): Promise<number> {
-        const { stdout: fileList } = await execAsync(
-            'find . -type f ! -path "./.git/*"',
-            { cwd: this.shadowRepoPath }
-        );
-
-        let restoredCount = 0;
-        for (const relativePath of fileList.trim().split('\n').filter(f => f)) {
-            const sourcePath = path.join(this.shadowRepoPath, relativePath);
-            const targetPath = path.join(this.projectRoot, relativePath);
-
-            // 确保目标目录存在
-            await fs.mkdir(path.dirname(targetPath), { recursive: true });
-
-            // 复制文件
-            await fs.copyFile(sourcePath, targetPath);
-            restoredCount++;
-        }
-
-        return restoredCount;
+    private async execGitCommand(command: string): Promise<{ stdout: string, stderr: string }> {
+        const fullCommand = `git --git-dir="${this.shadowGitDir}" --work-tree="${this.projectRoot}" ${command}`;
+        return await execAsync(fullCommand, { cwd: this.projectRoot });
     }
 
     /**
@@ -320,7 +295,7 @@ export class SnapshotManager {
         };
 
         try {
-            await fs.access(this.shadowRepoPath);
+            await fs.access(this.shadowGitDir);
             status.shadowRepoExists = true;
 
             if (this.isInitialized) {
@@ -339,7 +314,7 @@ export class SnapshotManager {
      * 清理资源
      */
     async cleanup(): Promise<void> {
-        // 如果需要，可以在这里实现清理逻辑
+        // 影子Git仓库是持久的，不需要特别清理
         console.log('🧹 SnapshotManager资源已清理');
     }
 }

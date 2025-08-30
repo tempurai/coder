@@ -106,7 +106,7 @@ export interface Config {
   maxTokens: number;
   /** 工具配置 */
   tools: ToolsConfig;
-  /** 用户自定义上下文（从.temurai.md读取） */
+  /** 用户自定义上下文（从.tempurai.md读取） */
   customContext?: string;
   /** MCP 服务器配置 */
   mcpServers?: Record<string, McpServerConfig>;
@@ -162,12 +162,12 @@ export class ConfigLoader {
    */
   public constructor() {
     // 全局配置路径（用户主目录）
-    this.globalConfigDir = path.join(os.homedir(), '.temurai');
+    this.globalConfigDir = path.join(os.homedir(), '.tempurai');
     this.globalConfigFilePath = path.join(this.globalConfigDir, 'config.json');
-    this.globalContextFilePath = path.join(this.globalConfigDir, '.temurai.md');
+    this.globalContextFilePath = path.join(this.globalConfigDir, '.tempurai.md');
 
     // 项目本地配置路径（当前工作目录）
-    this.projectConfigDir = path.join(process.cwd(), '.temurai');
+    this.projectConfigDir = path.join(process.cwd(), '.tempurai');
     this.projectConfigFilePath = path.join(this.projectConfigDir, 'config.json');
     this.projectContextFilePath = path.join(this.projectConfigDir, 'directives.md');
 
@@ -274,8 +274,8 @@ export class ConfigLoader {
 
   /**
    * 加载用户自定义上下文
-   * 优先从项目本地的 ./.temurai/directives.md 文件中读取
-   * 如果不存在，则从全局的 ~/.temurai/.temurai.md 文件中读取
+   * 优先从项目本地的 ./.tempurai/directives.md 文件中读取
+   * 如果不存在，则从全局的 ~/.tempurai/.tempurai.md 文件中读取
    * @returns 自定义上下文内容，如果文件不存在或读取失败则返回undefined
    */
   private loadCustomContext(): string | undefined {
@@ -293,7 +293,7 @@ export class ConfigLoader {
       console.warn(`⚠️ Failed to load project directives: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
-    // Fallback到全局的 .temurai.md
+    // Fallback到全局的 .tempurai.md
     try {
       if (fs.existsSync(this.globalContextFilePath)) {
         const contextContent = fs.readFileSync(this.globalContextFilePath, 'utf8');
@@ -314,8 +314,8 @@ export class ConfigLoader {
    * 从文件加载配置
    * 实现"全局默认 + 项目覆盖"策略：
    * 1. 从默认配置开始
-   * 2. 加载并合并全局配置（~/.temurai/config.json）
-   * 3. 加载并合并项目配置（./.temurai/config.json）
+   * 2. 加载并合并全局配置（~/.tempurai/config.json）
+   * 3. 加载并合并项目配置（./.tempurai/config.json）
    * 4. 加载自定义上下文（优先项目本地，fallback到全局）
    * @returns 加载的配置对象
    */
@@ -377,7 +377,7 @@ export class ConfigLoader {
       console.log(`📁 Created default global configuration at ${this.globalConfigFilePath}`);
       console.log('💡 Please edit this file to add your API keys and customize settings.');
       console.log(`💡 You can also create ${this.globalContextFilePath} for global context.`);
-      console.log(`💡 Or create ./.temurai/config.json and ./.temurai/directives.md for project-specific settings.`);
+      console.log(`💡 Or create ./.tempurai/config.json and ./.tempurai/directives.md for project-specific settings.`);
     } catch (error) {
       console.error(`❌ Failed to create default config: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

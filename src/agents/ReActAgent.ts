@@ -4,11 +4,11 @@ import { injectable, inject } from 'inversify';
 import { TYPES } from '../di/types.js';
 import { SimpleAgent } from './SimpleAgent.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
-import { 
-  UIEventType, 
-  ReActIterationStartedEvent, 
-  ThoughtGeneratedEvent, 
-  PlanUpdatedEvent, 
+import {
+  UIEventType,
+  ReActIterationStartedEvent,
+  ThoughtGeneratedEvent,
+  PlanUpdatedEvent,
   ActionSelectedEvent,
   ToolCallStartedEvent,
   ToolCallCompletedEvent,
@@ -90,7 +90,7 @@ export class ReActAgent {
 
     // 设置项目目录和状态文件路径
     this.projectRoot = process.cwd();
-    this.statusDir = path.join(this.projectRoot, '.temurai');
+    this.statusDir = path.join(this.projectRoot, '.tempurai');
     this.planFilePath = path.join(this.statusDir, 'plan.xml');
   }
 
@@ -108,7 +108,7 @@ export class ReActAgent {
     console.log(`🚀 Starting ReAct task: ${initialQuery.substring(0, 60)}...`);
 
     try {
-      // 准备环境：确保.temurai目录存在并初始化plan.xml
+      // 准备环境：确保.tempurai目录存在并初始化plan.xml
       await this.prepareEnvironment(initialQuery);
 
       let iteration = 0;
@@ -330,7 +330,7 @@ export class ReActAgent {
 
   /**
    * 准备任务执行环境
-   * 确保.temurai目录存在，初始化或清空plan.xml
+   * 确保.tempurai目录存在，初始化或清空plan.xml
    */
   private async prepareEnvironment(initialQuery: string): Promise<void> {
     try {

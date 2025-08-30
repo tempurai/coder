@@ -232,7 +232,7 @@ export const createWebSearchTool = (config: Config) => ({
           summary: '',
           sources: [],
           success: false,
-          error: 'Web 搜索功能已禁用。请在配置文件 ~/.temurai/config.json 中添加 "tavilyApiKey" 字段以启用此功能。您可以在 https://tavily.com 获取免费的 API Key。'
+          error: 'Web 搜索功能已禁用。请在配置文件 ~/.tempurai/config.json 中添加 "tavilyApiKey" 字段以启用此功能。您可以在 https://tavily.com 获取免费的 API Key。'
         };
       }
 

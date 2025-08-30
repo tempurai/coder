@@ -5,9 +5,10 @@
 
 import 'reflect-metadata';
 import { getContainer } from '../di/container.js';
-import { TYPES } from '../di/container.js';
+import { TYPES } from '../di/types.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
 import { SessionService } from '../session/SessionService.js';
+import type { LanguageModel } from 'ai';
 import { startInkUI } from './InkUI.js';
 
 /**
@@ -54,8 +55,7 @@ export class ApplicationBootstrap {
 
       // 验证模型配置
       try {
-        const modelFactory = this.container.get<() => Promise<any>>(TYPES.LanguageModel);
-        await modelFactory();
+        const model = await this.container.get<LanguageModel>(TYPES.LanguageModel);
       } catch (error) {
         return {
           valid: false,
@@ -86,8 +86,8 @@ export class ApplicationBootstrap {
     }
 
     try {
-      // 使用工厂模式获取SessionService（会自动初始化所有依赖）
-      const sessionServiceFactory = this.container.get<() => Promise<SessionService>>(TYPES.SessionService);
+      // 使用新的初始化工厂模式获取SessionService（会自动初始化所有依赖）
+      const sessionServiceFactory = this.container.get<() => Promise<SessionService>>(TYPES.InitializedSessionService);
       const sessionService = await sessionServiceFactory();
 
       console.log('✅ 新的依赖注入架构已初始化');

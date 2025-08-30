@@ -2,37 +2,15 @@ import 'reflect-metadata';
 import { Container } from 'inversify';
 import { Config, ConfigLoader } from '../config/ConfigLoader.js';
 import { SimpleAgent } from '../agents/SimpleAgent.js';
-import { SessionService, SessionServiceDependencies } from '../session/SessionService.js';
+import { ReActAgent } from '../agents/ReActAgent.js';
+import { SessionService } from '../session/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { IReActAgentFactory, IGitWorkflowManagerFactory } from './interfaces.js';
+import { TYPES } from './types.js';
+import type { LanguageModel } from 'ai';
 
-/**
- * 依赖注入服务标识符
- * 使用Symbol确保唯一性
- */
-export const TYPES = {
-  // 核心配置和模型
-  Config: Symbol.for('Config'),
-  ConfigLoader: Symbol.for('ConfigLoader'),
-  LanguageModel: Symbol.for('LanguageModel'),
-
-  // 核心服务
-  SimpleAgent: Symbol.for('SimpleAgent'),
-  SessionService: Symbol.for('SessionService'),
-  FileWatcherService: Symbol.for('FileWatcherService'),
-
-  // 工具和管理器
-  GitWorkflowManager: Symbol.for('GitWorkflowManager'),
-  ReActAgent: Symbol.for('ReActAgent'),
-
-  // CLI和UI组件
-  TempuraiCLI: Symbol.for('TempuraiCLI'),
-  InkUIApp: Symbol.for('InkUIApp'),
-
-  // 工厂函数
-  ReActAgentFactory: Symbol.for('ReActAgentFactory'),
-  GitWorkflowManagerFactory: Symbol.for('GitWorkflowManagerFactory'),
-};
+// Re-export TYPES for backward compatibility
+export { TYPES } from './types.js';
 
 /**
  * 创建和配置依赖注入容器
@@ -41,7 +19,7 @@ export const TYPES = {
 export function createContainer(): Container {
   const container = new Container();
 
-  // 1) 配置相关 - 单例
+  // 1) 配置相关 - 标准构造函数注入
   container.bind<ConfigLoader>(TYPES.ConfigLoader)
     .to(ConfigLoader)
     .inSingletonScope();
@@ -53,19 +31,18 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  // 2) 语言模型 - 单例，同步绑定异步工厂
-  container.bind<() => Promise<any>>(TYPES.LanguageModel)
-    .toFactory(() => {
-      return async () => {
-        const configLoader = container.get<ConfigLoader>(TYPES.ConfigLoader);
-        console.log('🔄 正在初始化AI模型...');
-        const model = await configLoader.createLanguageModel();
-        console.log(`✅ 模型已初始化: ${configLoader.getModelDisplayName()}`);
-        return model;
-      };
-    });
+  // 2) 语言模型 - 异步创建，但绑定为实例
+  container.bind<LanguageModel>(TYPES.LanguageModel)
+    .toDynamicValue(async () => {
+      const configLoader = container.get<ConfigLoader>(TYPES.ConfigLoader);
+      console.log('🔄 正在初始化AI模型...');
+      const model = await configLoader.createLanguageModel();
+      console.log(`✅ 模型已初始化: ${configLoader.getModelDisplayName()}`);
+      return model;
+    })
+    .inSingletonScope();
 
-  // 3) 文件监听服务 - 单例
+  // 3) 文件监听服务 - 使用toDynamicValue配置默认选项
   container.bind<FileWatcherService>(TYPES.FileWatcherService)
     .toDynamicValue(() => {
       const fileWatcherService = new FileWatcherService({
@@ -78,17 +55,46 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  // 4) SimpleAgent - 单例，同步绑定异步工厂
-  container.bind<() => Promise<SimpleAgent>>(TYPES.SimpleAgent)
+  // 4) SimpleAgent - 标准构造函数注入（同步创建）
+  container.bind<SimpleAgent>(TYPES.SimpleAgent)
+    .to(SimpleAgent)
+    .inSingletonScope();
+
+  // 5) ReActAgent - 标准构造函数注入
+  container.bind<ReActAgent>(TYPES.ReActAgent)
+    .to(ReActAgent)
+    .inSingletonScope();
+
+  // 6) SessionService - 标准构造函数注入
+  container.bind<SessionService>(TYPES.SessionService)
+    .to(SessionService)
+    .inSingletonScope();
+
+  // 7) 工厂函数 - 使用 toFactory（避免循环依赖）
+  container.bind<IReActAgentFactory>(TYPES.ReActAgentFactory)
+    .toFactory(() => {
+      return async (agent: SimpleAgent) => {
+        return container.get<ReActAgent>(TYPES.ReActAgent);
+      };
+    });
+
+  container.bind<IGitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory)
     .toFactory(() => {
       return async () => {
+        // 延迟导入避免循环依赖
+        const { GitWorkflowManager } = await import('../tools/GitWorkflowManager.js');
+        return new GitWorkflowManager();
+      };
+    });
+
+  // 8) 异步初始化的服务（用于需要完全初始化的实例）
+  container.bind<() => Promise<SimpleAgent>>(TYPES.InitializedSimpleAgent)
+    .toFactory(() => {
+      return async () => {
+        const agent = container.get<SimpleAgent>(TYPES.SimpleAgent);
         const config = container.get<Config>(TYPES.Config);
-        const modelFactory = container.get<() => Promise<any>>(TYPES.LanguageModel);
-        const model = await modelFactory();
-
+        
         console.log('✅ Agent已创建，开始异步初始化...');
-        const agent = new SimpleAgent(config, model, config.customContext);
-
         await agent.initializeAsync(config.customContext);
         console.log('✅ Agent异步初始化完成');
 
@@ -106,46 +112,15 @@ export function createContainer(): Container {
       };
     });
 
-  // 5) 工厂函数 - 使用 toFactory（避免循环依赖）
-  container.bind<IReActAgentFactory>(TYPES.ReActAgentFactory)
-    .toFactory(() => {
-      return async (agent: SimpleAgent) => {
-        // 延迟导入避免循环依赖
-        const { ReActAgent } = await import('../agents/ReActAgent.js');
-        return new ReActAgent(agent);
-      };
-    });
-
-  container.bind<IGitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory)
+  container.bind<() => Promise<SessionService>>(TYPES.InitializedSessionService)
     .toFactory(() => {
       return async () => {
-        // 延迟导入避免循环依赖
-        const { GitWorkflowManager } = await import('../tools/GitWorkflowManager.js');
-        return new GitWorkflowManager();
-      };
-    });
-
-
-  // 6) SessionService - 单例，同步绑定异步工厂
-  container.bind<() => Promise<SessionService>>(TYPES.SessionService)
-    .toFactory(() => {
-      return async () => {
-        const agentFactory = container.get<() => Promise<SimpleAgent>>(TYPES.SimpleAgent);
+        // 获取完全初始化的SimpleAgent
+        const agentFactory = container.get<() => Promise<SimpleAgent>>(TYPES.InitializedSimpleAgent);
         const agent = await agentFactory();
-        const fileWatcher = container.get<FileWatcherService>(TYPES.FileWatcherService);
-        const config = container.get<Config>(TYPES.Config);
-        const createReActAgent = container.get<IReActAgentFactory>(TYPES.ReActAgentFactory);
-        const createGitWorkflowManager = container.get<IGitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory);
-
-        const dependencies: SessionServiceDependencies = {
-          agent,
-          fileWatcher,
-          config,
-          createReActAgent,
-          createGitWorkflowManager,
-        };
-
-        const sessionService = new SessionService(dependencies);
+        
+        // 然后获取SessionService并手动设置依赖
+        const sessionService = container.get<SessionService>(TYPES.SessionService);
         console.log('✅ 会话管理服务已初始化');
         return sessionService;
       };

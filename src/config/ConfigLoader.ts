@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { injectable } from 'inversify';
 import { McpServerConfig } from '../tools/McpToolLoader.js';
 import type { LanguageModel } from 'ai';
 import deepmergeFactory from '@fastify/deepmerge';
@@ -145,6 +146,7 @@ const DEFAULT_CONFIG: Config = {
  * 配置加载器类
  * 负责从用户配置文件中加载配置，支持默认值和用户自定义覆盖
  */
+@injectable()
 export class ConfigLoader {
   private config: Config;
   private readonly globalConfigDir: string;

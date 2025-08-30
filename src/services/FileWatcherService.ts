@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { injectable } from 'inversify';
 
 /**
  * 文件变更事件接口
@@ -54,6 +55,7 @@ interface FileWatcherOptions {
  * 监听指定文件的变更，并提供变更文件列表的查询功能。
  * 使用防抖机制避免频繁的文件系统事件，并限制最大监听文件数量以保护系统资源。
  */
+@injectable()
 export class FileWatcherService {
   private readonly watchedFiles = new Set<string>();
   private readonly fileWatchers = new Map<string, fs.FSWatcher>();

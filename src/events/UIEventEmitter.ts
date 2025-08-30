@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { UIEvent, UIEventType, EventListener, EventSubscription, ProgressCallback } from './EventTypes.js';
+import { UIEvent, UIEventType, EventListener, EventSubscription, ProgressCallback, ToolProgressEvent } from './EventTypes.js';
 
 /**
  * Specialized event emitter for Tempurai UI events
@@ -19,12 +19,12 @@ export class UIEventEmitter {
    * Emit a UI event with automatic ID generation
    */
   emit<T extends UIEvent>(event: Omit<T, 'id' | 'timestamp' | 'sessionId'>): void {
-    const fullEvent: UIEvent = {
+    const fullEvent = {
       ...event,
       id: this.generateEventId(),
       timestamp: new Date(),
       sessionId: this.sessionId,
-    } as UIEvent;
+    } as T;
 
     this.emitter.emit(event.type, fullEvent);
     this.emitter.emit('*', fullEvent); // Wildcard listener
@@ -65,10 +65,14 @@ export class UIEventEmitter {
    */
   createProgressCallback(iteration: number, toolName: string): ProgressCallback {
     return (event) => {
-      this.emit({
-        ...event,
+      this.emit<ToolProgressEvent>({
+        type: 'tool_progress',
         iteration,
         toolName,
+        phase: event.phase,
+        message: event.message,
+        progress: event.progress,
+        details: event.details,
       });
     };
   }

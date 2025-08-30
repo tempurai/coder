@@ -1,5 +1,5 @@
-import { Config } from '../ConfigLoader';
-import { ValidationResult } from './ModelConfigValidator';
+import { Config } from '../ConfigLoader.js';
+import { ValidationResult } from './ModelConfigValidator.js';
 
 /**
  * 工具配置验证器

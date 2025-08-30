@@ -1,16 +1,16 @@
 // 配置验证器模块的主要导出
 
-export { ModelConfigValidator } from './ModelConfigValidator';
-export { SecurityConfigValidator } from './SecurityConfigValidator';
-export { ToolsConfigValidator } from './ToolsConfigValidator';
-export type { ValidationResult } from './ModelConfigValidator';
+export { ModelConfigValidator } from './ModelConfigValidator.js';
+export { SecurityConfigValidator } from './SecurityConfigValidator.js';
+export { ToolsConfigValidator } from './ToolsConfigValidator.js';
+export type { ValidationResult } from './ModelConfigValidator.js';
 
 // 综合验证器类
-import { Config } from '../ConfigLoader';
-import { ModelConfigValidator } from './ModelConfigValidator';
-import { SecurityConfigValidator } from './SecurityConfigValidator';
-import { ToolsConfigValidator } from './ToolsConfigValidator';
-import type { ValidationResult } from './ModelConfigValidator';
+import { Config } from '../ConfigLoader.js';
+import { ModelConfigValidator } from './ModelConfigValidator.js';
+import { SecurityConfigValidator } from './SecurityConfigValidator.js';
+import { ToolsConfigValidator } from './ToolsConfigValidator.js';
+import type { ValidationResult } from './ModelConfigValidator.js';
 
 /**
  * 综合配置验证器

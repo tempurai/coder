@@ -1,6 +1,8 @@
 import { Agent } from '@mastra/core';
 import { Config } from '../config/ConfigLoader.js';
 import type { LanguageModel } from 'ai';
+import { injectable, inject } from 'inversify';
+import { TYPES } from '../di/types.js';
 import { LoopDetectionService, LoopDetectionResult } from '../services/LoopDetectionService.js';
 import { ProgressCallback } from '../events/index.js';
 import { SimpleProjectContextProvider } from '../context/SimpleProjectContextProvider.js';
@@ -57,10 +59,9 @@ interface McpStatus {
     error?: string;
 }
 
+@injectable()
 export class SimpleAgent {
     private agent?: Agent;
-    private config: Config;
-    private model: LanguageModel;
     private mcpTools: McpTool[] = [];
     private mcpStatus: McpStatus = { isLoaded: false, toolCount: 0, connectionCount: 0, tools: [] };
     private loopDetector: LoopDetectionService;
@@ -79,13 +80,9 @@ export class SimpleAgent {
      * @param customContext 可选的用户自定义上下文（向后兼容）
      */
     constructor(
-        config: Config,
-        model: LanguageModel,
-        customContext?: string
+        @inject(TYPES.Config) private config: Config,
+        @inject(TYPES.LanguageModel) private model: LanguageModel
     ) {
-        this.config = config;
-        this.model = model;
-
         // 初始化循环检测服务
         this.loopDetector = new LoopDetectionService({
             maxHistorySize: 25,

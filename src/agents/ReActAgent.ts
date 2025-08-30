@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { injectable, inject } from 'inversify';
+import { TYPES } from '../di/types.js';
 import { SimpleAgent } from './SimpleAgent.js';
 import { ErrorHandler, ErrorCode } from '../errors/ErrorHandler.js';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
@@ -33,6 +35,8 @@ interface ReActIteration {
 interface TaskResult {
   /** 执行是否成功 */
   success: boolean;
+  /** 任务描述 */
+  taskDescription: string;
   /** 最终总结 */
   summary: string;
   /** 执行的迭代次数 */
@@ -59,15 +63,17 @@ interface TaskResult {
  * - 根据情况调整计划
  * - 在任何时候决定任务完成
  */
+@injectable()
 export class ReActAgent {
-  private simpleAgent: SimpleAgent;
   private projectRoot: string;
   private statusDir: string;
   private planFilePath: string;
   private maxIterations: number;
 
-  constructor(simpleAgent: SimpleAgent, maxIterations: number = 20) {
-    this.simpleAgent = simpleAgent;
+  constructor(
+    @inject(TYPES.SimpleAgent) private simpleAgent: SimpleAgent, 
+    maxIterations: number = 20
+  ) {
     this.maxIterations = maxIterations;
 
     // 设置项目目录和状态文件路径
@@ -203,6 +209,7 @@ export class ReActAgent {
 
       const result: TaskResult = {
         success,
+        taskDescription: initialQuery,
         summary: this.generateTaskSummary(history, success),
         iterations: iteration,
         duration,
@@ -226,6 +233,7 @@ export class ReActAgent {
 
       return {
         success: false,
+        taskDescription: initialQuery,
         summary: `Task failed: ${errorMessage}`,
         iterations: history.length,
         duration,

@@ -1,4 +1,4 @@
-import { Config, ModelConfig, ModelProvider } from '../ConfigLoader';
+import { Config, ModelConfig, ModelProvider } from '../ConfigLoader.js';
 import type { LanguageModel } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { google } from '@ai-sdk/google';

@@ -1,20 +1,11 @@
 import { SimpleAgent } from '../agents/SimpleAgent.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { Config } from '../config/ConfigLoader.js';
+import { injectable, inject } from 'inversify';
+import { TYPES } from '../di/types.js';
 import { ErrorHandler } from '../errors/ErrorHandler.js';
 import { IReActAgent, IGitWorkflowManager, IReActAgentFactory, IGitWorkflowManagerFactory } from '../di/interfaces.js';
 import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, GitBranchCreatedEvent, GitTaskEndedEvent } from '../events/index.js';
-
-/**
- * SessionService依赖接口
- */
-export interface SessionServiceDependencies {
-    agent: SimpleAgent;
-    fileWatcher: FileWatcherService;
-    config: Config;
-    createReActAgent?: IReActAgentFactory;
-    createGitWorkflowManager?: IGitWorkflowManagerFactory;
-}
 
 /**
  * 任务执行结果接口（新架构）
@@ -88,10 +79,8 @@ export interface SessionStats {
  * 会话管理服务
  * 作为CLI和新两层架构之间的中介层，编排ReActAgent和GitWorkflowManager
  */
+@injectable()
 export class SessionService {
-    private _agent: SimpleAgent;
-    private fileWatcherService: FileWatcherService;
-    private config: Config;
     private sessionHistory: SessionHistoryItem[] = [];
     private sessionStartTime: Date;
     private eventEmitter: UIEventEmitter;
@@ -100,21 +89,15 @@ export class SessionService {
     private totalResponseTime: number = 0;
     private interactionCount: number = 0;
 
-    // 工厂函数，避免直接导入
-    private createReActAgent: IReActAgentFactory;
-    private createGitWorkflowManager: IGitWorkflowManagerFactory;
-
-    constructor(dependencies: SessionServiceDependencies) {
-        this._agent = dependencies.agent;
-        this.fileWatcherService = dependencies.fileWatcher;
-        this.config = dependencies.config;
+    constructor(
+        @inject(TYPES.SimpleAgent) private _agent: SimpleAgent,
+        @inject(TYPES.FileWatcherService) private fileWatcherService: FileWatcherService,
+        @inject(TYPES.Config) private config: Config,
+        @inject(TYPES.ReActAgentFactory) private createReActAgent: IReActAgentFactory,
+        @inject(TYPES.GitWorkflowManagerFactory) private createGitWorkflowManager: IGitWorkflowManagerFactory
+    ) {
         this.sessionStartTime = new Date();
         this.eventEmitter = new UIEventEmitter();
-
-        // 使用工厂函数或延迟加载来避免循环依赖
-        this.createReActAgent = dependencies.createReActAgent || this.defaultCreateReActAgent;
-        this.createGitWorkflowManager = dependencies.createGitWorkflowManager || this.defaultCreateGitWorkflowManager;
-
         console.log('✅ 会话管理服务已初始化（依赖注入模式）');
     }
 

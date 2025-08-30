@@ -93,7 +93,7 @@ export interface TaskDiscardResult {
 export interface WorkflowStatusResult {
     success: boolean;
     currentBranch?: string;
-    isTaskBranch?: boolean;
+    isTaskBranch: boolean;
     taskBranchName?: string | null;
     mainBranch?: string;
     hasChanges?: boolean;
@@ -557,6 +557,7 @@ export class GitWorkflowManager {
         } catch (error) {
             return {
                 success: false,
+                isTaskBranch: false,
                 error: `Failed to get workflow status: ${error instanceof Error ? error.message : 'Unknown error'}`
             };
         }

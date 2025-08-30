@@ -1,5 +1,5 @@
-import { LoopDetectionService } from '../services/LoopDetectionService';
-import { ConfigLoader, Config } from '../config/ConfigLoader';
+import { LoopDetectionService } from '../services/LoopDetectionService.js';
+import { ConfigLoader, Config } from '../config/ConfigLoader.js';
 
 /**
  * 工具执行结果接口

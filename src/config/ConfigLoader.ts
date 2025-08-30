@@ -341,7 +341,7 @@ export class ConfigLoader {
           // 仅创建配置文件，不执行完整的异步初始化
           initializer.createConfigSync();
         }
-        
+
         // 重新尝试加载配置
         if (fs.existsSync(this.globalConfigFilePath)) {
           try {

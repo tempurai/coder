@@ -3,6 +3,7 @@ import { convert } from 'html-to-text';
 import { URL } from 'url';
 import { z } from 'zod';
 import { tool } from 'ai';
+import { Config } from '../config/ConfigLoader.js';
 
 interface WebSearchSource {
   title: string;
@@ -94,10 +95,7 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
   }
 };
 
-const MAX_CONTENT_LENGTH = 10000;
-const HTTP_REQUEST_TIMEOUT = 15000;
-
-const truncateContent = (content: string, maxLength: number = MAX_CONTENT_LENGTH): { content: string; truncated: boolean } => {
+const truncateContent = (content: string, maxLength: number): { content: string; truncated: boolean } => {
   if (content.length <= maxLength) {
     return { content, truncated: false };
   }
@@ -107,24 +105,7 @@ const truncateContent = (content: string, maxLength: number = MAX_CONTENT_LENGTH
   };
 };
 
-// Get config from global instance - you'll need to implement this
-function getConfig() {
-  // This should get config from your global config manager
-  // For now, placeholder - you need to implement ConfigManager.getInstance()
-  const fs = require('fs');
-  const path = require('path');
-  const os = require('os');
-
-  try {
-    const configPath = path.join(os.homedir(), '.tempurai', 'config.json');
-    const configContent = fs.readFileSync(configPath, 'utf-8');
-    return JSON.parse(configContent);
-  } catch (error) {
-    return {};
-  }
-}
-
-export const webSearchTool = tool({
+export const createWebSearchTool = (config: Config) => tool({
   description: 'Search the web for current information using Tavily AI. Returns a summary and relevant sources.',
   inputSchema: z.object({
     query: z.string().describe('The search query to execute')
@@ -140,10 +121,7 @@ export const webSearchTool = tool({
         };
       }
 
-      const config = getConfig();
-      const apiKey = config.tavilyApiKey;
-
-      if (!apiKey) {
+      if (!config.tavilyApiKey) {
         return {
           summary: '',
           sources: [],
@@ -158,7 +136,7 @@ export const webSearchTool = tool({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          api_key: apiKey,
+          api_key: config.tavilyApiKey,
           query: query.trim(),
           search_depth: 'basic',
           include_answer: true,
@@ -200,12 +178,17 @@ export const webSearchTool = tool({
   }
 });
 
-export const urlFetchTool = tool({
+export const createUrlFetchTool = (config: Config) => tool({
   description: 'Fetch and extract text content from a web URL. Includes security checks to prevent access to private networks.',
   inputSchema: z.object({
     url: z.string().describe('The URL to fetch content from')
   }),
   execute: async ({ url }): Promise<UrlFetchResult> => {
+    const webToolsConfig = config.tools.webTools;
+    const requestTimeout = webToolsConfig.requestTimeout ?? 15000;
+    const maxContentLength = webToolsConfig.maxContentLength ?? 10000;
+    const userAgent = webToolsConfig.userAgent ?? 'Tempurai-Bot/1.0 (Security-Enhanced)';
+
     try {
       if (!url || typeof url !== 'string') {
         return {
@@ -228,7 +211,7 @@ export const urlFetchTool = tool({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
         controller.abort();
-      }, HTTP_REQUEST_TIMEOUT);
+      }, requestTimeout);
 
       let html: string;
       let title: string | undefined;
@@ -237,14 +220,14 @@ export const urlFetchTool = tool({
         const response = await request(url, {
           method: 'GET',
           headers: {
-            'User-Agent': 'Tempurai-Bot/1.0 (Security-Enhanced)',
+            'User-Agent': userAgent,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Cache-Control': 'no-cache'
           },
           signal: controller.signal,
-          headersTimeout: HTTP_REQUEST_TIMEOUT,
-          bodyTimeout: HTTP_REQUEST_TIMEOUT
+          headersTimeout: requestTimeout,
+          bodyTimeout: requestTimeout
         });
 
         clearTimeout(timeoutId);
@@ -259,7 +242,7 @@ export const urlFetchTool = tool({
         }
 
         const contentLength = response.headers['content-length'];
-        if (contentLength && parseInt(contentLength as string) > MAX_CONTENT_LENGTH * 2) {
+        if (contentLength && parseInt(contentLength as string) > maxContentLength * 2) {
           return {
             content: '',
             success: false,
@@ -269,7 +252,7 @@ export const urlFetchTool = tool({
         }
 
         html = await response.body.text();
-        if (html.length > MAX_CONTENT_LENGTH * 3) {
+        if (html.length > maxContentLength * 3) {
           return {
             content: '',
             success: false,
@@ -284,7 +267,7 @@ export const urlFetchTool = tool({
             content: '',
             success: false,
             truncated: false,
-            error: `请求超时 (${HTTP_REQUEST_TIMEOUT}ms)。网站响应时间过长，请稍后重试。`
+            error: `请求超时 (${requestTimeout}ms)。网站响应时间过长，请稍后重试。`
           };
         }
         const error = requestError as Error;
@@ -334,7 +317,7 @@ export const urlFetchTool = tool({
       const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
       title = titleMatch ? titleMatch[1].trim() : undefined;
 
-      const { content: finalContent, truncated } = truncateContent(textContent);
+      const { content: finalContent, truncated } = truncateContent(textContent, maxContentLength);
 
       return {
         content: finalContent,

@@ -21,13 +21,15 @@ import { ConfigLoader } from '../config/ConfigLoader.js';
 // 文件工具
 import { writeFileTool, applyPatchTool, readFileTool, findFilesTool, searchInFilesTool } from '../tools/SimpleFileTools.js';
 // Web工具
-import { webSearchTool, urlFetchTool } from '../tools/WebTools.js';
+import { createWebSearchTool, createUrlFetchTool } from '../tools/WebTools.js';
 // MCP工具集
 import { loadMCPTools, mcpToolLoader, MCPTool } from '../tools/McpToolLoader.js';
 // Git工具
 import { gitStatusTool, gitLogTool, gitDiffTool } from '../tools/GitTools.js';
 // 代码分析工具
 import { findFunctionsTool, findImportsTool, getProjectStructureTool, analyzeCodeStructureTool } from '../tools/CodeTools.js';
+// Memory工具
+import { saveMemoryTool } from '../tools/MemoryTools.js';
 
 /**
  * 工具初始化状态
@@ -263,14 +265,17 @@ export class SimpleAgent {
         tools.git_log = gitLogTool;
         tools.git_diff = gitDiffTool;
 
-        // 🌐 Web 工具 
-        tools.web_search = webSearchTool;
-        tools.url_fetch = urlFetchTool;
+        // 🌐 Web 工具
+        tools.web_search = createWebSearchTool(this.config);
+        tools.url_fetch = createUrlFetchTool(this.config);
 
         // 🔧 Shell 工具 - 需要创建并提取
         const shellTools = createShellExecutorTool(new ConfigLoader());
         tools.shell_executor = shellTools.execute;
         tools.multi_command = shellTools.multiCommand;
+
+        // 🧠 Memory 工具 (已经是AI SDK格式)
+        tools.save_memory = saveMemoryTool;
 
         // 🏁 任务完成工具
         tools.finish = tool({
@@ -373,6 +378,9 @@ You MUST respond in this exact XML format. No other format is acceptable:
 - **web_search**: Find current information, documentation, solutions
 - **url_fetch**: Get detailed content from specific web pages
 
+### Long-term Memory
+- **save_memory**: Save critical information for future conversations (ask permission first)
+
 ### Task Completion
 - **finish**: Use when the task is fully completed and tested
 
@@ -432,6 +440,9 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
             // Web工具
             'web_search': 'searching the internet for current information',
             'url_fetch': 'fetching content from specific web URLs',
+
+            // Memory工具
+            'save_memory': 'saving important information to long-term memory for future conversations',
 
             // 任务控制
             'finish': 'completing the current task successfully'

@@ -62,10 +62,10 @@ export class ConfigInitializer {
     try {
       // 确保目录存在（同步）
       fs.mkdirSync(this.globalConfigDir, { recursive: true });
-      
+
       // 创建配置文件
       this.createDefaultConfigFile();
-      
+
       console.log(`📁 Created default configuration at ${this.globalConfigFilePath}`);
       console.log('💡 Please edit this file to add your API keys and customize settings.');
     } catch (error) {
@@ -82,7 +82,7 @@ export class ConfigInitializer {
     }
 
     console.log('🔧 First time setup: Creating configuration files...');
-    
+
     try {
       await this.ensureConfigDirectory();
       this.createDefaultConfigFile();
@@ -90,7 +90,7 @@ export class ConfigInitializer {
 
       console.log(`📁 Created default configuration at ${this.globalConfigFilePath}`);
       console.log('💡 Please edit this file to add your API keys and customize settings.');
-      
+
       console.log('✅ Configuration initialized successfully!');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -160,45 +160,6 @@ Add any project-specific information, coding guidelines, or preferences here.
 
 You can edit this file anytime to customize how the AI assistant helps you.
 For project-specific context, create ./.tempurai/directives.md in your project folder.
-
-## MCP Server Configuration
-
-Tempurai supports multiple Model Context Protocol (MCP) servers for extended functionality.
-Add your MCP servers in the config.json file under "mcpServers":
-
-### Common MCP Servers:
-
-1. **Filesystem Server** - File operations
-   npx -y @modelcontextprotocol/server-filesystem /path/to/workspace
-
-2. **Brave Search Server** - Web search (requires API key)  
-   npx -y @modelcontextprotocol/server-brave-search
-
-3. **SQLite Server** - Database operations
-   npx -y @modelcontextprotocol/server-sqlite --db-path ./database.db
-
-4. **GitHub Server** - GitHub API access (requires token)
-   npx -y @modelcontextprotocol/server-github
-
-5. **Puppeteer Server** - Browser automation
-   npx -y @modelcontextprotocol/server-puppeteer
-
-### Example Configuration:
-Add this to your config.json "mcpServers" section:
-
-"filesystem": {
-  "name": "filesystem",
-  "command": "npx", 
-  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/your/workspace/path"]
-},
-"brave-search": {
-  "name": "brave-search",
-  "command": "npx",
-  "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-  "env": {
-    "BRAVE_API_KEY": "your-brave-api-key-here"
-  }
-}
 `;
 
     try {

@@ -1,5 +1,5 @@
 import { generateText, tool } from 'ai';
-import { Config } from '../config/ConfigLoader.js';
+import { Config, ConfigLoader } from '../config/ConfigLoader.js';
 import type { LanguageModel, ToolSet } from 'ai';
 import { injectable, inject } from 'inversify';
 import { z } from 'zod';
@@ -17,7 +17,6 @@ export type AgentStreamEvent =
 
 // 直接导入具体工具，无需中间转换层
 import { createShellExecutorTool } from '../tools/ShellExecutor.js';
-import { ConfigLoader } from '../config/ConfigLoader.js';
 // 文件工具
 import { writeFileTool, applyPatchTool, readFileTool, findFilesTool, searchInFilesTool } from '../tools/SimpleFileTools.js';
 // Web工具
@@ -79,7 +78,8 @@ export class SimpleAgent {
 
     constructor(
         @inject(TYPES.Config) private config: Config,
-        @inject(TYPES.LanguageModel) private model: LanguageModel
+        @inject(TYPES.LanguageModel) private model: LanguageModel,
+        @inject(TYPES.ConfigLoader) private configLoader: ConfigLoader
     ) {
         // 初始化循环检测服务
         this.loopDetector = new LoopDetectionService({
@@ -269,8 +269,8 @@ export class SimpleAgent {
         tools.web_search = createWebSearchTool(this.config);
         tools.url_fetch = createUrlFetchTool(this.config);
 
-        // 🔧 Shell 工具 - 需要创建并提取
-        const shellTools = createShellExecutorTool(new ConfigLoader());
+        // 🔧 Shell 工具 - 使用注入的ConfigLoader
+        const shellTools = createShellExecutorTool(this.configLoader);
         tools.shell_executor = shellTools.execute;
         tools.multi_command = shellTools.multiCommand;
 

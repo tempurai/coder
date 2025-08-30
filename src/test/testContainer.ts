@@ -42,7 +42,8 @@ class MockSimpleAgent extends SimpleAgent {
   constructor() {
     // Create a simple mock language model
     const mockModel = mockAISDK.createMockModel() as unknown as LanguageModel;
-    super(TEST_CONFIG, mockModel);
+    const mockConfigLoader = new MockConfigLoader();
+    super(TEST_CONFIG, mockModel, mockConfigLoader);
   }
 
   override async initializeAsync(customContext?: string): Promise<void> {

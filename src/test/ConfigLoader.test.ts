@@ -1,4 +1,5 @@
 import { ConfigLoader } from '../config/ConfigLoader.js';
+import { ConfigInitializer } from '../config/ConfigInitializer.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -68,22 +69,60 @@ describe('ConfigLoader Enhanced Initialization', () => {
     });
   });
 
-  describe('User-Friendly Configuration', () => {
-    test('should create example context file', async () => {
+  describe('ConfigInitializer Direct Tests', () => {
+    test('should create config files with ConfigInitializer', async () => {
       // Mock the home directory for this test
       jest.spyOn(os, 'homedir').mockReturnValue(os.tmpdir());
 
       try {
-        await ConfigLoader.initializeConfigOnStartup();
+        const initializer = new ConfigInitializer();
+        await initializer.initializeConfig();
 
+        // Check if config file was created
+        expect(fs.existsSync(testConfigFile)).toBe(true);
+
+        // Check if context file was created
+        expect(fs.existsSync(testContextFile)).toBe(true);
         const contextContent = fs.readFileSync(testContextFile, 'utf8');
-        
-        // Check for helpful content
         expect(contextContent).toContain('# Tempurai Custom Context');
         expect(contextContent).toContain('Coding Style Preferences');
         expect(contextContent).toContain('Project-Specific Guidelines');
         expect(contextContent).toContain('Personal Preferences');
         expect(contextContent).toContain('./.tempurai/directives.md');
+      } finally {
+        (os.homedir as jest.Mock).mockRestore();
+      }
+    });
+
+    test('should detect existing config', () => {
+      // Mock the home directory for this test
+      jest.spyOn(os, 'homedir').mockReturnValue(os.tmpdir());
+
+      try {
+        // Create config first
+        fs.mkdirSync(testConfigDir, { recursive: true });
+        fs.writeFileSync(testConfigFile, '{"model": "test"}', 'utf8');
+
+        const initializer = new ConfigInitializer();
+        expect(initializer.configExists()).toBe(true);
+      } finally {
+        (os.homedir as jest.Mock).mockRestore();
+      }
+    });
+
+    test('should create config synchronously', () => {
+      // Mock the home directory for this test
+      jest.spyOn(os, 'homedir').mockReturnValue(os.tmpdir());
+
+      try {
+        const initializer = new ConfigInitializer();
+        initializer.createConfigSync();
+
+        // Check if config file was created (but not context file)
+        expect(fs.existsSync(testConfigFile)).toBe(true);
+        
+        const configContent = fs.readFileSync(testConfigFile, 'utf8');
+        expect(configContent).toContain('gpt-4o-mini');
       } finally {
         (os.homedir as jest.Mock).mockRestore();
       }

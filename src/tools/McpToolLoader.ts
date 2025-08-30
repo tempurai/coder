@@ -1,6 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { Config } from '../config/ConfigLoader';
+import { Config } from '../config/ConfigLoader.js';
 import * as childProcess from 'child_process';
 
 /**
@@ -132,7 +132,7 @@ export class McpToolLoader {
 
       // 列出服务器提供的工具
       const toolsResponse = await client.listTools();
-      
+
       if (!toolsResponse.tools || toolsResponse.tools.length === 0) {
         console.log(`⚠️ MCP 服务器 ${serverName} 没有提供任何工具`);
         return [];
@@ -210,7 +210,7 @@ export class McpToolLoader {
 
         } catch (error) {
           console.error(`❌ MCP 工具 ${toolInfo.name} 执行失败:`, error);
-          
+
           return {
             success: false,
             error: error instanceof Error ? error.message : '未知错误',
@@ -245,7 +245,7 @@ export class McpToolLoader {
    */
   async cleanup(): Promise<void> {
     console.log('🧹 清理 MCP 连接...');
-    
+
     for (const connection of this.connections) {
       try {
         await connection.client.close();

@@ -2,8 +2,8 @@ import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as util from 'util';
 import { z } from 'zod';
-import { ErrorHandler } from '../errors/ErrorHandler';
-import { ToolExecutionResult } from './index';
+import { ErrorHandler } from '../errors/ErrorHandler.js';
+import { ToolExecutionResult } from './index.js';
 
 const execAsync = util.promisify(exec);
 

@@ -1,9 +1,9 @@
 import { request } from 'undici';
 import { convert } from 'html-to-text';
 import { URL } from 'url';
-import { ConfigLoader, Config } from '../config/ConfigLoader';
-import { ErrorHandler } from '../errors/ErrorHandler';
-import { ToolExecutionResult } from './index';
+import { ConfigLoader, Config } from '../config/ConfigLoader.js';
+import { ErrorHandler } from '../errors/ErrorHandler.js';
+import { ToolExecutionResult } from './index.js';
 
 /**
  * Web 搜索结果中的单个来源
@@ -81,14 +81,14 @@ interface TavilyResponse {
 const isPrivateOrLocalUrl = (url: string): boolean => {
   try {
     const parsedUrl = new URL(url);
-    
+
     // 只允许 HTTP 和 HTTPS 协议
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
       return true; // 非 HTTP/HTTPS 协议被视为不安全
     }
-    
+
     const hostname = parsedUrl.hostname.toLowerCase();
-    
+
     // 检查本地回环地址
     const localHostnames = [
       'localhost',
@@ -98,11 +98,11 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
       'ip6-localhost',
       'ip6-loopback'
     ];
-    
+
     if (localHostnames.includes(hostname)) {
       return true;
     }
-    
+
     // 使用更严格的正则表达式检查私有 IP 地址段
     const privateIpPatterns = [
       /^10\./,                                    // 10.0.0.0/8
@@ -119,32 +119,32 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
       /^fc00:/i,                                  // IPv6 唯一本地地址
       /^fd00:/i                                   // IPv6 唯一本地地址
     ];
-    
+
     // 检查是否匹配任何私有 IP 模式
     for (const pattern of privateIpPatterns) {
       if (pattern.test(hostname)) {
         return true;
       }
     }
-    
+
     // 检查是否是纯 IP 地址但可能绕过上面的检查
     if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
       const parts = hostname.split('.').map(Number);
-      
+
       // 额外检查一些边界情况
       if (parts.some(part => part > 255 || part < 0)) {
         return true; // 无效的 IP 地址
       }
-      
+
       // 检查更多私有地址范围
       if (parts[0] === 0 ||                      // 0.x.x.x
-          parts[0] === 127 ||                    // 127.x.x.x
-          (parts[0] === 169 && parts[1] === 254) || // 169.254.x.x
-          parts[0] >= 224) {                     // 224.x.x.x 及以上
+        parts[0] === 127 ||                    // 127.x.x.x
+        (parts[0] === 169 && parts[1] === 254) || // 169.254.x.x
+        parts[0] >= 224) {                     // 224.x.x.x 及以上
         return true;
       }
     }
-    
+
     return false; // URL 被认为是安全的
   } catch (error) {
     // 如果 URL 解析失败，视为不安全
@@ -180,7 +180,7 @@ const truncateContent = (content: string, maxLength: number = MAX_CONTENT_LENGTH
   if (content.length <= maxLength) {
     return { content, truncated: false };
   }
-  
+
   return {
     content: content.substring(0, maxLength) + '\n\n[...内容因过长已被截断]',
     truncated: true
@@ -205,7 +205,7 @@ export const createWebSearchTool = (config: Config) => ({
     },
     required: ['query']
   },
-  
+
   /**
    * 执行 web 搜索
    * @param params 包含 query 的参数对象
@@ -214,7 +214,7 @@ export const createWebSearchTool = (config: Config) => ({
   async execute(params: { query: string }): Promise<WebSearchResult> {
     try {
       const { query } = params;
-      
+
       if (!query || typeof query !== 'string' || query.trim().length === 0) {
         return {
           summary: '',
@@ -223,10 +223,10 @@ export const createWebSearchTool = (config: Config) => ({
           error: '搜索查询不能为空'
         };
       }
-      
+
       // 使用传入的配置获取 Tavily API Key
       const apiKey = config.tavilyApiKey;
-      
+
       if (!apiKey) {
         return {
           summary: '',
@@ -235,7 +235,7 @@ export const createWebSearchTool = (config: Config) => ({
           error: 'Web 搜索功能已禁用。请在配置文件 ~/.temurai/config.json 中添加 "tavilyApiKey" 字段以启用此功能。您可以在 https://tavily.com 获取免费的 API Key。'
         };
       }
-      
+
       // 调用 Tavily API
       const response = await request('https://api.tavily.com/search', {
         method: 'POST',
@@ -252,7 +252,7 @@ export const createWebSearchTool = (config: Config) => ({
           max_results: 5
         })
       });
-      
+
       if (response.statusCode !== 200) {
         return {
           summary: '',
@@ -261,22 +261,22 @@ export const createWebSearchTool = (config: Config) => ({
           error: `Tavily API 请求失败: HTTP ${response.statusCode}`
         };
       }
-      
+
       const data = await response.body.json() as TavilyResponse;
-      
+
       // 构建搜索结果
       const sources: WebSearchSource[] = data.results.map(result => ({
         title: result.title,
         url: result.url,
         content: result.content
       }));
-      
+
       return {
         summary: data.answer || '未找到相关信息',
         sources,
         success: true
       };
-      
+
     } catch (error) {
       return {
         summary: '',
@@ -309,7 +309,7 @@ export const createUrlFetchTool = (config: Config) => ({
     },
     required: ['url']
   },
-  
+
   /**
    * 安全地获取 URL 内容
    * @param params 包含 url 的参数对象
@@ -318,7 +318,7 @@ export const createUrlFetchTool = (config: Config) => ({
   async execute(params: { url: string }): Promise<UrlFetchResult> {
     try {
       const { url } = params;
-      
+
       if (!url || typeof url !== 'string') {
         return {
           content: '',
@@ -327,7 +327,7 @@ export const createUrlFetchTool = (config: Config) => ({
           error: 'URL 参数无效'
         };
       }
-      
+
       // 关键安全验证 - 防止 SSRF 攻击
       if (isPrivateOrLocalUrl(url)) {
         return {
@@ -337,7 +337,7 @@ export const createUrlFetchTool = (config: Config) => ({
           error: '出于安全原因，禁止访问本地或私有网络地址。此限制可防止 Server-Side Request Forgery (SSRF) 攻击。'
         };
       }
-      
+
       // 创建 AbortController 用于超时控制
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
@@ -363,10 +363,10 @@ export const createUrlFetchTool = (config: Config) => ({
           headersTimeout: HTTP_REQUEST_TIMEOUT,
           bodyTimeout: HTTP_REQUEST_TIMEOUT
         });
-        
+
         // 清除超时定时器
         clearTimeout(timeoutId);
-        
+
         if (response.statusCode !== 200) {
           return {
             content: '',
@@ -388,7 +388,7 @@ export const createUrlFetchTool = (config: Config) => ({
         }
 
         html = await response.body.text();
-        
+
         // 检查实际内容长度
         if (html.length > MAX_CONTENT_LENGTH * 3) {
           return {
@@ -402,7 +402,7 @@ export const createUrlFetchTool = (config: Config) => ({
       } catch (requestError) {
         // 清除超时定时器
         clearTimeout(timeoutId);
-        
+
         // 处理不同类型的请求错误
         if (controller.signal.aborted) {
           return {
@@ -412,7 +412,7 @@ export const createUrlFetchTool = (config: Config) => ({
             error: `请求超时 (${HTTP_REQUEST_TIMEOUT}ms)。网站响应时间过长，请稍后重试。`
           };
         }
-        
+
         const error = requestError as Error;
         if (error.message.includes('ENOTFOUND')) {
           return {
@@ -422,7 +422,7 @@ export const createUrlFetchTool = (config: Config) => ({
             error: '域名解析失败，请检查 URL 是否正确。'
           };
         }
-        
+
         if (error.message.includes('ECONNREFUSED')) {
           return {
             content: '',
@@ -431,10 +431,10 @@ export const createUrlFetchTool = (config: Config) => ({
             error: '连接被拒绝，目标服务器可能不可用。'
           };
         }
-        
+
         throw requestError; // 重新抛出其他未处理的错误
       }
-      
+
       // 转换 HTML 为文本
       const textContent = convert(html, {
         wordwrap: 80,
@@ -461,21 +461,21 @@ export const createUrlFetchTool = (config: Config) => ({
           { selector: 'blockquote', format: 'blockquote' }
         ]
       });
-      
+
       // 提取页面标题
       const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
       title = titleMatch ? titleMatch[1].trim() : undefined;
-      
+
       // 截断内容以防止过长
       const { content: finalContent, truncated } = truncateContent(textContent);
-      
+
       return {
         content: finalContent,
         title,
         success: true,
         truncated
       };
-      
+
     } catch (error) {
       return {
         content: '',

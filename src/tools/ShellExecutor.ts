@@ -1,8 +1,8 @@
 import { exec, type ExecOptions } from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
-import { CommandValidator, type CommandValidationResult } from '../security/CommandValidator';
-import { ConfigLoader } from '../config/ConfigLoader';
+import { CommandValidator, type CommandValidationResult } from '../security/CommandValidator.js';
+import { ConfigLoader } from '../config/ConfigLoader.js';
 import * as readline from 'readline';
 
 const execAsync = util.promisify(exec);

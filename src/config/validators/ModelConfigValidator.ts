@@ -1,4 +1,5 @@
-import { Config, ModelConfig, ModelProvider } from '../ConfigLoader.js';
+import { Config } from '../ConfigLoader.js';
+import { ModelConfig, ModelProvider } from '../../models/index.js';
 import type { LanguageModel } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { google } from '@ai-sdk/google';
@@ -19,7 +20,7 @@ export interface ValidationResult {
  */
 export class ModelConfigValidator {
     private readonly supportedProviders: ModelProvider[] = [
-        'openai', 'google', 'anthropic', 'cohere', 'mistral'
+        'openai', 'google', 'anthropic', 'xai', 'deepseek', 'azure', 'aws', 'openrouter', 'ollama', 'openai-compatible'
     ];
 
     /**
@@ -34,19 +35,17 @@ export class ModelConfigValidator {
             warnings: []
         };
 
-        // 验证模型配置是否存在
-        if (!config.model) {
-            result.errors.push('Model configuration is required');
+        // 验证模型配置数组是否存在
+        if (!config.models || !Array.isArray(config.models) || config.models.length === 0) {
+            result.errors.push('At least one model configuration is required in the models array');
             result.isValid = false;
             return result;
         }
 
-        // 根据配置类型进行验证
-        if (typeof config.model === 'string') {
-            this.validateStringModel(config.model, config, result);
-        } else {
-            this.validateModelConfig(config.model, result);
-        }
+        // 验证每个模型配置
+        config.models.forEach((modelConfig, index) => {
+            this.validateModelConfig(modelConfig, result, index);
+        });
 
         // 验证API密钥
         this.validateApiKeys(config, result);
@@ -57,60 +56,40 @@ export class ModelConfigValidator {
         return result;
     }
 
-    /**
-     * 验证字符串模型配置（向后兼容）
-     * @param model 模型字符串
-     * @param config 完整配置
-     * @param result 验证结果
-     */
-    private validateStringModel(model: string, config: Config, result: ValidationResult): void {
-        if (!model.trim()) {
-            result.errors.push('Model name cannot be empty');
-            result.isValid = false;
-            return;
-        }
-
-        // 检查是否是OpenAI模型格式
-        if (model.startsWith('gpt-')) {
-            if (!config.apiKey && !process.env.OPENAI_API_KEY) {
-                result.errors.push('OpenAI API key is required for GPT models');
-                result.isValid = false;
-            }
-        } else {
-            result.warnings.push(`Unknown model format: ${model}. Consider using detailed ModelConfig format.`);
-        }
-    }
 
     /**
      * 验证详细模型配置
      * @param modelConfig 模型配置对象
      * @param result 验证结果
+     * @param index 模型在数组中的索引
      */
-    private validateModelConfig(modelConfig: ModelConfig, result: ValidationResult): void {
+    private validateModelConfig(modelConfig: ModelConfig, result: ValidationResult, index?: number): void {
+        const prefix = index !== undefined ? `Model ${index + 1}: ` : '';
         // 验证提供商
         if (!modelConfig.provider) {
-            result.errors.push('Model provider is required');
+            result.errors.push(`${prefix}Model provider is required`);
             result.isValid = false;
             return;
         }
 
         if (!this.supportedProviders.includes(modelConfig.provider)) {
-            result.errors.push(`Unsupported model provider: ${modelConfig.provider}`);
+            result.errors.push(`${prefix}Unsupported model provider: ${modelConfig.provider}`);
             result.isValid = false;
         }
 
         // 验证模型名称
         if (!modelConfig.name || !modelConfig.name.trim()) {
-            result.errors.push('Model name is required');
+            result.errors.push(`${prefix}Model name is required`);
             result.isValid = false;
         }
 
-        // 验证基础URL格式
-        if (modelConfig.baseUrl) {
+        // 验证基础URL格式（仅对支持baseUrl的提供商）
+        const hasBaseUrl = 'baseUrl' in modelConfig;
+        if (hasBaseUrl && (modelConfig as any).baseUrl) {
             try {
-                new URL(modelConfig.baseUrl);
+                new URL((modelConfig as any).baseUrl);
             } catch {
-                result.errors.push('Invalid baseUrl format');
+                result.errors.push(`${prefix}Invalid baseUrl format`);
                 result.isValid = false;
             }
         }
@@ -277,18 +256,11 @@ export class ModelConfigValidator {
      * @returns Promise<LanguageModel>
      */
     private async createLanguageModel(config: Config): Promise<LanguageModel> {
-        let modelConfig: ModelConfig;
-
-        if (typeof config.model === 'string') {
-            // 向后兼容：字符串模型配置
-            modelConfig = {
-                provider: 'openai',
-                name: config.model,
-                apiKey: config.apiKey
-            };
-        } else {
-            modelConfig = config.model;
+        if (!config.models || config.models.length === 0) {
+            throw new Error('No models configured. Please add at least one model to the models array.');
         }
+
+        const modelConfig = config.models[0]; // 使用第一个模型
 
         // 获取API密钥
         const apiKey = modelConfig.apiKey || this.getEnvApiKey(modelConfig.provider);
@@ -328,13 +300,17 @@ export class ModelConfigValidator {
             case 'openai':
                 return process.env.OPENAI_API_KEY;
             case 'google':
-                return process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+                return process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
             case 'anthropic':
                 return process.env.ANTHROPIC_API_KEY;
-            case 'cohere':
-                return process.env.COHERE_API_KEY;
-            case 'mistral':
-                return process.env.MISTRAL_API_KEY;
+            case 'xai':
+                return process.env.XAI_API_KEY;
+            case 'deepseek':
+                return process.env.DEEPSEEK_API_KEY;
+            case 'azure':
+                return process.env.AZURE_OPENAI_API_KEY;
+            case 'openrouter':
+                return process.env.OPENROUTER_API_KEY;
             default:
                 return undefined;
         }

@@ -15,7 +15,10 @@ describe('MCPToolLoader Multiple Servers', () => {
   describe('Multiple Server Configuration', () => {
     test('should handle empty MCP servers config', async () => {
       const config: Config = {
-        model: 'gpt-4o-mini',
+        models: [{
+          provider: 'openai',
+          name: 'gpt-4o-mini'
+        }],
         temperature: 0.3,
         maxTokens: 4096,
         mcpServers: {},
@@ -49,7 +52,10 @@ describe('MCPToolLoader Multiple Servers', () => {
 
     test('should handle multiple server configuration structure', async () => {
       const multiServerConfig: Config = {
-        model: 'gpt-4o-mini',
+        models: [{
+          provider: 'openai',
+          name: 'gpt-4o-mini'
+        }],
         temperature: 0.3,
         maxTokens: 4096,
         mcpServers: {
@@ -120,7 +126,10 @@ describe('MCPToolLoader Multiple Servers', () => {
     test('should generate unique tool names for multiple servers', async () => {
       // Mock scenario: two servers both have a "read" tool
       const mockConfig: Config = {
-        model: 'gpt-4o-mini',
+        models: [{
+          provider: 'openai',
+          name: 'gpt-4o-mini'
+        }],
         temperature: 0.3,
         maxTokens: 4096,
         mcpServers: {

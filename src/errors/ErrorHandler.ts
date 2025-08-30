@@ -2,7 +2,20 @@
  * 统一错误处理系统
  */
 
-import { ToolExecutionResult } from '../tools/index.js';
+/**
+ * 工具执行结果接口
+ */
+interface ToolExecutionResult<T = any> {
+  success: boolean;
+  data?: T;
+  error?: ErrorResponse;
+  executionTime?: number;
+  metadata?: {
+    executionTime: number;
+    toolName: string;
+    timestamp: string;
+  };
+}
 
 /**
  * 标准化错误响应接口
@@ -122,7 +135,7 @@ export class ErrorHandler {
 
       return {
         success: false,
-        error: standardizedError.error,
+        error: standardizedError,
         metadata: {
           executionTime,
           toolName,
@@ -234,7 +247,7 @@ export class ErrorHandler {
 
     return {
       success: false,
-      error: standardizedError.error,
+      error: standardizedError,
       metadata: {
         executionTime: 0,
         toolName,
@@ -257,7 +270,7 @@ export class ErrorHandler {
   ): ToolExecutionResult<T> {
     return {
       success: false,
-      error: `Invalid parameter '${parameterName}': expected ${expectedType}`,
+      error: this.standardize(`Invalid parameter '${parameterName}': expected ${expectedType}`, ErrorCode.TOOL_PARAMETER_INVALID),
       metadata: {
         executionTime: 0,
         toolName,

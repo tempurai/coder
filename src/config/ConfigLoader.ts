@@ -3,32 +3,13 @@ import * as path from 'path';
 import * as os from 'os';
 import { injectable } from 'inversify';
 import { McpServerConfig } from '../tools/McpToolLoader.js';
-import type { LanguageModel } from 'ai';
 import deepmergeFactory from '@fastify/deepmerge';
 import { ConfigInitializer } from './ConfigInitializer.js';
+import { ModelProvider, ModelConfig } from '../models/index.js';
 
 /**
- * 模型提供商类型
- * 支持的AI模型提供商
+ * 部分更新类型，用于深度合并操作
  */
-export type ModelProvider = 'openai' | 'google' | 'anthropic' | 'cohere' | 'mistral';
-
-/**
- * 模型配置接口
- * 支持灵活的模型指定方式，可以是字符串或详细配置对象
- */
-export interface ModelConfig {
-  /** 模型提供商 */
-  provider: ModelProvider;
-  /** 具体的模型名称 */
-  name: string;
-  /** 可选的API密钥（如果不在环境变量中） */
-  apiKey?: string;
-  /** 可选的基础URL（用于自定义端点） */
-  baseUrl?: string;
-  /** 其他提供商特定的配置选项 */
-  options?: Record<string, any>;
-}
 type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends Record<string, unknown>
   ? DeepPartial<T[P]>
@@ -95,8 +76,8 @@ interface ToolsConfig {
  * 应用程序主配置接口
  */
 export interface Config {
-  /** AI模型配置 - 支持字符串（向后兼容）或详细配置对象 */
-  model: string | ModelConfig;
+  /** AI模型配置数组 - 支持多个模型，SimpleAgent使用第一个 */
+  models: ModelConfig[];
   /** OpenAI API密钥（向后兼容，建议在ModelConfig中配置） */
   apiKey?: string;
   /** Tavily API密钥，用于网页搜索功能 */
@@ -118,7 +99,12 @@ export interface Config {
  * 提供所有配置选项的合理默认值
  */
 const DEFAULT_CONFIG: Config = {
-  model: 'gpt-4o-mini',
+  models: [
+    {
+      provider: 'openai',
+      name: 'gpt-4o-mini'
+    }
+  ],
   temperature: 0.3,
   maxTokens: 4096,
   tavilyApiKey: undefined,
@@ -251,8 +237,13 @@ export class ConfigLoader {
   public validateConfig(): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
 
-    if (!this.config.model || typeof this.config.model !== 'string') {
-      errors.push('Model name is required and must be a string');
+    if (!this.config.models || !Array.isArray(this.config.models) || this.config.models.length === 0) {
+      errors.push('At least one model configuration is required in the models array');
+    } else {
+      const firstModel = this.config.models[0];
+      if (!firstModel.provider || !firstModel.name) {
+        errors.push('First model must have provider and name specified');
+      }
     }
 
     if (this.config.temperature < 0 || this.config.temperature > 2) {
@@ -402,196 +393,15 @@ export class ConfigLoader {
   }
 
   /**
-   * 创建语言模型实例
-   * 根据配置动态创建并返回适合的 LanguageModel 实例
-   * @returns Promise<LanguageModel> 配置的语言模型实例
-   */
-  public async createLanguageModel(): Promise<LanguageModel> {
-    const modelConfig = this.normalizeModelConfig(this.config.model);
-
-    try {
-      switch (modelConfig.provider) {
-        case 'openai':
-          return await this.createOpenAIModel(modelConfig);
-        case 'google':
-          return await this.createGoogleModel(modelConfig);
-        case 'anthropic':
-          return await this.createAnthropicModel(modelConfig);
-        case 'cohere':
-          return await this.createCohereModel(modelConfig);
-        case 'mistral':
-          return await this.createMistralModel(modelConfig);
-        default:
-          throw new Error(`Unsupported model provider: ${modelConfig.provider}`);
-      }
-    } catch (error) {
-      throw new Error(`Failed to create language model: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * 规范化模型配置
-   * 将字符串或配置对象转换为标准的 ModelConfig
-   * @param model 模型配置（字符串或对象）
-   * @returns 规范化的模型配置
-   */
-  private normalizeModelConfig(model: string | ModelConfig): ModelConfig {
-    if (typeof model === 'string') {
-      // 向后兼容：将字符串转换为 ModelConfig
-      return this.parseModelString(model);
-    }
-
-    return model;
-  }
-
-  /**
-   * 解析模型字符串为 ModelConfig
-   * 支持格式：'gpt-4o-mini' 或 'openai:gpt-4o-mini'
-   * @param modelString 模型字符串
-   * @returns 解析后的 ModelConfig
-   */
-  private parseModelString(modelString: string): ModelConfig {
-    if (modelString.includes(':')) {
-      const [provider, name] = modelString.split(':', 2);
-      return {
-        provider: provider as ModelProvider,
-        name: name,
-        apiKey: this.config.apiKey
-      };
-    }
-
-    // 根据模型名称推断提供商
-    const provider = this.inferProviderFromModelName(modelString);
-    return {
-      provider,
-      name: modelString,
-      apiKey: this.config.apiKey
-    };
-  }
-
-  /**
-   * 根据模型名称推断提供商
-   * @param modelName 模型名称
-   * @returns 推断的提供商
-   */
-  private inferProviderFromModelName(modelName: string): ModelProvider {
-    if (modelName.startsWith('gpt-') || modelName.includes('openai')) {
-      return 'openai';
-    }
-    if (modelName.startsWith('gemini-') || modelName.includes('google')) {
-      return 'google';
-    }
-    if (modelName.startsWith('claude-') || modelName.includes('anthropic')) {
-      return 'anthropic';
-    }
-    if (modelName.includes('cohere') || modelName.startsWith('command-')) {
-      return 'cohere';
-    }
-    if (modelName.includes('mistral') || modelName.startsWith('mixtral-')) {
-      return 'mistral';
-    }
-
-    // 默认为 OpenAI（向后兼容）
-    return 'openai';
-  }
-
-  /**
-   * 创建 OpenAI 模型实例
-   */
-  private async createOpenAIModel(config: ModelConfig): Promise<LanguageModel> {
-    const { openai } = await import('@ai-sdk/openai');
-
-    const apiKey = config.apiKey || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OpenAI API key not found. Please set it in config or OPENAI_API_KEY environment variable.');
-    }
-
-    // 设置环境变量
-    process.env.OPENAI_API_KEY = apiKey;
-
-    // 如果配置了自定义baseUrl，设置为环境变量
-    if (config.baseUrl) {
-      process.env.OPENAI_BASE_URL = config.baseUrl;
-    }
-
-    // 直接使用 openai(modelName) 的标准格式
-    return openai(config.name) as LanguageModel;
-  }
-
-  /**
-   * 创建 Google 模型实例
-   */
-  private async createGoogleModel(config: ModelConfig): Promise<LanguageModel> {
-    const { google } = await import('@ai-sdk/google');
-
-    const apiKey = config.apiKey || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      throw new Error('Google AI API key not found. Please set it in config or GOOGLE_AI_API_KEY environment variable.');
-    }
-
-    // 设置环境变量
-    process.env.GOOGLE_AI_API_KEY = apiKey;
-
-    return google(config.name) as LanguageModel;
-  }
-
-  /**
-   * 创建 Anthropic 模型实例
-   */
-  private async createAnthropicModel(config: ModelConfig): Promise<LanguageModel> {
-    const { anthropic } = await import('@ai-sdk/anthropic');
-
-    const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error('Anthropic API key not found. Please set it in config or ANTHROPIC_API_KEY environment variable.');
-    }
-
-    // 设置环境变量
-    process.env.ANTHROPIC_API_KEY = apiKey;
-
-    return anthropic(config.name) as LanguageModel;
-  }
-
-  /**
-   * 创建 Cohere 模型实例
-   */
-  private async createCohereModel(config: ModelConfig): Promise<LanguageModel> {
-    const { cohere } = await import('@ai-sdk/cohere');
-
-    const apiKey = config.apiKey || process.env.COHERE_API_KEY;
-    if (!apiKey) {
-      throw new Error('Cohere API key not found. Please set it in config or COHERE_API_KEY environment variable.');
-    }
-
-    // 设置环境变量
-    process.env.COHERE_API_KEY = apiKey;
-
-    return cohere(config.name) as LanguageModel;
-  }
-
-  /**
-   * 创建 Mistral 模型实例
-   */
-  private async createMistralModel(config: ModelConfig): Promise<LanguageModel> {
-    const { mistral } = await import('@ai-sdk/mistral');
-
-    const apiKey = config.apiKey || process.env.MISTRAL_API_KEY;
-    if (!apiKey) {
-      throw new Error('Mistral API key not found. Please set it in config or MISTRAL_API_KEY environment variable.');
-    }
-
-    // 设置环境变量
-    process.env.MISTRAL_API_KEY = apiKey;
-
-    return mistral(config.name) as LanguageModel;
-  }
-
-  /**
    * 获取当前模型的显示信息
    * @returns 模型显示字符串
    */
   public getModelDisplayName(): string {
-    const modelConfig = this.normalizeModelConfig(this.config.model);
-    return `${modelConfig.provider}:${modelConfig.name}`;
+    if (!this.config.models || this.config.models.length === 0) {
+      return 'No models configured';
+    }
+    
+    const firstModel = this.config.models[0];
+    return `${firstModel.provider}:${firstModel.name}`;
   }
 }

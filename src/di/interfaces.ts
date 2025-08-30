@@ -61,11 +61,6 @@ export interface ISnapshotManager {
     snapshotCount: number;
     latestSnapshot?: SnapshotInfo;
   }>;
-
-  /**
-   * 清理资源
-   */
-  cleanup(): Promise<void>;
 }
 
 /**

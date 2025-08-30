@@ -438,7 +438,9 @@ export class ToolExecutionEngine {
    */
   private sanitizeConfig(): Record<string, any> {
     return {
-      model: typeof this.config.model === 'string' ? this.config.model : this.config.model.name,
+      model: this.config.models && this.config.models.length > 0 
+        ? `${this.config.models[0].provider}:${this.config.models[0].name}` 
+        : 'No models configured',
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
       toolsEnabled: Object.keys(this.registeredTools)

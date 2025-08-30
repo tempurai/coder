@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Container } from 'inversify';
 import { Config, ConfigLoader } from '../config/ConfigLoader.js';
+import { DefaultModelFactory } from '../models/index.js';
 import { SimpleAgent } from '../agents/SimpleAgent.js';
 import { ReActAgent } from '../agents/ReActAgent.js';
 import { SessionService } from '../session/SessionService.js';
@@ -32,18 +33,30 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  // 2) 语言模型 - 异步创建，但绑定为实例
+  // 2) 模型工厂 - 负责创建各种AI模型
+  container.bind<DefaultModelFactory>(TYPES.ModelFactory)
+    .to(DefaultModelFactory)
+    .inSingletonScope();
+
+  // 3) 语言模型 - 通过ModelFactory创建，使用第一个模型配置
   container.bind<LanguageModel>(TYPES.LanguageModel)
     .toDynamicValue(async () => {
-      const configLoader = container.get<ConfigLoader>(TYPES.ConfigLoader);
+      const config = container.get<Config>(TYPES.Config);
+      const modelFactory = container.get<DefaultModelFactory>(TYPES.ModelFactory);
+      
+      if (!config.models || config.models.length === 0) {
+        throw new Error('No models configured. Please add at least one model to the models array in your configuration.');
+      }
+      
+      const firstModel = config.models[0];
       console.log('🔄 正在初始化AI模型...');
-      const model = await configLoader.createLanguageModel();
-      console.log(`✅ 模型已初始化: ${configLoader.getModelDisplayName()}`);
+      const model = await modelFactory.createModel(firstModel);
+      console.log(`✅ 模型已初始化: ${firstModel.provider}:${firstModel.name}`);
       return model;
     })
     .inSingletonScope();
 
-  // 3) 文件监听服务 - 使用toDynamicValue配置默认选项
+  // 4) 文件监听服务 - 使用toDynamicValue配置默认选项
   container.bind<FileWatcherService>(TYPES.FileWatcherService)
     .toDynamicValue(() => {
       const fileWatcherService = new FileWatcherService({

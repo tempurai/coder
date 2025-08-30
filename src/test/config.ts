@@ -5,13 +5,13 @@ import { Config } from '../config/ConfigLoader.js';
  * Uses mocked LLM and configured for testing
  */
 export const TEST_CONFIG: Config = {
-  model: {
+  models: [{
     provider: 'openai',
     name: 'gpt-4o-mini',
     apiKey: 'test-mock-key',
     baseUrl: 'http://localhost:3001/v1', // Mock server URL
     options: {}
-  },
+  }],
   temperature: 0.1,
   maxTokens: 1000,
   tools: {

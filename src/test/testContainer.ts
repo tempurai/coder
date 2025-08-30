@@ -16,10 +16,6 @@ class MockConfigLoader extends ConfigLoader {
     return TEST_CONFIG;
   }
 
-  override async createLanguageModel(): Promise<LanguageModel> {
-    return mockAISDK.createMockModel() as unknown as LanguageModel;
-  }
-
   getSystemPrompt(): string {
     return 'You are a helpful AI assistant for testing.';
   }

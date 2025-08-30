@@ -475,10 +475,11 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
      * @returns 模型的显示名称
      */
     private getModelDisplayName(): string {
-        if (typeof this.config.model === 'string') {
-            return this.config.model;
+        if (!this.config.models || this.config.models.length === 0) {
+            return 'No models configured';
         }
-        return `${this.config.model.provider}:${this.config.model.name}`;
+        const firstModel = this.config.models[0];
+        return `${firstModel.provider}:${firstModel.name}`;
     }
 
     // 标准处理方法

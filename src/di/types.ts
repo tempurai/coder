@@ -7,6 +7,7 @@ export const TYPES = {
   Config: Symbol.for('Config'),
   ConfigLoader: Symbol.for('ConfigLoader'),
   LanguageModel: Symbol.for('LanguageModel'),
+  ModelFactory: Symbol.for('ModelFactory'),
 
   // 核心服务
   SimpleAgent: Symbol.for('SimpleAgent'),

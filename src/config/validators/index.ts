@@ -142,8 +142,8 @@ export class ConfigValidator {
         let score = 0;
 
         // 基础配置 (40%)
-        if (config.model) score += 2;
-        if (config.apiKey || (typeof config.model !== 'string' && config.model.apiKey)) score += 2;
+        if (config.models && config.models.length > 0) score += 2;
+        if (config.apiKey || (config.models && config.models.length > 0 && config.models[0].apiKey)) score += 2;
 
         // API密钥配置 (20%)
         if (config.tavilyApiKey) score += 1;

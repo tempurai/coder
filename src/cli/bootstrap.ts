@@ -4,10 +4,11 @@
  */
 
 import 'reflect-metadata';
-import { getContainer } from '../di/container';
-import { TYPES } from '../di/container';
-import { ConfigLoader } from '../config/ConfigLoader';
-import { SessionService } from '../session/SessionService';
+import { getContainer } from '../di/container.js';
+import { TYPES } from '../di/container.js';
+import { ConfigLoader } from '../config/ConfigLoader.js';
+import { SessionService } from '../session/SessionService.js';
+import { startEnhancedInkUI } from './InkUI.js';
 
 /**
  * 应用启动模式
@@ -53,7 +54,8 @@ export class ApplicationBootstrap {
 
       // 验证模型配置
       try {
-        await configLoader.createLanguageModel();
+        const modelFactory = this.container.get<() => Promise<any>>(TYPES.LanguageModel);
+        await modelFactory();
       } catch (error) {
         return {
           valid: false,
@@ -84,13 +86,13 @@ export class ApplicationBootstrap {
     }
 
     try {
-      // 使用依赖注入获取SessionService（会自动初始化所有依赖）
-      const sessionService = await this.container.get<Promise<SessionService>>(TYPES.SessionService);
+      // 使用工厂模式获取SessionService（会自动初始化所有依赖）
+      const sessionServiceFactory = this.container.get<() => Promise<SessionService>>(TYPES.SessionService);
+      const sessionService = await sessionServiceFactory();
 
       console.log('✅ 新的依赖注入架构已初始化');
 
       // 启动InkUI界面
-      const { startEnhancedInkUI } = await import('./InkUI.js');
       await startEnhancedInkUI(sessionService);
 
     } catch (error) {
@@ -112,7 +114,11 @@ export class ApplicationBootstrap {
         case 'version':
         case '--version':
         case '-v':
-          const pkg = require('../../package.json');
+          const { readFileSync } = await import('fs');
+          const { join } = await import('path');
+          const { fileURLToPath } = await import('url');
+          const __dirname = fileURLToPath(new URL('.', import.meta.url));
+          const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8'));
           console.log(`tempurai v${pkg.version}`);
           break;
 

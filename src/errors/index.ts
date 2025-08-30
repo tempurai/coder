@@ -1,4 +1,4 @@
-import type { ErrorResponse } from './ErrorHandler';
+import type { ErrorResponse } from './ErrorHandler.js';
 
 /**
  * 便捷的错误格式化函数

@@ -1,4 +1,4 @@
-import { ConfigLoader, Config } from '../config/ConfigLoader';
+import { ConfigLoader, Config } from '../config/ConfigLoader.js';
 
 /**
  * 命令验证结果接口
@@ -103,7 +103,7 @@ export class CommandValidator {
 
     // 提取根命令（第一个单词，去除路径）
     const rootCommand = this.extractRootCommand(trimmedCommand);
-    
+
     if (!rootCommand) {
       return {
         allowed: false,
@@ -201,7 +201,7 @@ export class CommandValidator {
     }
 
     // 检查白名单中是否有危险命令
-    const dangerousInAllowlist = securityConfig.allowlist.filter(cmd => 
+    const dangerousInAllowlist = securityConfig.allowlist.filter(cmd =>
       DANGEROUS_COMMANDS.has(cmd)
     );
     if (dangerousInAllowlist.length > 0) {
@@ -210,7 +210,7 @@ export class CommandValidator {
     }
 
     // 检查黑名单是否覆盖了白名单中的命令
-    const conflicts = securityConfig.allowlist.filter(cmd => 
+    const conflicts = securityConfig.allowlist.filter(cmd =>
       securityConfig.blocklist.includes(cmd)
     );
     if (conflicts.length > 0) {
@@ -231,11 +231,11 @@ export class CommandValidator {
     if (parts.length === 0) return '';
 
     const firstPart = parts[0];
-    
+
     // 处理路径格式的命令
     const pathSegments = firstPart.split(/[/\\]/);
     const commandName = pathSegments[pathSegments.length - 1];
-    
+
     // 移除文件扩展名（主要针对 Windows）
     return commandName.replace(/\.(exe|cmd|bat)$/i, '').toLowerCase();
   }
@@ -244,7 +244,7 @@ export class CommandValidator {
    * 检查命令是否在白名单中
    */
   private isInAllowlist(command: string, allowlist: string[]): boolean {
-    return allowlist.some(allowed => 
+    return allowlist.some(allowed =>
       allowed.toLowerCase() === command.toLowerCase()
     );
   }
@@ -253,7 +253,7 @@ export class CommandValidator {
    * 检查命令是否在黑名单中
    */
   private isInBlocklist(command: string, blocklist: string[]): boolean {
-    return blocklist.some(blocked => 
+    return blocklist.some(blocked =>
       blocked.toLowerCase() === command.toLowerCase()
     );
   }
@@ -281,7 +281,7 @@ export class CommandValidator {
       'dd': '使用更安全的磁盘工具',
       'kill': '使用进程管理工具或 Ctrl+C 终止进程'
     };
-    
+
     return suggestions[command.toLowerCase()];
   }
 }

@@ -8,7 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigLoader, Config } from '../src/config/ConfigLoader';
-import { SimpleAgent } from '../src/agents/SimpleAgent';
+import { SimpleAgent } from '../src/agents/SimpleAgent.js';
 import { checkpointManager } from '../src/tools/CheckpointManager';
 import { diffDisplay } from '../src/tools/EnhancedDiffDisplay';
 

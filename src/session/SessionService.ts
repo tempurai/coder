@@ -1,4 +1,4 @@
-import { SimpleAgent } from '../agents/SimpleAgent';
+import { SimpleAgent } from '../agents/SimpleAgent.js';
 import { FileWatcherService } from '../services/FileWatcherService';
 import { Config } from '../config/ConfigLoader';
 import { ErrorHandler } from '../errors/ErrorHandler';
@@ -11,11 +11,11 @@ type GitWorkflowManager = any;
  * SessionService依赖接口
  */
 export interface SessionServiceDependencies {
-  agent: SimpleAgent;
-  fileWatcher: FileWatcherService;
-  config: Config;
-  createReActAgent?: (agent: SimpleAgent) => ReActAgent;
-  createGitWorkflowManager?: () => GitWorkflowManager;
+    agent: SimpleAgent;
+    fileWatcher: FileWatcherService;
+    config: Config;
+    createReActAgent?: (agent: SimpleAgent) => ReActAgent;
+    createGitWorkflowManager?: () => GitWorkflowManager;
 }
 
 /**
@@ -100,7 +100,7 @@ export class SessionService {
     private totalTokensUsed: number = 0;
     private totalResponseTime: number = 0;
     private interactionCount: number = 0;
-    
+
     // 工厂函数，避免直接导入
     private createReActAgent: (agent: SimpleAgent) => ReActAgent;
     private createGitWorkflowManager: () => GitWorkflowManager;
@@ -110,7 +110,7 @@ export class SessionService {
         this.fileWatcherService = dependencies.fileWatcher;
         this.config = dependencies.config;
         this.sessionStartTime = new Date();
-        
+
         // 使用工厂函数或延迟加载来避免循环依赖
         this.createReActAgent = dependencies.createReActAgent || this.defaultCreateReActAgent;
         this.createGitWorkflowManager = dependencies.createGitWorkflowManager || this.defaultCreateGitWorkflowManager;
@@ -133,21 +133,21 @@ export class SessionService {
      */
     async processTask(query: string): Promise<TaskExecutionResult> {
         const startTime = Date.now();
-        
+
         console.log('\n🚀 开始处理任务（新架构）...');
         console.log(`📝 任务描述: ${query.substring(0, 80)}${query.length > 80 ? '...' : ''}`);
 
         try {
             // 第一步：通过工厂函数创建Git工作流管理器
             const gitManager = this.createGitWorkflowManager();
-            
+
             // 第二步：通过工厂函数创建ReActAgent（使用SimpleAgent作为能力层）
             const reactAgent = this.createReActAgent(this._agent);
 
             // 第三步：启动Git任务分支
             console.log('🌿 创建任务分支...');
             const startResult = await gitManager.startTask(query);
-            
+
             if (!startResult.success) {
                 return {
                     success: false,
@@ -200,7 +200,7 @@ export class SessionService {
                 // 任务失败，丢弃任务分支
                 console.log('❌ 任务执行失败，丢弃任务分支...');
                 const discardResult = await gitManager.discardTask('main', true);
-                
+
                 finalResult = {
                     success: false,
                     taskDescription: query,
@@ -218,7 +218,7 @@ export class SessionService {
             // 更新会话统计
             this.interactionCount++;
             this.totalResponseTime += finalResult.duration;
-            
+
             // 添加到历史记录
             this.addToHistory('user', query);
             this.addToHistory('assistant', finalResult.summary, {
@@ -234,9 +234,9 @@ export class SessionService {
         } catch (error) {
             const duration = Date.now() - startTime;
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
-            
+
             console.error(`💥 ${errorMessage}`);
-            
+
             // 尝试清理：丢弃可能创建的任务分支
             try {
                 const gitManager = this.createGitWorkflowManager();

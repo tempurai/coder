@@ -21,20 +21,20 @@ interface BaseTool {
 }
 
 // 导出现有工具
-export * from './ShellExecutor';
-export * from './GitWorkflowManager';
+export * from './ShellExecutor.js';
+export * from './GitWorkflowManager.js';
 
 // 核心工具(非冲突导出)
-export { projectContextTool, codeSearchTool } from './CoreTools';
-export { readFileTool as coreReadFileTool, writeFileTool as coreWriteFileTool } from './CoreTools';
+export { projectContextTool, codeSearchTool } from './CoreTools.js';
+export { readFileTool as coreReadFileTool, writeFileTool as coreWriteFileTool } from './CoreTools.js';
 
 // 传统工具(最小使用)
-export * from './FileTools';
-export * from './GitTools';
-export * from './CodeTools';
+export * from './FileTools.js';
+export * from './GitTools.js';
+export * from './CodeTools.js';
 
 // 错误处理
-export * from '../errors/ErrorHandler';
+export * from '../errors/ErrorHandler.js';
 
 // 导出接口定义
 export type { ToolExecutionResult, BaseTool };

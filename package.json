@@ -2,7 +2,7 @@
   "name": "tempurai",
   "version": "1.0.0",
   "description": "AI-assisted programming CLI tool",
-  "main": "dist/index.js",
+  "type": "module",
   "bin": {
     "tempurai": "dist/cli/index.js"
   },
@@ -14,7 +14,7 @@
     "test": "jest",
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "dev": "ts-node src/cli/index.ts",
+    "dev": "tsx src/cli/index.ts",
     "prepare": "npm run build",
     "postpack": "rm -f *.tgz"
   },
@@ -22,12 +22,14 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@sindresorhus/tsconfig": "^8.0.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/html-to-text": "^9.0.4",
     "@types/node": "^24.3.0",
     "concurrently": "^9.2.1",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   },
   "dependencies": {

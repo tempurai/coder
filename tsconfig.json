@@ -1,26 +1,30 @@
 {
   "compilerOptions": {
-    "target": "esnext",
-    "module": "nodenext",
-    "strict": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
+    "module": "node20",
+    "moduleResolution": "node16",
+    "moduleDetection": "force",
+    "target": "esnext",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "resolveJsonModule": false,
     "jsx": "react-jsx",
-    "moduleResolution": "nodenext",
-    "resolveJsonModule": true,
-    "allowJs": true,
     "declaration": true,
-    "sourceMap": true,
+    "newLine": "lf",
+    "stripInternal": true,
+    "strict": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noEmitOnError": true,
+    "useDefineForClassFields": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/gui/**/*", "src/cli/InkUI.tsx", "src/cli/components/**/*"],
+  "exclude": ["node_modules", "dist", "src/gui/**/*"],
   "ts-node": {
-    "esm": false,
+    "esm": true,
     "experimentalSpecifierResolution": "node"
   }
 }

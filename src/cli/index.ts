@@ -10,7 +10,7 @@
  */
 
 import 'reflect-metadata';
-import { bootstrapApplication, parseArguments } from './bootstrap';
+import { bootstrapApplication, parseArguments } from './bootstrap.js';
 
 /**
  * 错误处理器
@@ -51,7 +51,7 @@ async function main(): Promise<void> {
 }
 
 // 只有直接执行时才运行main函数
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error: Error) => {
     console.error('💥 致命错误:', error);
     process.exit(1);

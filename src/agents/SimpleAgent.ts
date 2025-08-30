@@ -1,49 +1,47 @@
 import { Agent } from '@mastra/core';
-import { Config } from '../config/ConfigLoader';
+import { Config } from '../config/ConfigLoader.js';
 import type { LanguageModel } from 'ai';
-import { LoopDetectionService, LoopDetectionResult } from '../services/LoopDetectionService';
-import { SimpleProjectContextProvider } from '../context/SimpleProjectContextProvider';
-import { ToolExecutionResult, BaseTool } from '../tools';
-import * as path from 'path';
+import { LoopDetectionService, LoopDetectionResult } from '../services/LoopDetectionService.js';
+import { SimpleProjectContextProvider } from '../context/SimpleProjectContextProvider.js';
 
 // Agent流可以产出的事件类型
-export type AgentStreamEvent = 
-  | { type: 'text-chunk'; content: string }
-  | { type: 'tool-call'; toolName: string; toolInput: Record<string, any> }
-  | { type: 'tool-result'; toolName: string; result: any; warning?: string }
-  | { type: 'error'; content: string };
+export type AgentStreamEvent =
+    | { type: 'text-chunk'; content: string }
+    | { type: 'tool-call'; toolName: string; toolInput: Record<string, any> }
+    | { type: 'tool-result'; toolName: string; result: any; warning?: string }
+    | { type: 'error'; content: string };
 
 // 增强工具集
-import { shellExecutorTool, multiCommandTool } from '../tools/ShellExecutor';
+import { shellExecutorTool, multiCommandTool } from '../tools/ShellExecutor.js';
 // 简化的文件工具集
-import { simpleFileTools } from '../tools/SimpleFileTools';
+import { simpleFileTools } from '../tools/SimpleFileTools.js';
 // Web工具集
-import { webSearchTool, urlFetchTool } from '../tools/WebTools';
+import { webSearchTool, urlFetchTool } from '../tools/WebTools.js';
 // MCP工具集
-import { loadMcpTools, mcpToolLoader, McpTool } from '../tools/McpToolLoader';
+import { loadMcpTools, mcpToolLoader, McpTool } from '../tools/McpToolLoader.js';
 // 传统工具(后备)
-import { findFilesTool, searchInFilesTool } from '../tools/FileTools';
-import { gitStatusTool, gitLogTool, gitDiffTool } from '../tools/GitTools';
-import { findFunctionsTool, findImportsTool, getProjectStructureTool, analyzeCodeStructureTool } from '../tools/CodeTools';
+import { findFilesTool, searchInFilesTool } from '../tools/FileTools.js';
+import { gitStatusTool, gitLogTool, gitDiffTool } from '../tools/GitTools.js';
+import { findFunctionsTool, findImportsTool, getProjectStructureTool, analyzeCodeStructureTool } from '../tools/CodeTools.js';
 
 /**
  * 工具初始化状态
  */
 interface ToolInitializationStatus {
-  builtinLoaded: boolean;
-  mcpLoaded: boolean;
-  allLoaded: boolean;
-  toolCount: number;
-  error?: string;
+    builtinLoaded: boolean;
+    mcpLoaded: boolean;
+    allLoaded: boolean;
+    toolCount: number;
+    error?: string;
 }
 
 /**
  * Agent初始化选项接口
  */
 interface AgentInitOptions {
-  config: Config;
-  model: LanguageModel;
-  customContext?: string;
+    config: Config;
+    model: LanguageModel;
+    customContext?: string;
 }
 
 /**
@@ -79,13 +77,13 @@ export class SimpleAgent {
      * @param customContext 可选的用户自定义上下文（向后兼容）
      */
     constructor(
-        config: Config, 
-        model: LanguageModel, 
+        config: Config,
+        model: LanguageModel,
         customContext?: string
     ) {
         this.config = config;
         this.model = model;
-        
+
         // 初始化循环检测服务
         this.loopDetector = new LoopDetectionService({
             maxHistorySize: 25,
@@ -94,10 +92,10 @@ export class SimpleAgent {
             parameterCycleThreshold: 4,
             timeWindowMs: 60000 // 1分钟窗口
         });
-        
+
         // 初始化简单项目上下文提供者
         this.simpleContextProvider = new SimpleProjectContextProvider();
-        
+
         // 不再在构造函数中创建Agent
         // Agent现在在initializeAsync中统一创建
         console.log('🔧 SimpleAgent构造完成，等待异步初始化...');
@@ -110,35 +108,35 @@ export class SimpleAgent {
     async initializeAsync(customContext?: string): Promise<void> {
         try {
             console.log('🔄 开始Agent异步初始化...');
-            
+
             // 1. 先加载内置工具并创建基础Agent
             this.loadBuiltinTools();
             this.agent = this.createAgentWithBuiltinTools(customContext);
             this.initializationStatus.builtinLoaded = true;
             console.log('✅ 内置工具已加载，基础Agent已创建');
-            
+
             // 2. 异步加载MCP工具
             await this.loadMcpToolsAsync();
             this.initializationStatus.mcpLoaded = true;
             console.log('✅ MCP工具加载完成');
-            
+
             // 3. 统计总工具数量
             this.initializationStatus.toolCount = this.getBuiltinToolsCount() + this.mcpTools.length;
             this.initializationStatus.allLoaded = true;
-            
+
             console.log(`✅ Agent初始化完成 - 共${this.initializationStatus.toolCount}个工具可用`);
-            
+
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : '未知错误';
             console.error('❌ Agent初始化失败:', errorMessage);
             this.initializationStatus.error = errorMessage;
-            
+
             // 创建最小功能Agent作为后备
             if (!this.agent) {
                 this.agent = this.createMinimalAgent();
                 console.log('🔧 已创建最小功能Agent作为后备');
             }
-            
+
             throw new Error(`Agent initialization failed: ${errorMessage}`);
         }
     }
@@ -151,7 +149,7 @@ export class SimpleAgent {
         // 这里可以添加内置工具的预加载逻辑
         // 目前内置工具是静态的，所以直接标记为已加载
     }
-    
+
     /**
      * 创建带有内置工具的Agent
      * @param customContext 用户自定义上下文
@@ -163,7 +161,7 @@ export class SimpleAgent {
             return new Agent({
                 name: 'EnhancedCodeAssistant',
                 instructions,
-                model: this.model as any, 
+                model: this.model as any,
                 tools: this.getBuiltinTools(),
             });
         } catch (error) {
@@ -171,7 +169,7 @@ export class SimpleAgent {
             throw error; // 让上层处理错误
         }
     }
-    
+
     /**
      * 创建最小功能Agent（错误后备）
      */
@@ -203,10 +201,10 @@ export class SimpleAgent {
         try {
             console.log('🔄 开始加载MCP工具...');
             this.mcpStatus = { isLoaded: false, toolCount: 0, connectionCount: 0, tools: [], error: undefined };
-            
+
             this.mcpTools = await loadMcpTools(this.config);
             console.log(`✅ MCP工具加载完成: ${this.mcpTools.length}个工具`);
-            
+
             // 动态添加MCP工具到现有Agent
             if (this.mcpTools.length > 0) {
                 const mcpToolsMap: Record<string, any> = {};
@@ -215,7 +213,7 @@ export class SimpleAgent {
                 }
                 this.addToolsToAgent(mcpToolsMap);
             }
-            
+
             // 更新状态
             const connectionStatus = mcpToolLoader.getConnectionStatus();
             this.mcpStatus = {
@@ -224,12 +222,12 @@ export class SimpleAgent {
                 connectionCount: connectionStatus.connected,
                 tools: this.mcpTools.map(tool => tool.name)
             };
-            
+
             console.log('✅ MCP工具集成完成');
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : '未知错误';
             console.error('❌ MCP工具加载失败:', errorMessage);
-            
+
             this.mcpStatus = {
                 isLoaded: true, // 标记为已尝试加载
                 toolCount: 0,
@@ -248,13 +246,13 @@ export class SimpleAgent {
         try {
             // 获取当前Agent的工具集
             const currentTools = (this.agent as any).tools || {};
-            
+
             // 合并新工具
             const mergedTools = { ...currentTools, ...tools };
-            
+
             // 更新Agent的工具集（直接修改内部属性）
             (this.agent as any).tools = mergedTools;
-            
+
             const toolNames = Object.keys(tools);
             console.log(`🔧 已动态添加 ${toolNames.length} 个工具: ${toolNames.join(', ')}`);
         } catch (error) {
@@ -268,11 +266,11 @@ export class SimpleAgent {
      */
     private async waitForMcpTools(timeoutMs: number = 10000): Promise<void> {
         const startTime = Date.now();
-        
+
         while (!this.mcpStatus.isLoaded && (Date.now() - startTime) < timeoutMs) {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
-        
+
         if (!this.mcpStatus.isLoaded) {
             console.warn('⚠️ MCP工具加载超时，继续使用内置工具');
         }
@@ -284,7 +282,7 @@ export class SimpleAgent {
     private getBuiltinToolsCount(): number {
         return Object.keys(this.getBuiltinTools()).length;
     }
-    
+
     /**
      * 获取所有内置工具
      * @returns 内置工具对象
@@ -295,15 +293,15 @@ export class SimpleAgent {
             write_file: simpleFileTools.write_file,
             amend_file: simpleFileTools.amend_file,
             read_file: simpleFileTools.read_file,
-            
+
             // 🌐 WEB ACCESS TOOLS
             web_search: webSearchTool,
             url_fetch: urlFetchTool,
-            
+
             // 🔧 SHELL EXECUTION TOOLS  
             shell_executor: this.createConfigurableShellTool(shellExecutorTool),
             multi_command: this.createConfigurableShellTool(multiCommandTool),
-            
+
             // 🔍 CODE ANALYSIS TOOLS
             find_files: findFilesTool,
             search_in_files: searchInFilesTool,
@@ -311,10 +309,10 @@ export class SimpleAgent {
             find_imports: findImportsTool,
             get_project_structure: getProjectStructureTool,
             analyze_code_structure: analyzeCodeStructureTool,
-            
+
             // 📜 GIT QUERY TOOLS (for information only)
             git_status: gitStatusTool,
-            git_log: gitLogTool, 
+            git_log: gitLogTool,
             git_diff: gitDiffTool,
 
             // 🏁 TASK COMPLETION
@@ -339,7 +337,7 @@ export class SimpleAgent {
     private extractCustomContext(): string | undefined {
         return this.config.customContext;
     }
-    
+
     /**
      * 构建带有静态项目上下文的系统指令
      * @param customContext 用户自定义上下文
@@ -348,10 +346,10 @@ export class SimpleAgent {
     private buildSystemInstructionsSync(customContext?: string): string {
         // 获取静态项目上下文
         const staticProjectContext = this.simpleContextProvider.getStaticContext();
-        
+
         // 获取可用工具列表
         const availableTools = Object.keys(this.getBuiltinTools());
-        
+
         const baseInstructions = `You are a software development assistant with advanced reasoning capabilities.
 
 ${staticProjectContext}
@@ -443,11 +441,11 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         if (customContext && customContext.trim()) {
             return `${baseInstructions}\n\n## 📋 ADDITIONAL CONTEXT\n${customContext.trim()}`;
         }
-        
+
         return baseInstructions;
     }
 
-    
+
     /**
      * 获取工具描述
      * @param toolName 工具名称
@@ -487,7 +485,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
 
         return descriptions[toolName] || 'general development tasks';
     }
-    
+
     /**
      * 检查Agent是否已初始化
      */
@@ -496,14 +494,14 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
             throw new Error('Agent not initialized. Call initializeAsync() first.');
         }
     }
-    
+
     /**
      * 获取初始化状态
      */
     public getInitializationStatus(): ToolInitializationStatus {
         return { ...this.initializationStatus };
     }
-    
+
     // 创建可配置的Shell工具
     private createConfigurableShellTool(baseTool: any) {
         return {
@@ -515,12 +513,12 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
                     timeout: params.timeout || this.config.tools.shellExecutor.defaultTimeout,
                     maxRetries: params.maxRetries || this.config.tools.shellExecutor.maxRetries
                 };
-                
+
                 return baseTool.execute(configuredParams);
             }
         };
     }
-    
+
     /**
      * 获取模型显示名称
      * @returns 模型的显示名称
@@ -531,25 +529,25 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         }
         return `${this.config.model.provider}:${this.config.model.name}`;
     }
-    
+
     // 标准处理方法
     async process(query: string): Promise<string> {
         try {
             this.ensureAgentInitialized();
-            
+
             const response = await this.agent!.generate([{
                 role: 'user',
                 content: query
             }]);
-            
+
             return response.text;
         } catch (error) {
             console.error('Error processing query:', error);
             return `Sorry, I encountered an error while processing your query: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
     }
-    
-    
+
+
     /**
      * 生成响应（新的核心方法，供ReActAgent调用）
      * 简化的LLM调用，专注于单次文本生成
@@ -559,12 +557,12 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
     async generateResponse(prompt: string): Promise<string> {
         try {
             this.ensureAgentInitialized();
-            
+
             const response = await this.agent!.generate([{
                 role: 'user',
                 content: prompt
             }]);
-            
+
             return response.text || '';
         } catch (error) {
             console.error('Error generating response:', error);
@@ -585,31 +583,31 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
             toolName: toolName,
             parameters: args
         });
-        
+
         if (loopResult.isLoop) {
             // 检测到循环，返回错误而不是执行工具
             const errorMessage = this.buildLoopErrorMessage(loopResult);
             console.warn(`🔄 循环检测警告: ${errorMessage}`);
-            
+
             throw new Error(`Loop detected: ${errorMessage}. Suggestion: ${loopResult.suggestion}`);
         }
-        
+
         this.ensureAgentInitialized();
-        
+
         // 从 agent 的工具集中查找对应工具
         const tool = (this.agent! as any).tools?.[toolName];
-        
+
         if (!tool) {
             throw new Error(`Tool not found: ${toolName}. Available tools: ${Object.keys((this.agent! as any).tools || {}).join(', ')}`);
         }
-        
+
         try {
             // 执行工具
             const result = await tool.execute(args);
-            
+
             // 执行成功，记录用于后续分析
             console.log(`🔧 工具执行成功: ${toolName}`);
-            
+
             return result;
         } catch (error) {
             // 工具执行失败
@@ -618,7 +616,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
             throw new Error(errorMessage);
         }
     }
-    
+
     /**
      * 构建循环检测错误消息
      * @param loopResult 循环检测结果
@@ -626,7 +624,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
      */
     private buildLoopErrorMessage(loopResult: LoopDetectionResult): string {
         const baseMessage = `循环检测: ${loopResult.description}`;
-        
+
         switch (loopResult.loopType) {
             case 'exact_repeat':
                 return `${baseMessage}。这可能表明当前操作无效或存在逻辑错误。`;
@@ -640,7 +638,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
                 return baseMessage;
         }
     }
-    
+
     /**
      * 获取循环检测统计信息
      * @returns 循环检测器的统计信息
@@ -658,7 +656,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
             historyLength: this.loopDetector.getHistory().length
         };
     }
-    
+
     /**
      * 清除循环检测历史
      * 用于开始新的会话或重置状态
@@ -667,7 +665,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         this.loopDetector.clearHistory();
         console.log('🔄 循环检测历史已清除');
     }
-    
+
     /**
      * 更新循环检测配置
      * @param config 新的配置选项
@@ -676,7 +674,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         this.loopDetector.updateConfig(config);
         console.log('⚙️ 循环检测配置已更新');
     }
-    
+
     /**
      * 获取 MCP 工具状态（更新版本）
      * @returns MCP 工具状态信息
@@ -706,19 +704,19 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
     async cleanup(): Promise<void> {
         await mcpToolLoader.cleanup();
     }
-    
+
     // 获取当前配置
     getConfig(): Config {
         return this.config;
     }
-    
+
     // 更新配置
     updateConfig(newConfig: Config): void {
         this.config = newConfig;
         // 这里可以重新初始化agent，但为了简单起见，我们只更新配置对象
         // 实际使用中，可能需要重新创建agent实例
     }
-    
+
     // 健康检查
     async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
         try {
@@ -728,28 +726,28 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
                     message: 'Agent未初始化'
                 };
             }
-            
+
             // 测试基本的API连接
             const testResponse = await this.agent.generate([{
                 role: 'user',
                 content: 'test'
             }]);
-            
+
             if (testResponse.text) {
-                return { 
-                    status: 'healthy', 
-                    message: `Agent运行正常，使用模型: ${this.config.model}，工具数量: ${this.initializationStatus.toolCount}` 
+                return {
+                    status: 'healthy',
+                    message: `Agent运行正常，使用模型: ${this.config.model}，工具数量: ${this.initializationStatus.toolCount}`
                 };
             } else {
-                return { 
-                    status: 'unhealthy', 
-                    message: 'Agent响应为空' 
+                return {
+                    status: 'unhealthy',
+                    message: 'Agent响应为空'
                 };
             }
         } catch (error) {
-            return { 
-                status: 'unhealthy', 
-                message: `Agent连接失败: ${error instanceof Error ? error.message : 'Unknown error'}` 
+            return {
+                status: 'unhealthy',
+                message: `Agent连接失败: ${error instanceof Error ? error.message : 'Unknown error'}`
             };
         }
     }

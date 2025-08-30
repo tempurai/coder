@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { render, Text, Box, Static, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import { SimpleAgent, AgentStreamEvent } from '../agents/SimpleAgent';
-import { SessionService, TaskExecutionResult } from '../session/SessionService';
-import { UserMessage } from './components/UserMessage';
-import { AssistantMessage } from './components/AssistantMessage';
-import { ToolCall } from './components/ToolCall';
-import { SystemMessage } from './components/SystemMessage';
+import { SimpleAgent, AgentStreamEvent } from '../agents/SimpleAgent.js';
+import { SessionService, TaskExecutionResult } from '../session/SessionService.js';
+import { UserMessage } from './components/UserMessage.js';
+import { AssistantMessage } from './components/AssistantMessage.js';
+import { ToolCall } from './components/ToolCall.js';
+import { SystemMessage } from './components/SystemMessage.js';
 
 // 所有历史记录项的通用基础
 interface BaseHistoryItem {
@@ -55,12 +55,7 @@ export interface ErrorItem extends BaseHistoryItem {
 }
 
 // 所有可能历史项的联合类型
-export type HistoryItem =
-  | UserMessageItem
-  | AssistantMessageItem
-  | ToolCallGroupItem
-  | SystemInfoItem
-  | ErrorItem;
+export type HistoryItem = UserMessageItem | AssistantMessageItem | ToolCallGroupItem | SystemInfoItem | ErrorItem;
 
 interface CodeAssistantAppProps {
   sessionService: SessionService;
@@ -72,7 +67,7 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ sessionService, age
   const [input, setInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [streamingResponse, setStreamingResponse] = useState<string>('');
-  
+
   // 使用sessionService或fallback到agent (向后兼容)
   const actualAgent = agent || sessionService.agent;
 
@@ -106,169 +101,165 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ sessionService, age
   }, []);
 
   // 处理特殊命令
-  const handleSpecialCommands = useCallback((input: string): boolean => {
-    const command = input.toLowerCase();
-    
-    if (['/help', 'help'].includes(command)) {
-      const helpItem: SystemInfoItem = {
-        id: generateId(),
-        type: 'systemInfo',
-        content: '🔧 可用命令:\n/help - 显示帮助\n/status - 显示状态\n/session - 显示会话统计\n/clear - 清除历史\n/exit - 退出应用',
-        timestamp: new Date()
-      };
-      setHistory(prev => [...prev, helpItem]);
-      return true;
-    }
-    
-    if (['/status', 'status'].includes(command)) {
-      const stats = sessionService.getSessionStats();
-      const statusItem: SystemInfoItem = {
-        id: generateId(),
-        type: 'systemInfo',
-        content: `📊 当前状态:\n交互次数: ${stats.totalInteractions}\n平均响应时间: ${stats.averageResponseTime}ms\n已访问文件: ${stats.uniqueFilesAccessed}\n会话时长: ${stats.sessionDuration}s`,
-        timestamp: new Date()
-      };
-      setHistory(prev => [...prev, statusItem]);
-      return true;
-    }
-    
-    if (['/session', 'session'].includes(command)) {
-      const stats = sessionService.getSessionStats();
-      const fileWatcherStats = sessionService.getFileWatcherStats();
-      const sessionItem: SystemInfoItem = {
-        id: generateId(),
-        type: 'systemInfo',
-        content: `📈 会话统计:\n总交互: ${stats.totalInteractions}\nToken使用: ${stats.totalTokensUsed}\n监听文件: ${fileWatcherStats.watchedFileCount}\n文件变更: ${fileWatcherStats.recentChangesCount}`,
-        timestamp: new Date()
-      };
-      setHistory(prev => [...prev, sessionItem]);
-      return true;
-    }
-    
-    if (['/clear', 'clear'].includes(command)) {
-      setHistory([]);
-      sessionService.clearSession();
-      const clearItem: SystemInfoItem = {
-        id: generateId(),
-        type: 'systemInfo',
-        content: '✨ 历史记录和会话状态已清除',
-        timestamp: new Date()
-      };
-      setHistory(prev => [...prev, clearItem]);
-      return true;
-    }
-    
-    if (['/exit', 'exit', 'quit'].includes(command)) {
-      process.exit(0);
-    }
-    
-    return false;
-  }, [sessionService, generateId]);
+  const handleSpecialCommands = useCallback(
+    (input: string): boolean => {
+      const command = input.toLowerCase();
+
+      if (['/help', 'help'].includes(command)) {
+        const helpItem: SystemInfoItem = {
+          id: generateId(),
+          type: 'systemInfo',
+          content: '🔧 可用命令:\n/help - 显示帮助\n/status - 显示状态\n/session - 显示会话统计\n/clear - 清除历史\n/exit - 退出应用',
+          timestamp: new Date(),
+        };
+        setHistory((prev) => [...prev, helpItem]);
+        return true;
+      }
+
+      if (['/status', 'status'].includes(command)) {
+        const stats = sessionService.getSessionStats();
+        const statusItem: SystemInfoItem = {
+          id: generateId(),
+          type: 'systemInfo',
+          content: `📊 当前状态:\n交互次数: ${stats.totalInteractions}\n平均响应时间: ${stats.averageResponseTime}ms\n已访问文件: ${stats.uniqueFilesAccessed}\n会话时长: ${stats.sessionDuration}s`,
+          timestamp: new Date(),
+        };
+        setHistory((prev) => [...prev, statusItem]);
+        return true;
+      }
+
+      if (['/session', 'session'].includes(command)) {
+        const stats = sessionService.getSessionStats();
+        const fileWatcherStats = sessionService.getFileWatcherStats();
+        const sessionItem: SystemInfoItem = {
+          id: generateId(),
+          type: 'systemInfo',
+          content: `📈 会话统计:\n总交互: ${stats.totalInteractions}\nToken使用: ${stats.totalTokensUsed}\n监听文件: ${fileWatcherStats.watchedFileCount}\n文件变更: ${fileWatcherStats.recentChangesCount}`,
+          timestamp: new Date(),
+        };
+        setHistory((prev) => [...prev, sessionItem]);
+        return true;
+      }
+
+      if (['/clear', 'clear'].includes(command)) {
+        setHistory([]);
+        sessionService.clearSession();
+        const clearItem: SystemInfoItem = {
+          id: generateId(),
+          type: 'systemInfo',
+          content: '✨ 历史记录和会话状态已清除',
+          timestamp: new Date(),
+        };
+        setHistory((prev) => [...prev, clearItem]);
+        return true;
+      }
+
+      if (['/exit', 'exit', 'quit'].includes(command)) {
+        process.exit(0);
+      }
+
+      return false;
+    },
+    [sessionService, generateId],
+  );
 
   // 处理用户提交
-  const handleSubmit = useCallback(async (userInput: string) => {
-    if (!userInput.trim() || isProcessing) {
-      return;
-    }
+  const handleSubmit = useCallback(
+    async (userInput: string) => {
+      if (!userInput.trim() || isProcessing) {
+        return;
+      }
 
-    // 处理特殊命令
-    if (handleSpecialCommands(userInput)) {
-      return;
-    }
+      // 处理特殊命令
+      if (handleSpecialCommands(userInput)) {
+        return;
+      }
 
-    setIsProcessing(true);
-    setStreamingResponse('');
-    
-    // 添加用户消息到历史
-    const userMessage: UserMessageItem = {
-      id: generateId(),
-      type: 'userMessage',
-      content: userInput.trim(),
-      timestamp: new Date()
-    };
-    
-    setHistory(prev => [...prev, userMessage]);
-    setInput('');
-
-    try {
-      // 使用SessionService的新任务处理架构
-      const result: TaskExecutionResult = await sessionService.processTask(userInput);
-      
-      // 显示任务执行结果
-      const resultMessage: AssistantMessageItem = {
-        id: generateId(),
-        type: 'assistantMessage',
-        content: `✅ 任务${result.success ? '完成' : '失败'}\n📝 ${result.summary}\n⏱️ 执行时间: ${result.duration}ms\n🔄 迭代: ${result.iterations}次${result.diff ? `\n📁 文件变更: ${result.diff.filesChanged}个` : ''}${result.error ? `\n❌ 错误: ${result.error}` : ''}`,
-        timestamp: new Date()
-      };
-      
-      setHistory(prev => [...prev, resultMessage]);
-
-    } catch (error) {
-      // Fallback到原始流式处理模式  
-      console.warn('⚠️ SessionService模式失败，回退到流式模式');
-      
-      // 创建错误消息
-      const errorItem: ErrorItem = {
-        id: generateId(),
-        type: 'error',
-        content: `任务处理失败: ${error instanceof Error ? error.message : '未知错误'}`,
-        timestamp: new Date()
-      };
-      
-      setHistory(prev => [...prev, errorItem]);
-    } finally {
-      setIsProcessing(false);
+      setIsProcessing(true);
       setStreamingResponse('');
-    }
-  }, [sessionService, actualAgent, isProcessing, generateId, handleSpecialCommands]);
+
+      // 添加用户消息到历史
+      const userMessage: UserMessageItem = {
+        id: generateId(),
+        type: 'userMessage',
+        content: userInput.trim(),
+        timestamp: new Date(),
+      };
+
+      setHistory((prev) => [...prev, userMessage]);
+      setInput('');
+
+      try {
+        // 使用SessionService的新任务处理架构
+        const result: TaskExecutionResult = await sessionService.processTask(userInput);
+
+        // 显示任务执行结果
+        const resultMessage: AssistantMessageItem = {
+          id: generateId(),
+          type: 'assistantMessage',
+          content: `✅ 任务${result.success ? '完成' : '失败'}\n📝 ${result.summary}\n⏱️ 执行时间: ${result.duration}ms\n🔄 迭代: ${result.iterations}次${result.diff ? `\n📁 文件变更: ${result.diff.filesChanged}个` : ''}${result.error ? `\n❌ 错误: ${result.error}` : ''}`,
+          timestamp: new Date(),
+        };
+
+        setHistory((prev) => [...prev, resultMessage]);
+      } catch (error) {
+        // Fallback到原始流式处理模式
+        console.warn('⚠️ SessionService模式失败，回退到流式模式');
+
+        // 创建错误消息
+        const errorItem: ErrorItem = {
+          id: generateId(),
+          type: 'error',
+          content: `任务处理失败: ${error instanceof Error ? error.message : '未知错误'}`,
+          timestamp: new Date(),
+        };
+
+        setHistory((prev) => [...prev, errorItem]);
+      } finally {
+        setIsProcessing(false);
+        setStreamingResponse('');
+      }
+    },
+    [sessionService, actualAgent, isProcessing, generateId, handleSpecialCommands],
+  );
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection='column'>
       {/* 标题 */}
       <Box marginBottom={1}>
-        <Text color="cyan" bold>
+        <Text color='cyan' bold>
           ✨ Tempurai Code Assistant
         </Text>
       </Box>
 
       {/* 历史记录 */}
-      <Static items={history}>
-        {renderHistoryItem}
-      </Static>
+      <Static items={history}>{renderHistoryItem}</Static>
 
       {/* 流式响应显示 */}
       {streamingResponse && (
         <Box marginY={1}>
           <Box>
-            <Text color="blue" bold>
+            <Text color='blue' bold>
               🤖 Assistant:
             </Text>
           </Box>
           <Box marginLeft={2} marginTop={1}>
-            <Text color="white">{streamingResponse}</Text>
+            <Text color='white'>{streamingResponse}</Text>
           </Box>
         </Box>
       )}
 
       {/* 输入区域 */}
       <Box marginTop={1}>
-        <Text color="green" bold>
+        <Text color='green' bold>
           {isProcessing ? '⏳ 处理中... ' : '> '}
         </Text>
-        {!isProcessing && (
-          <TextInput
-            value={input}
-            onChange={setInput}
-            onSubmit={handleSubmit}
-            placeholder="输入您的问题或命令..."
-          />
-        )}
+        {!isProcessing && <TextInput value={input} onChange={setInput} onSubmit={handleSubmit} placeholder='输入您的问题或命令...' />}
       </Box>
 
       {/* 帮助信息 */}
       <Box marginTop={1}>
-        <Text color="gray" dimColor>
+        <Text color='gray' dimColor>
           输入问题回车发送 • /help 查看命令 • Ctrl+C 退出
         </Text>
       </Box>
@@ -287,10 +278,10 @@ export const startInkUI = async () => {
   console.warn('⚠️ 使用传统启动模式，建议升级到依赖注入架构');
   const { ConfigLoader } = await import('../config/ConfigLoader.js');
   const { SimpleAgent } = await import('../agents/SimpleAgent.js');
-  
+
   const configLoader = new ConfigLoader();
   const config = configLoader.getConfig();
-  
+
   // 验证配置
   const validation = configLoader.validateConfig();
   if (!validation.isValid) {
@@ -303,30 +294,22 @@ export const startInkUI = async () => {
   const model = await configLoader.createLanguageModel();
   const agent = new SimpleAgent(config, model, config.customContext);
   await agent.initializeAsync(config.customContext);
-  
+
   // 创建临时SessionService以保持功能完整性
   const { SessionService } = await import('../session/SessionService.js');
   const { FileWatcherService } = await import('../services/FileWatcherService.js');
-  
+
   const fileWatcher = new FileWatcherService({
     verbose: false,
     debounceMs: 500,
-    maxWatchedFiles: 50
+    maxWatchedFiles: 50,
   });
-  
+
   const sessionService = new SessionService({
     agent,
     fileWatcher,
-    config
+    config,
   });
-  
+
   render(<CodeAssistantApp sessionService={sessionService} agent={agent} />);
 };
-
-// 如果直接运行此文件则启动
-if (require.main === module) {
-  startInkUI().catch(error => {
-    console.error('❌ Failed to start Ink UI:', error);
-    process.exit(1);
-  });
-}

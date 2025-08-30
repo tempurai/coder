@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, Box } from 'ink';
-import { SystemInfoItem, ErrorItem } from '../InkUI';
+import { SystemInfoItem, ErrorItem } from '../InkUI.js';
 
 interface SystemMessageProps {
   item: SystemInfoItem | ErrorItem;
@@ -8,7 +8,7 @@ interface SystemMessageProps {
 
 export const SystemMessage: React.FC<SystemMessageProps> = ({ item }) => {
   const isError = item.type === 'error';
-  
+
   return (
     <Box marginY={1}>
       <Box>
@@ -17,12 +17,10 @@ export const SystemMessage: React.FC<SystemMessageProps> = ({ item }) => {
         </Text>
       </Box>
       <Box marginLeft={2} marginTop={1}>
-        <Text color={isError ? 'red' : 'yellow'}>
-          {item.content}
-        </Text>
+        <Text color={isError ? 'red' : 'yellow'}>{item.content}</Text>
       </Box>
       <Box marginTop={1}>
-        <Text color="gray" dimColor>
+        <Text color='gray' dimColor>
           {item.timestamp.toLocaleTimeString()}
         </Text>
       </Box>

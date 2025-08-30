@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { McpServerConfig } from '../tools/McpToolLoader';
+import { McpServerConfig } from '../tools/McpToolLoader.js';
 import type { LanguageModel } from 'ai';
 import deepmergeFactory from '@fastify/deepmerge';
 
@@ -401,7 +401,7 @@ export class ConfigLoader {
    */
   public async createLanguageModel(): Promise<LanguageModel> {
     const modelConfig = this.normalizeModelConfig(this.config.model);
-    
+
     try {
       switch (modelConfig.provider) {
         case 'openai':
@@ -433,7 +433,7 @@ export class ConfigLoader {
       // 向后兼容：将字符串转换为 ModelConfig
       return this.parseModelString(model);
     }
-    
+
     return model;
   }
 
@@ -452,7 +452,7 @@ export class ConfigLoader {
         apiKey: this.config.apiKey
       };
     }
-    
+
     // 根据模型名称推断提供商
     const provider = this.inferProviderFromModelName(modelString);
     return {
@@ -483,7 +483,7 @@ export class ConfigLoader {
     if (modelName.includes('mistral') || modelName.startsWith('mixtral-')) {
       return 'mistral';
     }
-    
+
     // 默认为 OpenAI（向后兼容）
     return 'openai';
   }
@@ -493,15 +493,15 @@ export class ConfigLoader {
    */
   private async createOpenAIModel(config: ModelConfig): Promise<LanguageModel> {
     const { openai } = await import('@ai-sdk/openai');
-    
+
     const apiKey = config.apiKey || process.env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error('OpenAI API key not found. Please set it in config or OPENAI_API_KEY environment variable.');
     }
-    
+
     // 设置环境变量
     process.env.OPENAI_API_KEY = apiKey;
-    
+
     // 直接使用 openai(modelName) 的标准格式
     return openai(config.name) as LanguageModel;
   }
@@ -511,15 +511,15 @@ export class ConfigLoader {
    */
   private async createGoogleModel(config: ModelConfig): Promise<LanguageModel> {
     const { google } = await import('@ai-sdk/google');
-    
+
     const apiKey = config.apiKey || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       throw new Error('Google AI API key not found. Please set it in config or GOOGLE_AI_API_KEY environment variable.');
     }
-    
+
     // 设置环境变量
     process.env.GOOGLE_AI_API_KEY = apiKey;
-    
+
     return google(config.name) as LanguageModel;
   }
 
@@ -528,15 +528,15 @@ export class ConfigLoader {
    */
   private async createAnthropicModel(config: ModelConfig): Promise<LanguageModel> {
     const { anthropic } = await import('@ai-sdk/anthropic');
-    
+
     const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new Error('Anthropic API key not found. Please set it in config or ANTHROPIC_API_KEY environment variable.');
     }
-    
+
     // 设置环境变量
     process.env.ANTHROPIC_API_KEY = apiKey;
-    
+
     return anthropic(config.name) as LanguageModel;
   }
 
@@ -545,15 +545,15 @@ export class ConfigLoader {
    */
   private async createCohereModel(config: ModelConfig): Promise<LanguageModel> {
     const { cohere } = await import('@ai-sdk/cohere');
-    
+
     const apiKey = config.apiKey || process.env.COHERE_API_KEY;
     if (!apiKey) {
       throw new Error('Cohere API key not found. Please set it in config or COHERE_API_KEY environment variable.');
     }
-    
+
     // 设置环境变量
     process.env.COHERE_API_KEY = apiKey;
-    
+
     return cohere(config.name) as LanguageModel;
   }
 
@@ -562,15 +562,15 @@ export class ConfigLoader {
    */
   private async createMistralModel(config: ModelConfig): Promise<LanguageModel> {
     const { mistral } = await import('@ai-sdk/mistral');
-    
+
     const apiKey = config.apiKey || process.env.MISTRAL_API_KEY;
     if (!apiKey) {
       throw new Error('Mistral API key not found. Please set it in config or MISTRAL_API_KEY environment variable.');
     }
-    
+
     // 设置环境变量
     process.env.MISTRAL_API_KEY = apiKey;
-    
+
     return mistral(config.name) as LanguageModel;
   }
 

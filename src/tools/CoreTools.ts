@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { z } from 'zod';
-import { ErrorHandler } from '../errors/ErrorHandler';
-import { ToolExecutionResult } from './index';
+import { ErrorHandler } from '../errors/ErrorHandler.js';
+import { ToolExecutionResult } from './index.js';
 
 // Keep only essential file operations that can't be easily done via shell
 
@@ -21,13 +21,13 @@ export const readFileTool = {
     }): Promise<ToolExecutionResult<{ content: string; totalLines: number; selectedRange?: string; filePath: string }>> => {
         return ErrorHandler.wrapToolExecution(async () => {
             const content = await fs.promises.readFile(filePath, 'utf8');
-            
+
             if (startLine !== undefined || endLine !== undefined) {
                 const lines = content.split('\n');
                 const start = Math.max(0, (startLine || 1) - 1);
                 const end = Math.min(lines.length, endLine || lines.length);
                 const selectedLines = lines.slice(start, end);
-                
+
                 return {
                     content: selectedLines.join('\n'),
                     totalLines: lines.length,
@@ -35,7 +35,7 @@ export const readFileTool = {
                     filePath
                 };
             }
-            
+
             return {
                 content,
                 totalLines: content.split('\n').length,
@@ -46,7 +46,7 @@ export const readFileTool = {
 };
 
 export const writeFileTool = {
-    id: 'write_file', 
+    id: 'write_file',
     name: 'Write File',
     description: `Write content to a file. 
     
@@ -71,13 +71,13 @@ export const writeFileTool = {
     }): Promise<ToolExecutionResult<{ filePath: string; contentLength: number; linesWritten: number; backupCreated: boolean; backupPath?: string }>> => {
         return ErrorHandler.wrapToolExecution(async () => {
             const path = await import('path');
-            
+
             // Create directories if needed
             if (createDirs) {
                 const dir = path.dirname(filePath);
                 await fs.promises.mkdir(dir, { recursive: true });
             }
-            
+
             // Create backup if requested and file exists
             let backupPath = '';
             if (backup) {
@@ -89,9 +89,9 @@ export const writeFileTool = {
                     // File doesn't exist, no backup needed
                 }
             }
-            
+
             await fs.promises.writeFile(filePath, content);
-            
+
             return {
                 filePath,
                 contentLength: content.length,
@@ -171,12 +171,12 @@ async function analyzeProjectContext(depth: number, includeHidden: boolean) {
         entryPoints: [],
         packageInfo: null
     };
-    
+
     try {
         // Check for package.json
         const packageJson = await fs.promises.readFile('./package.json', 'utf8');
         context.packageInfo = JSON.parse(packageJson);
-        
+
         // Determine project type based on dependencies
         const deps = { ...context.packageInfo.dependencies, ...context.packageInfo.devDependencies };
         if (deps.react) context.projectType = 'react';
@@ -185,7 +185,7 @@ async function analyzeProjectContext(depth: number, includeHidden: boolean) {
         else if (deps.next) context.projectType = 'nextjs';
         else if (deps.typescript) context.projectType = 'typescript';
         else context.projectType = 'node';
-        
+
         // Find entry points
         if (context.packageInfo.main) context.entryPoints.push(context.packageInfo.main);
         if (context.packageInfo.scripts?.start) {
@@ -193,26 +193,26 @@ async function analyzeProjectContext(depth: number, includeHidden: boolean) {
             const match = startScript.match(/(\w+\.(?:js|ts|tsx))/);
             if (match) context.entryPoints.push(match[1]);
         }
-        
+
     } catch (error) {
         // No package.json found
     }
-    
+
     // Analyze directory structure
     context.structure = await analyzeDirectory('.', depth, includeHidden);
-    
+
     // Find configuration files
     const configPatterns = [
-        'tsconfig.json', '.eslintrc*', 'prettier.config.*', 
+        'tsconfig.json', '.eslintrc*', 'prettier.config.*',
         'vite.config.*', 'webpack.config.*', '.env*'
     ];
-    
+
     for (const pattern of configPatterns) {
         try {
             const { exec } = await import('child_process');
             const { promisify } = await import('util');
             const execAsync = promisify(exec);
-            
+
             const { stdout } = await execAsync(`find . -maxdepth 2 -name "${pattern}" -type f`);
             const files = stdout.trim().split('\n').filter(f => f.trim());
             context.configFiles.push(...files);
@@ -220,28 +220,28 @@ async function analyzeProjectContext(depth: number, includeHidden: boolean) {
             // Pattern not found
         }
     }
-    
+
     // Analyze coding conventions
     context.conventions = await analyzeCodingConventions();
-    
+
     return context;
 }
 
 async function analyzeDirectory(dir: string, depth: number, includeHidden: boolean): Promise<any> {
     if (depth <= 0) return {};
-    
+
     const path = await import('path');
     const structure: any = {};
-    
+
     try {
         const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-        
+
         for (const entry of entries) {
             if (!includeHidden && entry.name.startsWith('.') && entry.name !== '.env') continue;
             if (['node_modules', 'dist', 'build'].includes(entry.name)) continue;
-            
+
             const fullPath = path.join(dir, entry.name);
-            
+
             if (entry.isDirectory()) {
                 structure[entry.name] = await analyzeDirectory(fullPath, depth - 1, includeHidden);
             } else {
@@ -255,7 +255,7 @@ async function analyzeDirectory(dir: string, depth: number, includeHidden: boole
     } catch (error) {
         // Directory not accessible
     }
-    
+
     return structure;
 }
 
@@ -265,16 +265,16 @@ async function analyzeCodingConventions(): Promise<any> {
         fileExtensions: {},
         indentation: 'unknown'
     };
-    
+
     try {
         const { exec } = await import('child_process');
         const { promisify } = await import('util');
         const execAsync = promisify(exec);
-        
+
         // Find TypeScript/JavaScript files to analyze
         const { stdout } = await execAsync('find . -name "*.ts" -o -name "*.js" -o -name "*.tsx" -o -name "*.jsx" | head -20');
         const files = stdout.trim().split('\n').filter(f => f.trim());
-        
+
         if (files.length > 0) {
             // Analyze file extensions
             const extensions: any = {};
@@ -284,12 +284,12 @@ async function analyzeCodingConventions(): Promise<any> {
                 extensions[ext] = (extensions[ext] || 0) + 1;
             });
             conventions.fileExtensions = extensions;
-            
+
             // Analyze naming convention from first few files
             const camelCase = files.filter(f => /[a-z][A-Z]/.test(require('path').basename(f))).length;
             const kebabCase = files.filter(f => /-/.test(require('path').basename(f))).length;
             const snakeCase = files.filter(f => /_/.test(require('path').basename(f))).length;
-            
+
             if (kebabCase > camelCase && kebabCase > snakeCase) {
                 conventions.naming = 'kebab-case';
             } else if (snakeCase > camelCase) {
@@ -301,7 +301,7 @@ async function analyzeCodingConventions(): Promise<any> {
     } catch (error) {
         // Analysis failed
     }
-    
+
     return conventions;
 }
 
@@ -309,13 +309,13 @@ async function performCodeSearch(query: string, searchType: string, filePattern?
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
-    
+
     const results: any[] = [];
     const includePattern = filePattern || '*.{ts,js,tsx,jsx}';
-    
+
     try {
         let grepPattern = '';
-        
+
         switch (searchType) {
             case 'functions':
                 grepPattern = `(function\\s+${query}|const\\s+${query}\\s*=|${query}\\s*[:=]\\s*(async\\s*)?\\(|${query}\\(.*\\)\\s*=>)`;
@@ -335,17 +335,17 @@ async function performCodeSearch(query: string, searchType: string, filePattern?
             default:
                 grepPattern = query;
         }
-        
+
         const command = `grep -r -n --include="${includePattern}" -E "${grepPattern}" . | head -${maxResults}`;
         const { stdout } = await execAsync(command);
-        
+
         if (stdout.trim()) {
             const lines = stdout.trim().split('\n');
-            
+
             for (const line of lines) {
                 const [filePath, lineNumber, ...contentParts] = line.split(':');
                 const content = contentParts.join(':').trim();
-                
+
                 results.push({
                     file: filePath,
                     line: parseInt(lineNumber),
@@ -357,6 +357,6 @@ async function performCodeSearch(query: string, searchType: string, filePattern?
     } catch (error) {
         // Search failed or no results found
     }
-    
+
     return results;
 }

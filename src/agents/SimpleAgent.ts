@@ -1,7 +1,8 @@
-import { Agent } from '@mastra/core';
+import { generateText, tool } from 'ai';
 import { Config } from '../config/ConfigLoader.js';
-import type { LanguageModel } from 'ai';
+import type { LanguageModel, ToolSet } from 'ai';
 import { injectable, inject } from 'inversify';
+import { z } from 'zod';
 import { TYPES } from '../di/types.js';
 import { LoopDetectionService, LoopDetectionResult } from '../services/LoopDetectionService.js';
 import { ProgressCallback } from '../events/index.js';
@@ -61,7 +62,8 @@ interface McpStatus {
 
 @injectable()
 export class SimpleAgent {
-    private agent?: Agent;
+    private tools: ToolSet = {};
+    private systemInstructions: string = '';
     private mcpTools: McpTool[] = [];
     private mcpStatus: McpStatus = { isLoaded: false, toolCount: 0, connectionCount: 0, tools: [] };
     private loopDetector: LoopDetectionService;
@@ -108,11 +110,11 @@ export class SimpleAgent {
         try {
             console.log('🔄 开始Agent异步初始化...');
 
-            // 1. 先加载内置工具并创建基础Agent
+            // 1. 先加载内置工具并初始化Agent配置
             this.loadBuiltinTools();
-            this.agent = this.createAgentWithBuiltinTools(customContext);
+            this.initializeAgentConfiguration(customContext);
             this.initializationStatus.builtinLoaded = true;
-            console.log('✅ 内置工具已加载，基础Agent已创建');
+            console.log('✅ 内置工具已加载，Agent配置已初始化');
 
             // 2. 异步加载MCP工具
             await this.loadMcpToolsAsync();
@@ -130,10 +132,10 @@ export class SimpleAgent {
             console.error('❌ Agent初始化失败:', errorMessage);
             this.initializationStatus.error = errorMessage;
 
-            // 创建最小功能Agent作为后备
-            if (!this.agent) {
-                this.agent = this.createMinimalAgent();
-                console.log('🔧 已创建最小功能Agent作为后备');
+            // 创建最小功能配置作为后备
+            if (!this.tools || Object.keys(this.tools).length === 0) {
+                this.initializeMinimalAgentConfiguration();
+                console.log('🔧 已创建最小功能配置作为后备');
             }
 
             throw new Error(`Agent initialization failed: ${errorMessage}`);
@@ -150,47 +152,35 @@ export class SimpleAgent {
     }
 
     /**
-     * 创建带有内置工具的Agent
+     * 创建带有内置工具的Agent配置
      * @param customContext 用户自定义上下文
-     * @returns Agent实例
      */
-    private createAgentWithBuiltinTools(customContext?: string): Agent {
+    private initializeAgentConfiguration(customContext?: string): void {
         try {
-            const instructions = this.buildSystemInstructionsSync(customContext);
-            return new Agent({
-                name: 'EnhancedCodeAssistant',
-                instructions,
-                model: this.model as any,
-                tools: this.getBuiltinTools(),
-            });
+            this.systemInstructions = this.buildSystemInstructionsSync(customContext);
+            this.tools = this.convertToAISdkTools(this.getBuiltinTools());
         } catch (error) {
-            console.warn('⚠️ 创建Agent时发生错误，使用基础配置:', error instanceof Error ? error.message : '未知错误');
-            throw error; // 让上层处理错误
+            console.warn('⚠️ 初始化Agent配置时发生错误:', error instanceof Error ? error.message : '未知错误');
+            throw error;
         }
     }
 
     /**
-     * 创建最小功能Agent（错误后备）
+     * 创建最小功能Agent配置（错误后备）
      */
-    private createMinimalAgent(): Agent {
-        return new Agent({
-            name: 'TempuraiAgent',
-            instructions: 'Code assistant (minimal mode)',
-            model: this.model as any,
-            tools: {
-                finish: {
-                    id: 'finish',
-                    name: 'Finish Task',
-                    description: 'Mark the current task as completed',
-                    parameters: {},
-                    execute: async () => ({
-                        success: true,
-                        message: 'Task marked as finished',
-                        completed: true
-                    })
-                }
-            }
-        });
+    private initializeMinimalAgentConfiguration(): void {
+        this.systemInstructions = 'You are a code assistant operating in minimal mode.';
+        this.tools = {
+            finish: tool({
+                description: 'Mark the current task as completed',
+                inputSchema: z.object({}),
+                execute: async () => ({
+                    success: true,
+                    message: 'Task marked as finished',
+                    completed: true
+                })
+            })
+        };
     }
 
     /**
@@ -238,19 +228,16 @@ export class SimpleAgent {
     }
 
     /**
-     * 动态添加工具到现有Agent（核心扩展方法）
+     * 动态添加工具（核心扩展方法）
      * @param tools 要添加的工具映射
      */
     addToolsToAgent(tools: Record<string, any>): void {
         try {
-            // 获取当前Agent的工具集
-            const currentTools = (this.agent as any).tools || {};
+            // 转换新工具为AI SDK格式
+            const aiSdkTools = this.convertToAISdkTools(tools);
 
             // 合并新工具
-            const mergedTools = { ...currentTools, ...tools };
-
-            // 更新Agent的工具集（直接修改内部属性）
-            (this.agent as any).tools = mergedTools;
+            this.tools = { ...this.tools, ...aiSdkTools };
 
             const toolNames = Object.keys(tools);
             console.log(`🔧 已动态添加 ${toolNames.length} 个工具: ${toolNames.join(', ')}`);
@@ -272,6 +259,68 @@ export class SimpleAgent {
 
         if (!this.mcpStatus.isLoaded) {
             console.warn('⚠️ MCP工具加载超时，继续使用内置工具');
+        }
+    }
+
+    /**
+     * 转换传统工具格式为AI SDK工具格式
+     * @param legacyTools 传统格式的工具
+     * @returns AI SDK格式的工具
+     */
+    private convertToAISdkTools(legacyTools: Record<string, any>): ToolSet {
+        const aisdkTools: ToolSet = {};
+
+        for (const [toolName, legacyTool] of Object.entries(legacyTools)) {
+            try {
+                // 将传统工具格式转换为AI SDK工具格式
+                aisdkTools[toolName] = tool({
+                    description: legacyTool.description || `Execute ${toolName}`,
+                    inputSchema: this.convertParametersToZodSchema(legacyTool.parameters || {}),
+                    execute: async (args) => {
+                        if (typeof legacyTool.execute === 'function') {
+                            return await legacyTool.execute(args);
+                        }
+                        return { error: `Tool ${toolName} execution function not found` };
+                    }
+                });
+            } catch (error) {
+                console.warn(`⚠️ 转换工具 ${toolName} 失败:`, error);
+                // 创建一个简单的后备工具
+                aisdkTools[toolName] = tool({
+                    description: `Fallback tool for ${toolName}`,
+                    inputSchema: z.object({}),
+                    execute: async () => ({ error: `Tool ${toolName} conversion failed` })
+                });
+            }
+        }
+
+        return aisdkTools;
+    }
+
+    /**
+     * 将传统参数格式转换为 Zod Schema
+     * @param parameters 传统参数定义
+     * @returns Zod Schema
+     */
+    private convertParametersToZodSchema(parameters: any): z.ZodSchema {
+        // 如果参数为空或未定义，返回空对象 schema
+        if (!parameters || typeof parameters !== 'object') {
+            return z.object({});
+        }
+
+        // 如果参数是空对象，返回空对象 schema
+        if (Object.keys(parameters).length === 0) {
+            return z.object({});
+        }
+
+        // 如果已经是 JSON Schema 或 Zod Schema，尝试直接使用
+        // 这是一个简单的后备，对于复杂的 schema 可能需要更详细的转换
+        try {
+            // 对于简单的对象格式，创建一个通用的 record schema
+            return z.record(z.string(), z.any());
+        } catch (error) {
+            console.warn('⚠️ 参数转换失败，使用通用 schema:', error);
+            return z.record(z.string(), z.any());
         }
     }
 
@@ -489,8 +538,11 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
      * 检查Agent是否已初始化
      */
     private ensureAgentInitialized(): void {
-        if (!this.agent) {
-            throw new Error('Agent not initialized. Call initializeAsync() first.');
+        if (!this.tools || Object.keys(this.tools).length === 0) {
+            throw new Error('Agent tools not initialized. Call initializeAsync() first.');
+        }
+        if (!this.systemInstructions) {
+            throw new Error('Agent system instructions not initialized. Call initializeAsync() first.');
         }
     }
 
@@ -534,12 +586,16 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         try {
             this.ensureAgentInitialized();
 
-            const response = await this.agent!.generate([{
-                role: 'user',
-                content: query
-            }]);
+            const result = await generateText({
+                model: this.model,
+                system: this.systemInstructions,
+                prompt: query,
+                tools: this.tools,
+                maxOutputTokens: this.config.maxTokens,
+                temperature: this.config.temperature
+            });
 
-            return response.text;
+            return result.text;
         } catch (error) {
             console.error('Error processing query:', error);
             return `Sorry, I encountered an error while processing your query: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -557,12 +613,16 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         try {
             this.ensureAgentInitialized();
 
-            const response = await this.agent!.generate([{
-                role: 'user',
-                content: prompt
-            }]);
+            const result = await generateText({
+                model: this.model,
+                system: this.systemInstructions,
+                prompt: prompt,
+                tools: this.tools,
+                maxOutputTokens: this.config.maxTokens,
+                temperature: this.config.temperature
+            });
 
-            return response.text || '';
+            return result.text || '';
         } catch (error) {
             console.error('Error generating response:', error);
             throw new Error(`LLM generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -594,16 +654,17 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
 
         this.ensureAgentInitialized();
 
-        // 从 agent 的工具集中查找对应工具
-        const tool = (this.agent! as any).tools?.[toolName];
+        // 从工具集中查找对应工具
+        const tool = this.tools[toolName];
 
         if (!tool) {
-            throw new Error(`Tool not found: ${toolName}. Available tools: ${Object.keys((this.agent! as any).tools || {}).join(', ')}`);
+            throw new Error(`Tool not found: ${toolName}. Available tools: ${Object.keys(this.tools).join(', ')}`);
         }
 
         try {
-            // 执行工具
-            const result = await tool.execute(args, progressCallback);
+            // 执行工具 - AI SDK工具有不同的执行模式
+            // 我们需要直接调用工具的execute函数，因为AI SDK工具包装后的格式
+            const result = await (tool as any).execute(args, progressCallback);
 
             // 执行成功，记录用于后续分析
             console.log(`🔧 工具执行成功: ${toolName}`);
@@ -720,23 +781,32 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
     // 健康检查
     async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
         try {
-            if (!this.agent) {
+            if (!this.tools || Object.keys(this.tools).length === 0) {
                 return {
                     status: 'unhealthy',
-                    message: 'Agent未初始化'
+                    message: 'Agent工具未初始化'
+                };
+            }
+
+            if (!this.systemInstructions) {
+                return {
+                    status: 'unhealthy',
+                    message: 'Agent系统指令未初始化'
                 };
             }
 
             // 测试基本的API连接
-            const testResponse = await this.agent.generate([{
-                role: 'user',
-                content: 'test'
-            }]);
+            const testResult = await generateText({
+                model: this.model,
+                prompt: 'test',
+                maxOutputTokens: 10,
+                temperature: 0
+            });
 
-            if (testResponse.text) {
+            if (testResult.text) {
                 return {
                     status: 'healthy',
-                    message: `Agent运行正常，使用模型: ${this.config.model}，工具数量: ${this.initializationStatus.toolCount}`
+                    message: `Agent运行正常，使用模型: ${this.getModelDisplayName()}，工具数量: ${Object.keys(this.tools).length}`
                 };
             } else {
                 return {

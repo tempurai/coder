@@ -504,6 +504,11 @@ export class ConfigLoader {
     // 设置环境变量
     process.env.OPENAI_API_KEY = apiKey;
 
+    // 如果配置了自定义baseUrl，设置为环境变量
+    if (config.baseUrl) {
+      process.env.OPENAI_BASE_URL = config.baseUrl;
+    }
+
     // 直接使用 openai(modelName) 的标准格式
     return openai(config.name) as LanguageModel;
   }

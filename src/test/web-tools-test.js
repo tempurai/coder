@@ -6,18 +6,18 @@
 
 // 使用 ts-node 运行，这样可以直接导入 TypeScript 源码
 require('ts-node/register');
-const { webSearchTool, urlFetchTool } = require('../src/tools/WebTools.ts');
+const { webSearchTool, urlFetchTool } = require('../tools/WebTools.ts');
 
 async function testWebTools() {
   console.log('🌐 测试 Web 工具功能...\n');
-  
+
   // 测试 URL 安全检查
   console.log('1. 测试 URL 安全检查:');
   const unsafeResult = await urlFetchTool.execute({ url: 'http://localhost:3000' });
   console.log('本地地址测试:', unsafeResult.success ? '❌ 应该失败' : '✅ 正确阻止');
   console.log('错误信息:', unsafeResult.error);
   console.log();
-  
+
   // 测试安全 URL 获取（使用一个简单的 HTML 页面）
   console.log('2. 测试安全 URL 获取:');
   const safeResult = await urlFetchTool.execute({ url: 'https://example.com' });
@@ -30,7 +30,7 @@ async function testWebTools() {
     console.log('错误:', safeResult.error);
   }
   console.log();
-  
+
   // 测试无效配置的 web 搜索
   console.log('3. 测试未配置 API Key 的搜索:');
   const searchResult = await webSearchTool.execute({ query: 'TypeScript best practices' });

@@ -109,29 +109,35 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       }
 
       if (['/status', 'status'].includes(command)) {
-        const stats = sessionService.getSessionStats();
-        const statusEvent: SystemInfoEvent = {
-          id: generateId(),
-          type: UIEventType.SystemInfo,
-          timestamp: new Date(),
-          level: 'info',
-          message: `📊 Current Status:\nInteractions: ${stats.totalInteractions}\nAverage Response: ${stats.averageResponseTime}ms\nFiles Accessed: ${stats.uniqueFilesAccessed}\nSession Duration: ${stats.sessionDuration}s`,
-        };
-        setEvents((prev) => [...prev, statusEvent]);
+        // Use async to handle the Promise
+        (async () => {
+          const stats = await sessionService.getSessionStats();
+          const statusEvent: SystemInfoEvent = {
+            id: generateId(),
+            type: UIEventType.SystemInfo,
+            timestamp: new Date(),
+            level: 'info',
+            message: `📊 Current Status:\nInteractions: ${stats.totalInteractions}\nAverage Response: ${stats.averageResponseTime}ms\nFiles Accessed: ${stats.uniqueFilesAccessed}\nSession Duration: ${stats.sessionDuration}s`,
+          };
+          setEvents((prev) => [...prev, statusEvent]);
+        })();
         return true;
       }
 
       if (['/session', 'session'].includes(command)) {
-        const stats = sessionService.getSessionStats();
-        const fileWatcherStats = sessionService.getFileWatcherStats();
-        const sessionEvent: SystemInfoEvent = {
-          id: generateId(),
-          type: UIEventType.SystemInfo,
-          timestamp: new Date(),
-          level: 'info',
-          message: `📈 Session Statistics:\nTotal Interactions: ${stats.totalInteractions}\nTokens Used: ${stats.totalTokensUsed}\nWatched Files: ${fileWatcherStats.watchedFileCount}\nFile Changes: ${fileWatcherStats.recentChangesCount}`,
-        };
-        setEvents((prev) => [...prev, sessionEvent]);
+        // Use async to handle the Promise
+        (async () => {
+          const stats = await sessionService.getSessionStats();
+          const fileWatcherStats = sessionService.getFileWatcherStats();
+          const sessionEvent: SystemInfoEvent = {
+            id: generateId(),
+            type: UIEventType.SystemInfo,
+            timestamp: new Date(),
+            level: 'info',
+            message: `📈 Session Statistics:\nTotal Interactions: ${stats.totalInteractions}\nTokens Used: ${stats.totalTokensUsed}\nWatched Files: ${fileWatcherStats.watchedFileCount}\nFile Changes: ${fileWatcherStats.recentChangesCount}`,
+          };
+          setEvents((prev) => [...prev, sessionEvent]);
+        })();
         return true;
       }
 

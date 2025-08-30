@@ -1,38 +1,71 @@
 {
-  "// 模型配置示例 - 支持多种格式": "",
+  "_comment": "Tempurai 多模型配置示例 - 展示各种AI提供商的配置方式",
   
-  "// 方式1: 字符串格式（向后兼容）": "",
-  "model": "gpt-4o-mini",
+  "models": [
+    {
+      "_comment": "OpenAI GPT 模型（默认使用第一个模型）",
+      "provider": "openai",
+      "name": "gpt-4o-mini",
+      "apiKey": "your-openai-api-key-here"
+    },
+    {
+      "_comment": "Google Gemini 模型示例",
+      "provider": "google", 
+      "name": "gemini-1.5-pro",
+      "apiKey": "your-google-api-key-here"
+    },
+    {
+      "_comment": "Anthropic Claude 模型示例",
+      "provider": "anthropic",
+      "name": "claude-3-5-sonnet-20241022", 
+      "apiKey": "your-anthropic-api-key-here"
+    },
+    {
+      "_comment": "xAI Grok 模型示例",
+      "provider": "xai",
+      "name": "grok-beta",
+      "apiKey": "your-xai-api-key-here"
+    },
+    {
+      "_comment": "DeepSeek 模型示例",
+      "provider": "deepseek",
+      "name": "deepseek-chat",
+      "apiKey": "your-deepseek-api-key-here"
+    },
+    {
+      "_comment": "Azure OpenAI 模型示例",
+      "provider": "azure",
+      "name": "gpt-4o-mini",
+      "resourceName": "your-azure-resource-name",
+      "deploymentName": "gpt-4o-mini-deployment",
+      "apiVersion": "2024-02-01",
+      "apiKey": "your-azure-openai-api-key"
+    },
+    {
+      "_comment": "OpenRouter 代理服务示例",
+      "provider": "openrouter",
+      "name": "meta-llama/llama-3.1-8b-instruct:free",
+      "apiKey": "your-openrouter-api-key",
+      "options": {
+        "siteName": "Tempurai",
+        "siteUrl": "https://tempurai.ai"
+      }
+    },
+    {
+      "_comment": "OpenAI 兼容端点示例（本地模型或自定义API）",
+      "provider": "openai-compatible",
+      "name": "llama-3.1-8b",
+      "baseUrl": "http://localhost:8080/v1",
+      "apiKey": "local-key-or-dummy"
+    }
+  ],
   
-  "// 方式2: 对象格式（推荐用于新配置）": "",
-  "// \"model\": {": "",
-  "//   \"provider\": \"openai\",": "",
-  "//   \"name\": \"gpt-4o-mini\",": "",
-  "//   \"apiKey\": \"your-openai-api-key-here\"": "",
-  "// },": "",
-  
-  "// 方式3: Google Gemini 示例": "",
-  "// \"model\": {": "",
-  "//   \"provider\": \"google\",": "",
-  "//   \"name\": \"gemini-1.5-pro\",": "",
-  "//   \"apiKey\": \"your-google-api-key-here\"": "",
-  "// },": "",
-  
-  "// 方式4: Anthropic Claude 示例": "",
-  "// \"model\": {": "",
-  "//   \"provider\": \"anthropic\",": "",
-  "//   \"name\": \"claude-3-5-sonnet-20241022\",": "",
-  "//   \"apiKey\": \"your-anthropic-api-key-here\"": "",
-  "// },": "",
-  
-  "// 向后兼容的 API Key 设置": "",
-  "apiKey": "your-openai-api-key-here",
-  
-  "// 其他配置保持不变": "",
-  "tavilyApiKey": "your-tavily-api-key-here",
+  "_comment_config": "基础配置参数",
   "temperature": 0.3,
   "maxTokens": 4096,
+  "tavilyApiKey": "your-tavily-api-key-here",
   
+  "_comment_tools": "工具配置 - 控制系统工具的行为",
   "tools": {
     "shellExecutor": {
       "defaultTimeout": 30000,
@@ -44,12 +77,6 @@
         "allowDangerousCommands": false
       }
     },
-    "smartDiff": {
-      "contextLines": 3,
-      "maxRetries": 3,
-      "enableFuzzyMatching": true,
-      "requireConfirmation": true
-    },
     "webTools": {
       "requestTimeout": 15000,
       "maxContentLength": 10000,
@@ -58,13 +85,27 @@
     }
   },
   
+  "_comment_mcp": "MCP 服务器配置示例",
   "mcpServers": {
-    "// 示例 MCP 服务器配置": "",
-    "// \"filesystem\": {": "",
-    "//   \"name\": \"filesystem\",": "",
-    "//   \"command\": \"npx\",": "",
-    "//   \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/safe/path\"],": "",
-    "//   \"env\": {}": "",
-    "// }": ""
-  }
+    "_comment": "取消注释以下配置来启用 MCP 服务器",
+    "_filesystem_example": {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/safe/allowed/path"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
+    "_brave_search_example": {
+      "name": "brave-search", 
+      "command": "uvx",
+      "args": ["mcp-server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "your-brave-search-api-key"
+      }
+    }
+  },
+  
+  "_usage_note": "注意：SimpleAgent 将使用 models 数组中的第一个模型。你可以配置多个模型但只有第一个会被使用。",
+  "_api_keys_note": "API密钥也可以通过环境变量设置：OPENAI_API_KEY, GOOGLE_AI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY, AZURE_OPENAI_API_KEY, OPENROUTER_API_KEY 等"
 }

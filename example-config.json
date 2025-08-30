@@ -1,8 +1,11 @@
 {
-  "model": "gpt-4o-mini",
+  "models": [{
+    "provider": "openai",
+    "name": "gpt-4o-mini",
+    "apiKey": "your-openai-api-key-here"
+  }],
   "temperature": 0.3,
   "maxTokens": 4096,
-  "apiKey": "your-openai-api-key-here",
   "tavilyApiKey": "your-tavily-api-key-here",
   "mcpServers": {
     "filesystem": {
@@ -26,12 +29,18 @@
     "shellExecutor": {
       "defaultTimeout": 30000,
       "maxRetries": 3,
-      "allowDangerousCommands": false
+      "security": {
+        "allowlist": ["git", "npm", "node", "pnpm", "yarn", "ls", "cat", "echo", "mkdir", "touch"],
+        "blocklist": ["rm", "sudo", "chmod", "chown", "dd", "format", "del", "deltree"],
+        "allowUnlistedCommands": false,
+        "allowDangerousCommands": false
+      }
     },
-    "smartDiff": {
-      "contextLines": 3,
-      "maxRetries": 3,
-      "enableFuzzyMatching": true
+    "webTools": {
+      "requestTimeout": 15000,
+      "maxContentLength": 10000,
+      "userAgent": "Tempurai-Bot/1.0 (Security-Enhanced)",
+      "enableCache": false
     }
   }
 }

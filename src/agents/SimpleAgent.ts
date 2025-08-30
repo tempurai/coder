@@ -3,6 +3,7 @@ import { Config } from '../config/ConfigLoader';
 import type { LanguageModel } from 'ai';
 import { LoopDetectionService, LoopDetectionResult } from '../services/LoopDetectionService';
 import { SimpleProjectContextProvider } from '../context/SimpleProjectContextProvider';
+import { ToolExecutionResult, BaseTool } from '../tools';
 import * as path from 'path';
 
 // Agent流可以产出的事件类型
@@ -14,8 +15,6 @@ export type AgentStreamEvent =
 
 // 增强工具集
 import { shellExecutorTool, multiCommandTool } from '../tools/ShellExecutor';
-// Git工作流工具集
-import { gitWorkflowTools } from '../tools/GitWorkflowTools';
 // 简化的文件工具集
 import { simpleFileTools } from '../tools/SimpleFileTools';
 // Web工具集
@@ -28,14 +27,14 @@ import { gitStatusTool, gitLogTool, gitDiffTool } from '../tools/GitTools';
 import { findFunctionsTool, findImportsTool, getProjectStructureTool, analyzeCodeStructureTool } from '../tools/CodeTools';
 
 /**
- * 可配置工具接口
+ * 工具初始化状态
  */
-interface ConfigurableTool {
-  id: string;
-  name: string;
-  description: string;
-  parameters: any;
-  execute: (params: any) => Promise<any>;
+interface ToolInitializationStatus {
+  builtinLoaded: boolean;
+  mcpLoaded: boolean;
+  allLoaded: boolean;
+  toolCount: number;
+  error?: string;
 }
 
 /**
@@ -59,13 +58,19 @@ interface McpStatus {
 }
 
 export class SimpleAgent {
-    private agent: Agent;
+    private agent?: Agent;
     private config: Config;
     private model: LanguageModel;
     private mcpTools: McpTool[] = [];
     private mcpStatus: McpStatus = { isLoaded: false, toolCount: 0, connectionCount: 0, tools: [] };
     private loopDetector: LoopDetectionService;
     private simpleContextProvider: SimpleProjectContextProvider;
+    private initializationStatus: ToolInitializationStatus = {
+        builtinLoaded: false,
+        mcpLoaded: false,
+        allLoaded: false,
+        toolCount: 0
+    };
 
     /**
      * 初始化SimpleAgent
@@ -93,26 +98,62 @@ export class SimpleAgent {
         // 初始化简单项目上下文提供者
         this.simpleContextProvider = new SimpleProjectContextProvider();
         
-        // 立即创建带有所有内置工具的Agent - 消除双重初始化
-        this.agent = this.createAgentWithBuiltinTools(customContext);
-        
-        // 异步加载MCP工具，但不依赖Agent创建
-        this.loadMcpToolsAsync();
+        // 不再在构造函数中创建Agent
+        // Agent现在在initializeAsync中统一创建
+        console.log('🔧 SimpleAgent构造完成，等待异步初始化...');
     }
 
     /**
-     * 异步初始化方法（向后兼容，现在主要用于等待MCP工具加载完成）
+     * 异步初始化方法 - 统一工具加载
      * @param customContext 可选的用户自定义上下文
-     * @deprecated 不再需要调用此方法，Agent已在构造函数中完全初始化
      */
     async initializeAsync(customContext?: string): Promise<void> {
-        // 等待MCP工具加载完成（如果正在进行中）
-        await this.waitForMcpTools();
-        console.log('✅ 异步初始化完成（向后兼容）');
+        try {
+            console.log('🔄 开始Agent异步初始化...');
+            
+            // 1. 先加载内置工具并创建基础Agent
+            this.loadBuiltinTools();
+            this.agent = this.createAgentWithBuiltinTools(customContext);
+            this.initializationStatus.builtinLoaded = true;
+            console.log('✅ 内置工具已加载，基础Agent已创建');
+            
+            // 2. 异步加载MCP工具
+            await this.loadMcpToolsAsync();
+            this.initializationStatus.mcpLoaded = true;
+            console.log('✅ MCP工具加载完成');
+            
+            // 3. 统计总工具数量
+            this.initializationStatus.toolCount = this.getBuiltinToolsCount() + this.mcpTools.length;
+            this.initializationStatus.allLoaded = true;
+            
+            console.log(`✅ Agent初始化完成 - 共${this.initializationStatus.toolCount}个工具可用`);
+            
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : '未知错误';
+            console.error('❌ Agent初始化失败:', errorMessage);
+            this.initializationStatus.error = errorMessage;
+            
+            // 创建最小功能Agent作为后备
+            if (!this.agent) {
+                this.agent = this.createMinimalAgent();
+                console.log('🔧 已创建最小功能Agent作为后备');
+            }
+            
+            throw new Error(`Agent initialization failed: ${errorMessage}`);
+        }
     }
 
     /**
-     * 创建带有内置工具的Agent（单次初始化核心方法）
+     * 加载内置工具（独立方法）
+     */
+    private loadBuiltinTools(): void {
+        console.log('🔄 加载内置工具...');
+        // 这里可以添加内置工具的预加载逻辑
+        // 目前内置工具是静态的，所以直接标记为已加载
+    }
+    
+    /**
+     * 创建带有内置工具的Agent
      * @param customContext 用户自定义上下文
      * @returns Agent实例
      */
@@ -127,14 +168,32 @@ export class SimpleAgent {
             });
         } catch (error) {
             console.warn('⚠️ 创建Agent时发生错误，使用基础配置:', error instanceof Error ? error.message : '未知错误');
-            // 回退到最基础的Agent
-            return new Agent({
-                name: 'TempuraiAgent',
-                instructions: 'Code assistant (basic mode)',
-                model: this.model as any,
-                tools: {}
-            });
+            throw error; // 让上层处理错误
         }
+    }
+    
+    /**
+     * 创建最小功能Agent（错误后备）
+     */
+    private createMinimalAgent(): Agent {
+        return new Agent({
+            name: 'TempuraiAgent',
+            instructions: 'Code assistant (minimal mode)',
+            model: this.model as any,
+            tools: {
+                finish: {
+                    id: 'finish',
+                    name: 'Finish Task',
+                    description: 'Mark the current task as completed',
+                    parameters: {},
+                    execute: async () => ({
+                        success: true,
+                        message: 'Task marked as finished',
+                        completed: true
+                    })
+                }
+            }
+        });
     }
 
     /**
@@ -220,18 +279,18 @@ export class SimpleAgent {
     }
 
     /**
+     * 获取内置工具数量
+     */
+    private getBuiltinToolsCount(): number {
+        return Object.keys(this.getBuiltinTools()).length;
+    }
+    
+    /**
      * 获取所有内置工具
      * @returns 内置工具对象
      */
     private getBuiltinTools(): Record<string, any> {
         return {
-            // 🚀 GIT WORKFLOW TOOLS (PRIMARY)
-            start_task: gitWorkflowTools.start_task,
-            commit_changes: gitWorkflowTools.commit_changes,
-            end_task: gitWorkflowTools.end_task,
-            discard_task: gitWorkflowTools.discard_task,
-            get_workflow_status: gitWorkflowTools.get_workflow_status,
-            
             // 📝 SIMPLE FILE TOOLS
             write_file: simpleFileTools.write_file,
             amend_file: simpleFileTools.amend_file,
@@ -253,10 +312,23 @@ export class SimpleAgent {
             get_project_structure: getProjectStructureTool,
             analyze_code_structure: analyzeCodeStructureTool,
             
-            // 📜 GIT TOOLS (for reference)
+            // 📜 GIT QUERY TOOLS (for information only)
             git_status: gitStatusTool,
             git_log: gitLogTool, 
             git_diff: gitDiffTool,
+
+            // 🏁 TASK COMPLETION
+            finish: {
+                id: 'finish',
+                name: 'Finish Task',
+                description: 'Mark the current task as completed',
+                parameters: {},
+                execute: async () => ({
+                    success: true,
+                    message: 'Task marked as finished',
+                    completed: true
+                })
+            }
         };
     }
 
@@ -276,100 +348,100 @@ export class SimpleAgent {
     private buildSystemInstructionsSync(customContext?: string): string {
         // 获取静态项目上下文
         const staticProjectContext = this.simpleContextProvider.getStaticContext();
-        const baseInstructions = `You are a professional software developer AI assistant that works just like a human developer using Git workflows.
+        
+        // 获取可用工具列表
+        const availableTools = Object.keys(this.getBuiltinTools());
+        
+        const baseInstructions = `You are a software development assistant with advanced reasoning capabilities.
 
 ${staticProjectContext}
 
-## 🚀 CORE DEVELOPMENT WORKFLOW
+## 🎯 YOUR ROLE
+You are a **Tool Execution Specialist** operating within a ReAct (Reasoning + Acting) framework. Your job is to:
+1. **Reason** about the current situation and what needs to be done
+2. **Plan** your approach step by step
+3. **Act** by using the appropriate tools
+4. **Respond** in the exact XML format specified
 
-You operate as a **Git-Native Developer** - every coding task follows professional Git branch workflows:
+## 🔧 AVAILABLE TOOLS
+${availableTools.map(tool => `- **${tool}**: Use for ${this.getToolDescription(tool)}`).join('\n')}
 
-### 📋 THE 6-STEP PROCESS:
-1. **start_task** → Create feature/fix branch for the work
-2. **explore & analyze** → Use read_file, analyze_code_structure, find_functions to understand
-3. **code & modify** → Use write_file, amend_file to implement changes
-4. **stage & commit** → Use commit_changes with meaningful commit messages
-5. **test validation** → Use shell_executor to run tests, builds, lints
-6. **end_task** → Merge to main and cleanup, or discard_task if problems
+## 📋 RESPONSE FORMAT
+You MUST respond in this exact XML format. No other format is acceptable:
 
-### 🔧 PRIMARY TOOL HIERARCHY:
-1. **🚀 Git Workflow Tools** (start_task, commit_changes, end_task, discard_task, get_workflow_status)
-2. **📝 Simple File Tools** (write_file, amend_file, read_file)
-3. **🔍 Code Analysis Tools** (analyze_code_structure, find_functions, find_imports, get_project_structure)
-4. **💻 Shell Execution** (shell_executor, multi_command)
-5. **🌐 Web Research** (web_search, url_fetch)
+\`\`\`xml
+<response>
+  <thought>
+    Your detailed reasoning about:
+    - What you observed or learned
+    - What the current situation requires
+    - Why you're choosing the next action
+    - Any important considerations or constraints
+  </thought>
+  <plan>
+    <?xml version="1.0" encoding="UTF-8"?>
+    <plan>
+      <task>Brief description of the overall task</task>
+      <status>current_phase (analyzing|planning|implementing|testing|completed)</status>
+      <updated>${new Date().toISOString()}</updated>
+      <steps>
+        <step priority="high">Most urgent next step</step>
+        <step priority="medium">Follow-up step</step>
+        <step priority="low">Future consideration</step>
+      </steps>
+      <notes>Important observations, constraints, or decisions</notes>
+    </plan>
+  </plan>
+  <action>
+    <tool>exact_tool_name</tool>
+    <args>{"param1": "value1", "param2": "value2"}</args>
+  </action>
+</response>
+\`\`\`
 
-## 🎯 WORKFLOW PRINCIPLES
+## 🎯 TOOL USAGE GUIDELINES
 
-### ✅ ALWAYS DO:
-- Start EVERY coding task with `start_task` - creates your working branch
-- Use meaningful branch names (feature/add-auth, fix/memory-leak, refactor/simplify-context)
-- Make focused, atomic commits with clear messages
-- Run tests/builds before ending tasks
-- End with `end_task` to merge and cleanup
+### File Operations
+- **read_file**: Get file contents before making changes
+- **write_file**: Create new files or completely rewrite existing ones
+- **amend_file**: Make targeted changes to existing files
 
-### ❌ NEVER DO:
-- Modify files on main branch (always work on task branches)
-- Skip the Git workflow - it's not optional
-- Make commits without meaningful messages
-- Leave branches hanging (always end_task or discard_task)
+### Code Analysis
+- **analyze_code_structure**: Deep AST analysis for complex code understanding
+- **find_files**: Locate files by name patterns
+- **search_in_files**: Find specific text across multiple files
 
-## 🔌 ADVANCED CAPABILITIES
+### Development Operations
+- **shell_executor**: Run commands, tests, builds, installs
+- **git_status**: Check current repository state
+- **git_diff**: View changes before committing
 
-### MCP Plugin System:
-Available external tools: ${this.mcpTools.length > 0 ? this.mcpTools.map(tool => `${tool.name} - ${tool.description}`).join('\n- ') : 'Loading...'}
+### Research & Information
+- **web_search**: Find current information, documentation, solutions
+- **url_fetch**: Get detailed content from specific web pages
 
-### Internet Research:
-- **web_search**: Current information, documentation, solutions
-- **url_fetch**: Detailed content analysis from specific URLs
-- Always research before implementing to use latest practices
+### Task Completion
+- **finish**: Use when the task is fully completed and tested
 
-### Code Intelligence:
-- **analyze_code_structure**: AST parsing for deep code understanding
-- Get function signatures, class structures, imports/exports
-- Use before making complex modifications
+## 🎯 REASONING PRINCIPLES
 
-## 💬 COMMUNICATION STYLE
-
-### When Starting Work:
-```
-🚀 **Starting Task**: [Brief description]
-📝 **Branch**: feature/[descriptive-name]
-🎯 **Goal**: [What we're achieving]
-```
-
-### During Development:
-```
-🔍 **Analysis**: [What you discovered]
-📝 **Changes**: [What you're modifying]
-💾 **Commit**: [Commit message]
-```
-
-### When Testing:
-```
-🧪 **Testing**: [What tests you're running]
-✅ **Results**: [Test outcomes]
-```
-
-### When Completing:
-```
-✅ **Task Complete**: [Summary of changes]
-🔀 **Merged**: [Branch merged to main]
-🧹 **Cleanup**: [Branch deleted]
-```
+1. **Observe First**: Always understand the current state before acting
+2. **Plan Iteratively**: Your plan should evolve as you learn more
+3. **Think Before Tools**: Explain your reasoning before choosing tools
+4. **Validate Results**: Check that your actions achieved the intended effect
+5. **Handle Errors**: If a tool fails, adapt your approach
 
 ## 📊 CONFIGURATION
 - Model: ${this.getModelDisplayName()}
 - Temperature: ${this.config.temperature}
-- Shell timeout: ${this.config.tools.shellExecutor.defaultTimeout}ms
-- Max retries: ${this.config.tools.shellExecutor.maxRetries}
-- Web search: ${this.config.tavilyApiKey ? 'Enabled (Tavily)' : 'Disabled (no API key)'}
+- Web search: ${this.config.tavilyApiKey ? 'Available (Tavily)' : 'Not available'}
+- MCP Tools: ${this.mcpTools.length} external tools loaded
 
-You are a professional developer. Work professionally, communicate clearly, and always follow the Git workflow. Every task is a new branch, every change is committed, every completion is merged.`;
+You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and execute precisely.`;
 
         // 如果有自定义上下文，添加到指令末尾
         if (customContext && customContext.trim()) {
-            return `${baseInstructions}\n\n--- USER-DEFINED CONTEXT ---\n${customContext.trim()}`;
+            return `${baseInstructions}\n\n## 📋 ADDITIONAL CONTEXT\n${customContext.trim()}`;
         }
         
         return baseInstructions;
@@ -377,17 +449,59 @@ You are a professional developer. Work professionally, communicate clearly, and 
 
     
     /**
-     * 创建可配置的通用工具
-     * @param baseTool 基础工具对象
-     * @returns 配置化的工具对象
+     * 获取工具描述
+     * @param toolName 工具名称
+     * @returns 工具的简短描述
      */
-    private createConfigurableTool(baseTool: ConfigurableTool): ConfigurableTool {
-        return {
-            ...baseTool,
-            execute: async (params: any) => {
-                return baseTool.execute(params);
-            }
+    private getToolDescription(toolName: string): string {
+        const descriptions: Record<string, string> = {
+            // 文件操作工具
+            'write_file': 'creating new files or completely rewriting existing ones',
+            'amend_file': 'making targeted changes to existing files',
+            'read_file': 'reading file contents',
+
+            // 代码分析工具
+            'analyze_code_structure': 'deep AST analysis of JavaScript/TypeScript code',
+            'find_files': 'locating files by name patterns',
+            'search_in_files': 'searching for specific text across multiple files',
+            'find_functions': 'finding function definitions in the codebase',
+            'find_imports': 'finding import statements for specific modules',
+            'get_project_structure': 'getting the directory structure of the project',
+
+            // Shell执行工具
+            'shell_executor': 'executing shell commands, running tests, builds, installs',
+            'multi_command': 'executing multiple shell commands in sequence',
+
+            // Git查询工具
+            'git_status': 'checking current Git repository status',
+            'git_log': 'viewing Git commit history',
+            'git_diff': 'showing changes between commits or files',
+
+            // Web工具
+            'web_search': 'searching the internet for current information',
+            'url_fetch': 'fetching content from specific web URLs',
+
+            // 任务控制
+            'finish': 'completing the current task successfully'
         };
+
+        return descriptions[toolName] || 'general development tasks';
+    }
+    
+    /**
+     * 检查Agent是否已初始化
+     */
+    private ensureAgentInitialized(): void {
+        if (!this.agent) {
+            throw new Error('Agent not initialized. Call initializeAsync() first.');
+        }
+    }
+    
+    /**
+     * 获取初始化状态
+     */
+    public getInitializationStatus(): ToolInitializationStatus {
+        return { ...this.initializationStatus };
     }
     
     // 创建可配置的Shell工具
@@ -400,44 +514,6 @@ You are a professional developer. Work professionally, communicate clearly, and 
                     ...params,
                     timeout: params.timeout || this.config.tools.shellExecutor.defaultTimeout,
                     maxRetries: params.maxRetries || this.config.tools.shellExecutor.maxRetries
-                };
-                
-                return baseTool.execute(configuredParams);
-            }
-        };
-    }
-    
-    // 创建可配置的SmartDiff工具
-    private createConfigurableSmartDiffTool(baseTool: any) {
-        return {
-            ...baseTool,
-            execute: async (params: any) => {
-                // 应用配置中的diff设置
-                const configuredParams = {
-                    ...params,
-                    maxRetries: params.maxRetries || this.config.tools.smartDiff.maxRetries,
-                    contextLines: params.contextLines || this.config.tools.smartDiff.contextLines,
-                    enableFuzzyMatching: params.enableFuzzyMatching !== undefined ? params.enableFuzzyMatching : this.config.tools.smartDiff.enableFuzzyMatching
-                };
-                
-                return baseTool.execute(configuredParams);
-            }
-        };
-    }
-    
-    /**
-     * 创建带有模型注入的智能字符串替换工具
-     * @param baseTool 基础智能字符串替换工具
-     * @returns 配置后的工具
-     */
-    private createSmartStringReplaceTool(baseTool: any) {
-        return {
-            ...baseTool,
-            execute: async (params: any) => {
-                // 注入语言模型实例以支持参数修正
-                const configuredParams = {
-                    ...params,
-                    model: this.model // 注入当前的语言模型实例
                 };
                 
                 return baseTool.execute(configuredParams);
@@ -459,7 +535,9 @@ You are a professional developer. Work professionally, communicate clearly, and 
     // 标准处理方法
     async process(query: string): Promise<string> {
         try {
-            const response = await this.agent.generate([{
+            this.ensureAgentInitialized();
+            
+            const response = await this.agent!.generate([{
                 role: 'user',
                 content: query
             }]);
@@ -471,153 +549,41 @@ You are a professional developer. Work professionally, communicate clearly, and 
         }
     }
     
-    /**
-     * 流式处理用户查询，支持结构化事件输出
-     * 使用异步生成器提供实时的结构化事件，包括文本块、工具调用和结果
-     * @param query 用户查询字符串
-     * @returns AsyncGenerator<AgentStreamEvent, void, unknown> 流式事件输出
-     * @example
-     * ```typescript
-     * const stream = agent.processStream("解释这段代码");
-     * for await (const event of stream) {
-     *   switch (event.type) {
-     *     case 'text-chunk':
-     *       console.log(event.content);
-     *       break;
-     *     case 'tool-call':
-     *       console.log(`调用工具: ${event.toolName}`);
-     *       break;
-     *     case 'tool-result':
-     *       console.log(`工具结果: ${event.result}`);
-     *       break;
-     *     case 'error':
-     *       console.error(event.content);
-     *       break;
-     *   }
-     * }
-     * ```
-     */
-    async *processStream(query: string): AsyncGenerator<AgentStreamEvent, void, unknown> {
-        try {
-            // 验证输入
-            if (!query || typeof query !== 'string' || query.trim().length === 0) {
-                yield { type: 'error', content: '❌ 错误: 查询内容不能为空' };
-                return;
-            }
-
-            // 直接使用现有Agent，无需动态上下文
-
-            // 生成回复
-            const response = await this.agent.generate([{
-                role: 'user',
-                content: query.trim()
-            }]);
-
-            // 处理工具调用
-            if (response.toolCalls && response.toolCalls.length > 0) {
-                for (const toolCall of response.toolCalls) {
-                    // 发出工具调用事件
-                    yield {
-                        type: 'tool-call',
-                        toolName: toolCall.toolName,
-                        toolInput: toolCall.args
-                    };
-
-                    try {
-                        // 执行工具调用
-                        const toolResult = await this.executeToolCall(toolCall);
-                        
-                        // 检查是否检测到循环
-                        if (toolResult.loopDetected) {
-                            // 发出循环检测警告事件
-                            yield {
-                                type: 'error',
-                                content: `🔄 循环检测警告: ${toolResult.error}\n\n💡 建议: ${toolResult.suggestion}\n\n⏸️ 执行已暂停，请提供新的指令或确认是否继续。`
-                            };
-                            
-                            // 发出工具结果事件（标记为循环）
-                            yield {
-                                type: 'tool-result',
-                                toolName: toolCall.toolName,
-                                result: toolResult,
-                                warning: 'loop_detected'
-                            };
-                        } else {
-                            // 正常的工具结果事件
-                            yield {
-                                type: 'tool-result',
-                                toolName: toolCall.toolName,
-                                result: toolResult
-                            };
-                        }
-                    } catch (toolError) {
-                        // 发出工具执行错误事件
-                        yield {
-                            type: 'error',
-                            content: `工具 ${toolCall.toolName} 执行失败: ${toolError instanceof Error ? toolError.message : '未知错误'}`
-                        };
-                    }
-                }
-            }
-
-            // 处理文本响应
-            if (response.text) {
-                // 流式输出文本块，模拟打字机效果
-                const fullResponse = response.text;
-                const words = fullResponse.split(' ');
-                let currentText = '';
-
-                for (let i = 0; i < words.length; i++) {
-                    const word = words[i];
-                    currentText += (i === 0 ? '' : ' ') + word;
-                    
-                    yield {
-                        type: 'text-chunk',
-                        content: currentText
-                    };
-                    
-                    // 添加延迟以创造打字机效果
-                    // 根据单词长度调整延迟时间
-                    const delay = Math.max(20, Math.min(100, word.length * 10));
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
-            }
-
-            // 如果既没有文本响应也没有工具调用
-            if (!response.text && (!response.toolCalls || response.toolCalls.length === 0)) {
-                yield { type: 'error', content: '❌ 错误: AI回复为空，请稍后重试' };
-            }
-
-        } catch (error) {
-            const errorMessage = `❌ 处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
-            yield { type: 'error', content: errorMessage };
-            
-            // 如果是网络或API错误，提供一些建议
-            if (error instanceof Error) {
-                if (error.message.includes('API key') || error.message.includes('unauthorized')) {
-                    yield { type: 'error', content: '💡 提示: 请检查您的OpenAI API密钥是否正确配置' };
-                } else if (error.message.includes('timeout') || error.message.includes('network')) {
-                    yield { type: 'error', content: '💡 提示: 网络连接超时，请检查网络连接或稍后重试' };
-                } else if (error.message.includes('rate limit') || error.message.includes('quota')) {
-                    yield { type: 'error', content: '💡 提示: API调用频率限制，请稍后重试' };
-                }
-            }
-        }
-    }
     
     /**
-     * 执行单个工具调用（包含循环检测）
-     * @param toolCall 工具调用对象
-     * @returns 工具执行结果
+     * 生成响应（新的核心方法，供ReActAgent调用）
+     * 简化的LLM调用，专注于单次文本生成
+     * @param prompt 输入提示词
+     * @returns Promise<string> 生成的响应文本
      */
-    private async executeToolCall(toolCall: any): Promise<any> {
-        const toolName = toolCall.toolName;
-        const toolArgs = toolCall.args;
-        
+    async generateResponse(prompt: string): Promise<string> {
+        try {
+            this.ensureAgentInitialized();
+            
+            const response = await this.agent!.generate([{
+                role: 'user',
+                content: prompt
+            }]);
+            
+            return response.text || '';
+        } catch (error) {
+            console.error('Error generating response:', error);
+            throw new Error(`LLM generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * 执行单个工具（新的核心方法，供ReActAgent调用）
+     * 简化的工具执行引擎，包含循环检测
+     * @param toolName 工具名称
+     * @param args 工具参数
+     * @returns Promise<any> 工具执行结果
+     */
+    async executeTool(toolName: string, args: any): Promise<any> {
         // 循环检测 - 在执行前检查
         const loopResult = this.loopDetector.addAndCheck({
             toolName: toolName,
-            parameters: toolArgs
+            parameters: args
         });
         
         if (loopResult.isLoop) {
@@ -625,27 +591,21 @@ You are a professional developer. Work professionally, communicate clearly, and 
             const errorMessage = this.buildLoopErrorMessage(loopResult);
             console.warn(`🔄 循环检测警告: ${errorMessage}`);
             
-            return {
-                success: false,
-                error: errorMessage,
-                loopDetected: true,
-                loopInfo: loopResult,
-                suggestion: loopResult.suggestion,
-                toolName,
-                timestamp: new Date().toISOString()
-            };
+            throw new Error(`Loop detected: ${errorMessage}. Suggestion: ${loopResult.suggestion}`);
         }
         
+        this.ensureAgentInitialized();
+        
         // 从 agent 的工具集中查找对应工具
-        const tool = (this.agent as any).tools?.[toolName];
+        const tool = (this.agent! as any).tools?.[toolName];
         
         if (!tool) {
-            throw new Error(`未找到工具: ${toolName}`);
+            throw new Error(`Tool not found: ${toolName}. Available tools: ${Object.keys((this.agent! as any).tools || {}).join(', ')}`);
         }
         
         try {
             // 执行工具
-            const result = await tool.execute(toolArgs);
+            const result = await tool.execute(args);
             
             // 执行成功，记录用于后续分析
             console.log(`🔧 工具执行成功: ${toolName}`);
@@ -653,8 +613,9 @@ You are a professional developer. Work professionally, communicate clearly, and 
             return result;
         } catch (error) {
             // 工具执行失败
-            console.error(`❌ 工具执行失败: ${toolName} - ${error instanceof Error ? error.message : '未知错误'}`);
-            throw error;
+            const errorMessage = `Tool '${toolName}' execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            console.error(`❌ ${errorMessage}`);
+            throw new Error(errorMessage);
         }
     }
     
@@ -761,6 +722,13 @@ You are a professional developer. Work professionally, communicate clearly, and 
     // 健康检查
     async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
         try {
+            if (!this.agent) {
+                return {
+                    status: 'unhealthy',
+                    message: 'Agent未初始化'
+                };
+            }
+            
             // 测试基本的API连接
             const testResponse = await this.agent.generate([{
                 role: 'user',
@@ -770,7 +738,7 @@ You are a professional developer. Work professionally, communicate clearly, and 
             if (testResponse.text) {
                 return { 
                     status: 'healthy', 
-                    message: `Agent运行正常，使用模型: ${this.config.model}` 
+                    message: `Agent运行正常，使用模型: ${this.config.model}，工具数量: ${this.initializationStatus.toolCount}` 
                 };
             } else {
                 return { 

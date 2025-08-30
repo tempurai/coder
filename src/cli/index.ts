@@ -8,10 +8,9 @@
 import * as path from 'path';
 import { ConfigLoader, Config } from '../config/ConfigLoader';
 import { SimpleAgent } from '../agents/SimpleAgent';
-import { globalConfirmationManager } from '../tools/ConfirmationManager';
 import * as readline from 'readline';
 import { FileWatcherService } from '../services/FileWatcherService';
-import { SessionService } from '../session/SessionService';
+import { SessionService, TaskExecutionResult } from '../session/SessionService';
 
 /**
  * CLI状态枚举
@@ -78,8 +77,6 @@ export class TempuraiCLI {
       output: process.stdout,
       prompt: ''
     });
-
-    this.setupConfirmationManager();
     
     // 异步初始化 MCP 工具
     this.initializeMcpTools();
@@ -92,42 +89,6 @@ export class TempuraiCLI {
     // MCP工具初始化现在由SessionService管理
     // 这里保留方法用于向后兼容
     console.log('🔄 MCP工具由会话服务管理');
-  }
-
-  /**
-   * 设置确认管理器
-   */
-  private setupConfirmationManager(): void {
-    globalConfirmationManager.setConfirmationHandler((request) => {
-      this.handleConfirmationRequest(request);
-    });
-  }
-
-  /**
-   * 处理确认请求
-   */
-  private handleConfirmationRequest(request: any): void {
-    console.log('\n' + '─'.repeat(60));
-    console.log(`🔒 Security Confirmation`);
-    console.log('─'.repeat(60));
-    
-    if (request.options.command) {
-      console.log(`Command: ${request.options.command}`);
-      console.log(`Risk Level: ${request.options.riskLevel?.toUpperCase()}`);
-    }
-    
-    console.log(`\n${request.options.message}`);
-    console.log('\n1. Yes, proceed');
-    console.log('2. No, cancel');
-    
-    this.rl.question('\nChoose (1-2): ', (answer) => {
-      const choice = answer.trim();
-      if (choice === '1' || choice.toLowerCase() === 'yes' || choice.toLowerCase() === 'y') {
-        globalConfirmationManager.resolveConfirmation(request.id, 'approve');
-      } else {
-        globalConfirmationManager.resolveConfirmation(request.id, 'deny');
-      }
-    });
   }
 
   /**
@@ -236,7 +197,7 @@ export class TempuraiCLI {
   }
 
   /**
-   * 处理用户输入
+   * 处理用户输入（新架构 - 简化版）
    */
   private async processInput(input: string): Promise<void> {
     if (!input) {
@@ -252,37 +213,17 @@ export class TempuraiCLI {
     this.currentState = CLIState.PROCESSING;
 
     try {
-      // 使用SessionService处理用户输入
-      const processedInput = await this.sessionService.processUserInput(input);
+      console.log('\n🚀 开始处理任务...');
       
-      // 准备发送给Agent的消息，包含IDE上下文信息
-      let messageToAgent = processedInput.originalInput;
-      if (this.ideContext.activeFile || this.ideContext.openFiles.length > 0) {
-        const contextInfo = this.formatIDEContext();
-        messageToAgent = `${contextInfo}\n\n${processedInput.originalInput}`;
-      }
+      // 使用SessionService处理任务（新架构）
+      const result: TaskExecutionResult = await this.sessionService.processTask(input);
       
-      // 使用SessionService处理Agent响应流
-      const stream = this.sessionService.processAgentStream(messageToAgent);
-      let fullResponse = '';
-      
-      for await (const event of stream) {
-        // 只处理文本块事件用于显示
-        if (event.type === 'text-chunk') {
-          const newContent = event.content.substring(fullResponse.length);
-          process.stdout.write(newContent);
-          fullResponse = event.content;
-        }
-        // 其他事件由SessionService处理和显示
-      }
-      
-      if (!fullResponse.endsWith('\n')) {
-        console.log('');
-      }
+      // 显示任务结果
+      this.displayTaskResult(result);
       
       // 为UI显示保留简化的历史记录
       this.addToHistory('user', input);
-      this.addToHistory('assistant', fullResponse);
+      this.addToHistory('assistant', result.summary);
       
     } catch (error) {
       console.error(`\n❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -291,6 +232,49 @@ export class TempuraiCLI {
       this.currentState = CLIState.INTERACTIVE;
       this.displayPrompt();
     }
+  }
+
+  /**
+   * 显示任务执行结果
+   */
+  private displayTaskResult(result: TaskExecutionResult): void {
+    console.log('\n' + '─'.repeat(60));
+    
+    if (result.success) {
+      console.log('✅ 任务执行成功');
+      console.log(`📝 任务: ${result.taskDescription}`);
+      console.log(`⏱️ 执行时间: ${result.duration}ms`);
+      console.log(`🔄 迭代次数: ${result.iterations}`);
+      console.log(`📊 总结: ${result.summary}`);
+      
+      if (result.diff && result.diff.filesChanged > 0) {
+        console.log(`\n📁 文件变更: ${result.diff.filesChanged} 个文件`);
+        console.log('📊 变更统计:');
+        console.log(result.diff.diffStats);
+        
+        // 如果diff不太长，显示完整diff
+        if (result.diff.fullDiff && result.diff.fullDiff.length < 2000) {
+          console.log('\n🔍 详细变更:');
+          console.log(result.diff.fullDiff);
+        } else {
+          console.log('\n💡 完整变更太长，已省略。使用 git diff 查看详细内容。');
+        }
+      } else {
+        console.log('\n📁 没有文件变更');
+      }
+    } else {
+      console.log('❌ 任务执行失败');
+      console.log(`📝 任务: ${result.taskDescription}`);
+      console.log(`⏱️ 执行时间: ${result.duration}ms`);
+      console.log(`🔄 迭代次数: ${result.iterations}`);
+      console.log(`📊 总结: ${result.summary}`);
+      
+      if (result.error) {
+        console.log(`🚫 错误: ${result.error}`);
+      }
+    }
+    
+    console.log('─'.repeat(60));
   }
 
   /**
@@ -742,10 +726,29 @@ async function main(): Promise<void> {
     
     // 创建Agent实例（使用新的ProjectContext系统）
     const agent = new SimpleAgent(config, model, config.customContext);
-    console.log('✅ Agent已创建，正在进行异步初始化...');
+    console.log('✅ Agent已创建，开始异步初始化...');
     
-    // 创建会话管理服务
-    const sessionService = new SessionService(agent, fileWatcherService, config);
+    // 等待Agent完全初始化
+    await agent.initializeAsync(config.customContext);
+    console.log('✅ Agent异步初始化完成');
+    
+    // 验证初始化状态
+    const initStatus = agent.getInitializationStatus();
+    if (!initStatus.allLoaded) {
+        console.warn('⚠️ Agent初始化不完整，某些功能可能受限');
+        if (initStatus.error) {
+            console.warn(`⚠️ 初始化错误: ${initStatus.error}`);
+        }
+    } else {
+        console.log(`✅ 所有工具已加载完成 (${initStatus.toolCount}个工具)`);
+    }
+    
+    // 创建会话管理服务（使用新的依赖注入接口）
+    const sessionService = new SessionService({
+      agent,
+      fileWatcher: fileWatcherService,
+      config
+    });
     console.log('✅ 会话管理服务已初始化');
     
     console.log('✅ 新的架构已初始化：CLI ↔ SessionService ↔ Agent');

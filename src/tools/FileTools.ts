@@ -2,6 +2,8 @@ import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as util from 'util';
 import { z } from 'zod';
+import { ErrorHandler } from '../errors/ErrorHandler';
+import { ToolExecutionResult } from './index';
 
 const execAsync = util.promisify(exec);
 
@@ -12,13 +14,12 @@ export const findFilesTool = {
     parameters: z.object({
         pattern: z.string().describe('File name pattern to search for'),
     }),
-    execute: async ({ pattern }: { pattern: string }) => {
-        try {
+    execute: async ({ pattern }: { pattern: string }): Promise<ToolExecutionResult<string[]>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const { stdout } = await execAsync(`find . -name "*${pattern}*" -type f`);
-            return { success: true, result: stdout.trim() };
-        } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
+            const files = stdout.trim().split('\n').filter(f => f.length > 0);
+            return files;
+        }, 'find_files');
     },
 };
 
@@ -29,13 +30,12 @@ export const searchInFilesTool = {
     parameters: z.object({
         keyword: z.string().describe('Keyword to search for in files'),
     }),
-    execute: async ({ keyword }: { keyword: string }) => {
-        try {
+    execute: async ({ keyword }: { keyword: string }): Promise<ToolExecutionResult<string[]>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const { stdout } = await execAsync(`grep -r "${keyword}" --include="*.ts" --include="*.js" .`);
-            return { success: true, result: stdout.trim() };
-        } catch (error) {
-            return { success: false, result: 'No matches found' };
-        }
+            const matches = stdout.trim().split('\n').filter(m => m.length > 0);
+            return matches;
+        }, 'search_in_files');
     },
 };
 
@@ -46,13 +46,11 @@ export const readFileTool = {
     parameters: z.object({
         path: z.string().describe('Path to the file to read'),
     }),
-    execute: async ({ path }: { path: string }) => {
-        try {
+    execute: async ({ path }: { path: string }): Promise<ToolExecutionResult<string>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const content = await fs.promises.readFile(path, 'utf8');
-            return { success: true, result: content };
-        } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
+            return content;
+        }, 'read_file');
     },
 };
 
@@ -64,13 +62,11 @@ export const writeFileTool = {
         path: z.string().describe('Path to the file to write'),
         content: z.string().describe('Content to write to the file'),
     }),
-    execute: async ({ path, content }: { path: string; content: string }) => {
-        try {
+    execute: async ({ path, content }: { path: string; content: string }): Promise<ToolExecutionResult<string>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             await fs.promises.writeFile(path, content);
-            return { success: true, result: `Successfully wrote to ${path}` };
-        } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
+            return `Successfully wrote to ${path}`;
+        }, 'write_file');
     },
 };
 

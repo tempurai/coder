@@ -538,4 +538,23 @@ export class FileWatcherService {
   public getRecentChangeEvents(limit: number = 10): FileChangeEvent[] {
     return this.changeEvents.slice(-limit);
   }
+
+  /**
+   * 启动自动清理定时器
+   */
+  private startCleanupTimer(): void {
+    // 清理现有定时器
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+
+    // 启动新的清理定时器
+    this.cleanupInterval = setInterval(() => {
+      this.optimizeWatchList();
+    }, this.options.cleanupIntervalMs);
+
+    if (this.options.verbose) {
+      console.log(`📁 自动清理定时器已启动，间隔: ${this.options.cleanupIntervalMs}ms`);
+    }
+  }
 }

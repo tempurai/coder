@@ -64,21 +64,6 @@ interface ShellExecutorConfig {
 }
 
 /**
- * 智能差异工具配置接口
- * 控制代码差异分析和应用的行为
- */
-interface SmartDiffConfig {
-  /** 上下文行数 */
-  contextLines: number;
-  /** 最大重试次数 */
-  maxRetries: number;
-  /** 是否启用模糊匹配 */
-  enableFuzzyMatching: boolean;
-  /** 差异应用前是否需要确认 */
-  requireConfirmation: boolean;
-}
-
-/**
  * Web工具配置接口
  * 控制网络请求和内容获取的安全策略
  */
@@ -100,8 +85,6 @@ interface WebToolsConfig {
 interface ToolsConfig {
   /** Shell执行器配置 */
   shellExecutor: ShellExecutorConfig;
-  /** 智能差异工具配置 */
-  smartDiff: SmartDiffConfig;
   /** Web工具配置 */
   webTools: WebToolsConfig;
 }
@@ -149,12 +132,6 @@ const DEFAULT_CONFIG: Config = {
         allowDangerousCommands: false
       }
     },
-    smartDiff: {
-      contextLines: 3,
-      maxRetries: 3,
-      enableFuzzyMatching: true,
-      requireConfirmation: true
-    },
     webTools: {
       requestTimeout: 15000,
       maxContentLength: 10000,
@@ -170,18 +147,27 @@ const DEFAULT_CONFIG: Config = {
  */
 export class ConfigLoader {
   private config: Config;
-  private readonly configDir: string;
-  private readonly configFilePath: string;
-  private readonly contextFilePath: string;
+  private readonly globalConfigDir: string;
+  private readonly globalConfigFilePath: string;
+  private readonly globalContextFilePath: string;
+  private readonly projectConfigDir: string;
+  private readonly projectConfigFilePath: string;
+  private readonly projectContextFilePath: string;
   private readonly deepMerge: (target: any, source: any) => any;
 
   /**
    * 构造函数
    */
   public constructor() {
-    this.configDir = path.join(os.homedir(), '.temurai');
-    this.configFilePath = path.join(this.configDir, 'config.json');
-    this.contextFilePath = path.join(this.configDir, '.temurai.md');
+    // 全局配置路径（用户主目录）
+    this.globalConfigDir = path.join(os.homedir(), '.temurai');
+    this.globalConfigFilePath = path.join(this.globalConfigDir, 'config.json');
+    this.globalContextFilePath = path.join(this.globalConfigDir, '.temurai.md');
+
+    // 项目本地配置路径（当前工作目录）
+    this.projectConfigDir = path.join(process.cwd(), '.temurai');
+    this.projectConfigFilePath = path.join(this.projectConfigDir, 'config.json');
+    this.projectContextFilePath = path.join(this.projectConfigDir, 'directives.md');
 
     // 配置深度合并，数组完全替换（用户配置覆盖默认配置）
     this.deepMerge = deepmergeFactory({
@@ -202,21 +188,26 @@ export class ConfigLoader {
   /**
    * 更新配置并保存到文件
    * @param updates 要更新的配置项（部分更新）
+   * @param saveToProject 是否保存到项目配置（默认保存到全局配置）
    * @returns Promise<void>
    */
-  public async updateConfig(updates: Partial<Config>): Promise<void> {
+  public async updateConfig(updates: Partial<Config>, saveToProject: boolean = false): Promise<void> {
     try {
       // 深度合并配置
       this.config = this.deepMerge(this.config, updates);
 
+      const targetConfigDir = saveToProject ? this.projectConfigDir : this.globalConfigDir;
+      const targetConfigPath = saveToProject ? this.projectConfigFilePath : this.globalConfigFilePath;
+
       // 确保配置目录存在
-      await this.ensureConfigDirectory();
+      await this.ensureConfigDirectory(targetConfigDir);
 
       // 保存到文件
       const configJson = JSON.stringify(this.config, null, 2);
-      await fs.promises.writeFile(this.configFilePath, configJson, 'utf8');
+      await fs.promises.writeFile(targetConfigPath, configJson, 'utf8');
 
-      console.log(`✅ Configuration updated and saved to ${this.configFilePath}`);
+      const location = saveToProject ? 'project' : 'global';
+      console.log(`✅ Configuration updated and saved to ${location} config: ${targetConfigPath}`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       throw new Error(`Failed to update configuration: ${errorMessage}`);
@@ -234,18 +225,20 @@ export class ConfigLoader {
 
   /**
    * 获取配置文件路径
+   * @param project 是否返回项目配置路径（默认返回全局配置路径）
    * @returns 配置文件的完整路径
    */
-  public getConfigPath(): string {
-    return this.configFilePath;
+  public getConfigPath(project: boolean = false): string {
+    return project ? this.projectConfigFilePath : this.globalConfigFilePath;
   }
 
   /**
    * 获取自定义上下文文件路径
+   * @param project 是否返回项目上下文路径（默认返回全局上下文路径）
    * @returns 自定义上下文文件的完整路径
    */
-  public getContextPath(): string {
-    return this.contextFilePath;
+  public getContextPath(project: boolean = false): string {
+    return project ? this.projectContextFilePath : this.globalContextFilePath;
   }
 
   /**
@@ -279,69 +272,110 @@ export class ConfigLoader {
 
   /**
    * 加载用户自定义上下文
-   * 从 ~/.temurai/.temurai.md 文件中读取用户自定义上下文内容
+   * 优先从项目本地的 ./.temurai/directives.md 文件中读取
+   * 如果不存在，则从全局的 ~/.temurai/.temurai.md 文件中读取
    * @returns 自定义上下文内容，如果文件不存在或读取失败则返回undefined
    */
   private loadCustomContext(): string | undefined {
+    // 优先尝试读取项目本地的 directives.md
     try {
-      if (!fs.existsSync(this.contextFilePath)) {
-        return undefined;
+      if (fs.existsSync(this.projectContextFilePath)) {
+        const contextContent = fs.readFileSync(this.projectContextFilePath, 'utf8');
+        const content = contextContent.trim();
+        if (content) {
+          console.log(`📄 Loaded project directives from ${this.projectContextFilePath}`);
+          return content;
+        }
       }
-
-      const contextContent = fs.readFileSync(this.contextFilePath, 'utf8');
-      return contextContent.trim() || undefined;
     } catch (error) {
-      console.warn(`⚠️ Failed to load custom context from .temurai.md: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return undefined;
+      console.warn(`⚠️ Failed to load project directives: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+
+    // Fallback到全局的 .temurai.md
+    try {
+      if (fs.existsSync(this.globalContextFilePath)) {
+        const contextContent = fs.readFileSync(this.globalContextFilePath, 'utf8');
+        const content = contextContent.trim();
+        if (content) {
+          console.log(`📄 Loaded global context from ${this.globalContextFilePath}`);
+          return content;
+        }
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to load global context: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    return undefined;
   }
 
   /**
    * 从文件加载配置
+   * 实现"全局默认 + 项目覆盖"策略：
+   * 1. 从默认配置开始
+   * 2. 加载并合并全局配置（~/.temurai/config.json）
+   * 3. 加载并合并项目配置（./.temurai/config.json）
+   * 4. 加载自定义上下文（优先项目本地，fallback到全局）
    * @returns 加载的配置对象
    */
   private loadConfiguration(): Config {
+    let mergedConfig: Config = { ...DEFAULT_CONFIG };
+
     try {
-      // 如果配置文件不存在，创建默认配置
-      if (!fs.existsSync(this.configFilePath)) {
+      // 第一步：尝试加载全局配置
+      if (fs.existsSync(this.globalConfigFilePath)) {
+        try {
+          const globalConfigContent = fs.readFileSync(this.globalConfigFilePath, 'utf8');
+          const globalConfig: Partial<Config> = JSON.parse(globalConfigContent);
+          mergedConfig = this.deepMerge(mergedConfig, globalConfig);
+          console.log(`🔧 Loaded global config from ${this.globalConfigFilePath}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to load global config: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      } else {
+        // 如果全局配置不存在，创建默认配置
         this.createDefaultConfig();
-        return { ...DEFAULT_CONFIG, customContext: this.loadCustomContext() };
       }
 
-      // 读取配置文件
-      const configContent = fs.readFileSync(this.configFilePath, 'utf8');
-      const userConfig: Partial<Config> = JSON.parse(configContent);
+      // 第二步：尝试加载项目本地配置（覆盖全局配置）
+      if (fs.existsSync(this.projectConfigFilePath)) {
+        try {
+          const projectConfigContent = fs.readFileSync(this.projectConfigFilePath, 'utf8');
+          const projectConfig: Partial<Config> = JSON.parse(projectConfigContent);
+          mergedConfig = this.deepMerge(mergedConfig, projectConfig);
+          console.log(`🔧 Loaded and merged project config from ${this.projectConfigFilePath}`);
+        } catch (error) {
+          console.warn(`⚠️ Failed to load project config: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
 
-      // 合并用户配置和默认配置
-      const mergedConfig = this.deepMerge(DEFAULT_CONFIG, userConfig);
-
-      // 加载用户自定义上下文
+      // 第三步：加载自定义上下文（优先项目本地）
       mergedConfig.customContext = this.loadCustomContext();
 
-      return mergedConfig;
     } catch (error) {
-      console.warn(`⚠️ Failed to load config file, using defaults: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      const defaultConfig = { ...DEFAULT_CONFIG };
-      defaultConfig.customContext = this.loadCustomContext();
-      return defaultConfig;
+      console.warn(`⚠️ Configuration loading failed, using defaults: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      mergedConfig = { ...DEFAULT_CONFIG };
+      mergedConfig.customContext = this.loadCustomContext();
     }
+
+    return mergedConfig;
   }
 
   /**
-   * 创建默认配置文件
+   * 创建默认配置文件（在全局位置）
    */
   private createDefaultConfig(): void {
     try {
-      // 确保配置目录存在
-      fs.mkdirSync(this.configDir, { recursive: true });
+      // 确保全局配置目录存在
+      fs.mkdirSync(this.globalConfigDir, { recursive: true });
 
       // 写入默认配置
       const defaultConfigJson = JSON.stringify(DEFAULT_CONFIG, null, 2);
-      fs.writeFileSync(this.configFilePath, defaultConfigJson, 'utf8');
+      fs.writeFileSync(this.globalConfigFilePath, defaultConfigJson, 'utf8');
 
-      console.log(`📁 Created default configuration at ${this.configFilePath}`);
-      console.log('💡 Please edit this file to add your OpenAI API key and customize settings.');
-      console.log(`💡 You can also create ${this.contextFilePath} for custom context.`);
+      console.log(`📁 Created default global configuration at ${this.globalConfigFilePath}`);
+      console.log('💡 Please edit this file to add your API keys and customize settings.');
+      console.log(`💡 You can also create ${this.globalContextFilePath} for global context.`);
+      console.log(`💡 Or create ./.temurai/config.json and ./.temurai/directives.md for project-specific settings.`);
     } catch (error) {
       console.error(`❌ Failed to create default config: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -349,11 +383,12 @@ export class ConfigLoader {
 
   /**
    * 确保配置目录存在
+   * @param configDir 配置目录路径，如果未提供则使用全局配置目录
    * @returns Promise<void>
    */
-  private async ensureConfigDirectory(): Promise<void> {
+  private async ensureConfigDirectory(configDir: string = this.globalConfigDir): Promise<void> {
     try {
-      await fs.promises.mkdir(this.configDir, { recursive: true });
+      await fs.promises.mkdir(configDir, { recursive: true });
     } catch (error) {
       throw new Error(`Failed to create config directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

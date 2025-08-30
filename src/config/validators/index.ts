@@ -150,7 +150,6 @@ export class ConfigValidator {
 
         // 工具配置完整性 (30%)
         if (config.tools?.shellExecutor) score += 1;
-        if (config.tools?.smartDiff) score += 1;
         if (config.tools?.webTools) score += 1;
 
         // MCP配置 (10%)

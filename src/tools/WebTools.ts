@@ -2,6 +2,8 @@ import { request } from 'undici';
 import { convert } from 'html-to-text';
 import { URL } from 'url';
 import { ConfigLoader, Config } from '../config/ConfigLoader';
+import { ErrorHandler } from '../errors/ErrorHandler';
+import { ToolExecutionResult } from './index';
 
 /**
  * Web 搜索结果中的单个来源

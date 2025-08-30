@@ -186,11 +186,10 @@ export class SecurityConfigValidator {
      */
     private validateSecurityPolicyConsistency(config: Config, result: ValidationResult): void {
         const shellSecurity = config.tools.shellExecutor.security;
-        const smartDiff = config.tools.smartDiff;
 
-        // 如果允许危险命令但不要求确认，这可能是不安全的
-        if (shellSecurity.allowDangerousCommands && !smartDiff.requireConfirmation) {
-            result.warnings.push('Allowing dangerous commands without requiring confirmation may be unsafe');
+        // Shell执行器安全性检查
+        if (shellSecurity.allowDangerousCommands) {
+            result.warnings.push('Allowing dangerous commands may be unsafe');
         }
 
         // 如果允许未列出的命令且允许危险命令，风险很高
@@ -223,7 +222,6 @@ export class SecurityConfigValidator {
         if (security.allowDangerousCommands) score -= 2;
         if (security.allowlist.length === 0) score -= 2;
         if (security.blocklist.length === 0) score -= 1;
-        if (!config.tools.smartDiff.requireConfirmation) score -= 1;
 
         // 检查是否有危险命令在白名单中
         const dangerousInAllowlist = security.allowlist.some(cmd =>
@@ -255,10 +253,6 @@ export class SecurityConfigValidator {
 
         if (security.allowlist.length < 5) {
             recommendations.push('Consider adding more common safe commands to the allowlist');
-        }
-
-        if (!config.tools.smartDiff.requireConfirmation) {
-            recommendations.push('Consider enabling requireConfirmation for diff operations');
         }
 
         if (config.tools.shellExecutor.defaultTimeout > 60000) {

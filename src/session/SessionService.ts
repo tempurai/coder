@@ -1,6 +1,39 @@
-import { SimpleAgent, AgentStreamEvent } from '../agents/SimpleAgent';
+import { SimpleAgent } from '../agents/SimpleAgent';
 import { FileWatcherService } from '../services/FileWatcherService';
 import { Config } from '../config/ConfigLoader';
+import { ErrorHandler } from '../errors/ErrorHandler';
+
+// 前置声明，避免循环依赖
+type ReActAgent = any;
+type GitWorkflowManager = any;
+
+/**
+ * SessionService依赖接口
+ */
+export interface SessionServiceDependencies {
+  agent: SimpleAgent;
+  fileWatcher: FileWatcherService;
+  config: Config;
+  createReActAgent?: (agent: SimpleAgent) => ReActAgent;
+  createGitWorkflowManager?: () => GitWorkflowManager;
+}
+
+/**
+ * 任务执行结果接口（新架构）
+ */
+export interface TaskExecutionResult {
+    success: boolean;
+    taskDescription: string;
+    duration: number;
+    iterations: number;
+    summary: string;
+    diff?: {
+        filesChanged: number;
+        diffStats: string;
+        fullDiff: string;
+    };
+    error?: string;
+}
 
 /**
  * 处理后的用户输入接口
@@ -55,7 +88,7 @@ export interface SessionStats {
 
 /**
  * 会话管理服务
- * 作为CLI和Agent之间的中介层，处理所有业务逻辑
+ * 作为CLI和新两层架构之间的中介层，编排ReActAgent和GitWorkflowManager
  */
 export class SessionService {
     private agent: SimpleAgent;
@@ -67,22 +100,161 @@ export class SessionService {
     private totalTokensUsed: number = 0;
     private totalResponseTime: number = 0;
     private interactionCount: number = 0;
+    
+    // 工厂函数，避免直接导入
+    private createReActAgent: (agent: SimpleAgent) => ReActAgent;
+    private createGitWorkflowManager: () => GitWorkflowManager;
 
-    constructor(
-        agent: SimpleAgent,
-        fileWatcherService: FileWatcherService,
-        config: Config
-    ) {
-        this.agent = agent;
-        this.fileWatcherService = fileWatcherService;
-        this.config = config;
+    constructor(dependencies: SessionServiceDependencies) {
+        this.agent = dependencies.agent;
+        this.fileWatcherService = dependencies.fileWatcher;
+        this.config = dependencies.config;
         this.sessionStartTime = new Date();
+        
+        // 使用工厂函数或延迟加载来避免循环依赖
+        this.createReActAgent = dependencies.createReActAgent || this.defaultCreateReActAgent;
+        this.createGitWorkflowManager = dependencies.createGitWorkflowManager || this.defaultCreateGitWorkflowManager;
 
-        console.log('✅ 会话管理服务已初始化');
+        console.log('✅ 会话管理服务已初始化（依赖注入模式）');
     }
 
     /**
-     * 处理用户输入，包括文件引用提取和意图解析
+     * 处理任务（新架构的核心方法）
+     * 编排ReActAgent和GitWorkflowManager的协作
+     * @param query 用户任务查询
+     * @returns TaskExecutionResult 任务执行结果
+     */
+    async processTask(query: string): Promise<TaskExecutionResult> {
+        const startTime = Date.now();
+        
+        console.log('\n🚀 开始处理任务（新架构）...');
+        console.log(`📝 任务描述: ${query.substring(0, 80)}${query.length > 80 ? '...' : ''}`);
+
+        try {
+            // 第一步：通过工厂函数创建Git工作流管理器
+            const gitManager = this.createGitWorkflowManager();
+            
+            // 第二步：通过工厂函数创建ReActAgent（使用SimpleAgent作为能力层）
+            const reactAgent = this.createReActAgent(this.agent);
+
+            // 第三步：启动Git任务分支
+            console.log('🌿 创建任务分支...');
+            const startResult = await gitManager.startTask(query);
+            
+            if (!startResult.success) {
+                return {
+                    success: false,
+                    taskDescription: query,
+                    duration: Date.now() - startTime,
+                    iterations: 0,
+                    summary: 'Failed to start Git task branch',
+                    error: startResult.error
+                };
+            }
+
+            console.log(`✅ 任务分支已创建: ${startResult.taskBranchName}`);
+
+            // 第四步：执行ReAct任务循环
+            console.log('🔄 开始ReAct推理循环...');
+            const taskResult = await reactAgent.runTask(query);
+
+            // 第五步：处理任务结果
+            let finalResult: TaskExecutionResult;
+
+            if (taskResult.success) {
+                // 任务成功完成，生成摘要
+                console.log('🏁 生成任务摘要...');
+                const endResult = await gitManager.endTask();
+
+                if (endResult.success) {
+                    finalResult = {
+                        success: true,
+                        taskDescription: query,
+                        duration: taskResult.duration,
+                        iterations: taskResult.iterations,
+                        summary: taskResult.summary,
+                        diff: {
+                            filesChanged: endResult.filesChanged || 0,
+                            diffStats: endResult.diffStats || 'No changes',
+                            fullDiff: endResult.fullDiff || 'No diff available'
+                        }
+                    };
+                } else {
+                    finalResult = {
+                        success: true,
+                        taskDescription: query,
+                        duration: taskResult.duration,
+                        iterations: taskResult.iterations,
+                        summary: taskResult.summary + ' (Note: Could not generate diff)',
+                        error: 'Diff generation failed: ' + endResult.error
+                    };
+                }
+            } else {
+                // 任务失败，丢弃任务分支
+                console.log('❌ 任务执行失败，丢弃任务分支...');
+                const discardResult = await gitManager.discardTask('main', true);
+                
+                finalResult = {
+                    success: false,
+                    taskDescription: query,
+                    duration: taskResult.duration,
+                    iterations: taskResult.iterations,
+                    summary: taskResult.summary,
+                    error: taskResult.error
+                };
+
+                if (!discardResult.success) {
+                    finalResult.error += ` (Additionally, failed to discard branch: ${discardResult.error})`;
+                }
+            }
+
+            // 更新会话统计
+            this.interactionCount++;
+            this.totalResponseTime += finalResult.duration;
+            
+            // 添加到历史记录
+            this.addToHistory('user', query);
+            this.addToHistory('assistant', finalResult.summary, {
+                duration: finalResult.duration,
+                tokenCount: this.estimateTokenCount(finalResult.summary)
+            });
+
+            const duration = Date.now() - startTime;
+            console.log(`\n✅ 任务处理完成: ${finalResult.success ? '成功' : '失败'} (${duration}ms)`);
+
+            return finalResult;
+
+        } catch (error) {
+            const duration = Date.now() - startTime;
+            const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
+            
+            console.error(`💥 ${errorMessage}`);
+            
+            // 尝试清理：丢弃可能创建的任务分支
+            try {
+                const gitManager = this.createGitWorkflowManager();
+                const status = await gitManager.getWorkflowStatus();
+                if (status.success && status.isTaskBranch) {
+                    console.log('🧹 清理失败的任务分支...');
+                    await gitManager.discardTask('main', true);
+                }
+            } catch (cleanupError) {
+                console.warn('⚠️ 清理任务分支失败:', cleanupError);
+            }
+
+            return {
+                success: false,
+                taskDescription: query,
+                duration,
+                iterations: 0,
+                summary: '任务执行时发生严重错误',
+                error: errorMessage
+            };
+        }
+    }
+
+    /**
+     * 处理用户输入，包括文件引用提取和意图解析（简化版）
      * @param input 原始用户输入
      * @returns 处理后的输入信息
      */
@@ -138,61 +310,6 @@ export class SessionService {
             } catch (error) {
                 console.warn(`⚠️ 文件监听失败 ${filePath}:`, error instanceof Error ? error.message : '未知错误');
             }
-        }
-    }
-
-    /**
-     * 处理Agent流式响应
-     * @param query 用户查询
-     * @returns Agent响应流
-     */
-    async *processAgentStream(query: string): AsyncGenerator<AgentStreamEvent, void, unknown> {
-        const startTime = Date.now();
-        let fullResponse = '';
-        let tokenCount = 0;
-
-        try {
-            console.log('\
-🤔 Processing your request...\
-');
-            console.log('📝 Response:');
-
-            const stream = this.agent.processStream(query);
-
-            for await (const event of stream) {
-                yield event;
-
-                // 收集响应数据用于统计
-                if (event.type === 'text-chunk') {
-                    fullResponse = event.content;
-                    tokenCount = this.estimateTokenCount(fullResponse);
-                } else if (event.type === 'tool-call') {
-                    console.log(`🔧 使用工具: ${event.toolName}`);
-                } else if (event.type === 'tool-result') {
-                    console.log(`✓ 工具执行完成: ${event.toolName}`);
-                } else if (event.type === 'error') {
-                    console.error(`❌ ${event.content}`);
-                }
-            }
-
-            // 记录完整的助手响应
-            if (fullResponse) {
-                const duration = Date.now() - startTime;
-                this.addToHistory('assistant', fullResponse, {
-                    duration,
-                    tokenCount
-                });
-
-                // 更新统计信息
-                this.totalTokensUsed += tokenCount;
-                this.totalResponseTime += duration;
-                this.interactionCount++;
-            }
-
-        } catch (error) {
-            const errorMessage = `处理查询时出错: ${error instanceof Error ? error.message : '未知错误'}`;
-            console.error(`❌ ${errorMessage}`);
-            yield { type: 'error', content: errorMessage };
         }
     }
 
@@ -351,4 +468,22 @@ export class SessionService {
         // 这是一个粗略估算，实际token化会更复杂
         return Math.ceil(text.length / 4);
     }
+
+    /**
+     * 默认的ReActAgent创建工厂（延迟加载避免循环依赖）
+     */
+    private defaultCreateReActAgent = (agent: SimpleAgent): ReActAgent => {
+        // 延迟导入避免循环依赖
+        const { ReActAgent: ReActAgentClass } = require('../agents/ReActAgent');
+        return new ReActAgentClass(agent);
+    };
+
+    /**
+     * 默认的GitWorkflowManager创建工厂（延迟加载避免循环依赖）
+     */
+    private defaultCreateGitWorkflowManager = (): GitWorkflowManager => {
+        // 延迟导入避免循环依赖
+        const { GitWorkflowManager: GitWorkflowManagerClass } = require('../tools/GitWorkflowManager');
+        return new GitWorkflowManagerClass();
+    };
 }

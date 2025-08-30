@@ -1,9 +1,21 @@
 import { exec } from 'child_process';
 import * as util from 'util';
-import { z } from 'zod';
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 const execAsync = util.promisify(exec);
+
+/**
+ * 生成任务哈希
+ * @param taskDescription 任务描述
+ * @returns 短哈希字符串
+ */
+function generateTaskHash(taskDescription: string): string {
+    const hash = crypto.createHash('sha256')
+        .update(taskDescription + Date.now())
+        .digest('hex');
+    return hash.substring(0, 8); // 取前8位作为短哈希
+}
 
 export interface GitWorkflowState {
     currentBranch: string;
@@ -29,41 +41,107 @@ export interface GitDiffResult {
     summary: string;
 }
 
+export interface TaskStartResult {
+    success: boolean;
+    taskBranchName?: string;
+    taskDescription?: string;
+    mainBranch?: string;
+    created?: string;
+    message?: string;
+    error?: string;
+    currentBranch?: string;
+    uncommittedChanges?: string[];
+}
+
+export interface TaskCommitResult {
+    success: boolean;
+    commitHash?: string;
+    shortHash?: string;
+    branch?: string;
+    message?: string;
+    diffStat?: string;
+    stagedFiles?: string[];
+    error?: string;
+}
+
+export interface TaskEndResult {
+    success: boolean;
+    taskBranch?: string;
+    mainBranch?: string;
+    taskDescription?: string;
+    filesChanged?: number;
+    hasUncommittedChanges?: boolean;
+    uncommittedFiles?: string[];
+    commitHistory?: string;
+    diffStats?: string;
+    fullDiff?: string;
+    summary?: string;
+    nextSteps?: string[];
+    error?: string;
+}
+
+export interface TaskDiscardResult {
+    success: boolean;
+    discardedBranch?: string;
+    currentBranch?: string;
+    message?: string;
+    taskInfo?: string;
+    error?: string;
+    warning?: string;
+}
+
+export interface WorkflowStatusResult {
+    success: boolean;
+    currentBranch?: string;
+    isTaskBranch?: boolean;
+    taskBranchName?: string | null;
+    mainBranch?: string;
+    hasChanges?: boolean;
+    uncommittedFiles?: string[];
+    taskInfo?: any;
+    status?: string;
+    message?: string;
+    error?: string;
+}
+
 /**
- * 开始新的编码任务工具
- * 为每个编码任务创建独立的Git分支
+ * Git工作流管理器
+ * 
+ * 这个类负责管理任务的生命周期：
+ * - 创建任务分支
+ * - 提交变更  
+ * - 结束任务并生成摘要
+ * - 丢弃任务
+ * - 获取工作流状态
+ * 
+ * 与Agent工具不同，这些是策略层的管理操作，
+ * 由程序逻辑（如SessionService）调用，而不是由Agent决定。
  */
-export const startTaskTool = {
-    id: 'start_task',
-    name: 'Start Coding Task',
-    description: `Start a new coding task by creating a dedicated Git branch.
-    
-    This must be called before making any file modifications. It creates a clean
-    working environment where all changes will be tracked and can be easily reviewed,
-    committed, or discarded.
-    
-    The branch name will be automatically generated as: tempurai-task-{timestamp}`,
-    
-    parameters: z.object({
-        taskDescription: z.string().describe('Brief description of the coding task'),
-        mainBranch: z.string().default('main').describe('Main branch to create task branch from')
-    }),
-    
-    execute: async ({ taskDescription, mainBranch }: {
-        taskDescription: string;
-        mainBranch: string;
-    }) => {
+export class GitWorkflowManager {
+    private workingDirectory: string;
+
+    constructor(workingDirectory?: string) {
+        this.workingDirectory = workingDirectory || process.cwd();
+    }
+
+    /**
+     * 开始新的编码任务
+     * 为每个编码任务创建独立的Git分支
+     */
+    async startTask(taskDescription: string, mainBranch: string = 'main'): Promise<TaskStartResult> {
         console.log('🚀 Starting new coding task...');
         console.log(`📝 Task: ${taskDescription}`);
         console.log(`🌿 Base branch: ${mainBranch}`);
         
         try {
             // 检查当前Git状态
-            const { stdout: currentBranch } = await execAsync('git branch --show-current');
+            const { stdout: currentBranch } = await execAsync('git branch --show-current', { 
+                cwd: this.workingDirectory 
+            });
             const current = currentBranch.trim();
             
             // 检查是否已经在任务分支上
-            if (current.startsWith('tempurai-task-')) {
+            if (current.startsWith('tempurai/task-')) {
                 return {
                     success: false,
                     error: `Already on task branch: ${current}. Use end_task or discard_task first.`,
@@ -72,7 +150,9 @@ export const startTaskTool = {
             }
             
             // 检查是否有未提交的更改
-            const { stdout: statusOutput } = await execAsync('git status --porcelain');
+            const { stdout: statusOutput } = await execAsync('git status --porcelain', { 
+                cwd: this.workingDirectory 
+            });
             if (statusOutput.trim()) {
                 return {
                     success: false,
@@ -84,31 +164,32 @@ export const startTaskTool = {
             // 确保在正确的主分支上
             if (current !== mainBranch) {
                 console.log(`🔄 Switching to ${mainBranch}...`);
-                await execAsync(`git checkout ${mainBranch}`);
+                await execAsync(`git checkout ${mainBranch}`, { cwd: this.workingDirectory });
             }
             
             // 拉取最新更改
             try {
                 console.log('📥 Pulling latest changes...');
-                await execAsync(`git pull origin ${mainBranch}`);
+                await execAsync(`git pull origin ${mainBranch}`, { cwd: this.workingDirectory });
             } catch (pullError) {
                 console.warn('⚠️ Could not pull latest changes, continuing with local branch');
             }
             
             // 创建新的任务分支
-            const timestamp = Date.now();
-            const taskBranchName = `tempurai-task-${timestamp}`;
+            const taskHash = generateTaskHash(taskDescription);
+            const taskBranchName = `tempurai/task-${taskHash}`;
             
             console.log(`🌱 Creating task branch: ${taskBranchName}`);
-            await execAsync(`git checkout -b ${taskBranchName}`);
+            await execAsync(`git checkout -b ${taskBranchName}`, { cwd: this.workingDirectory });
             
             // 创建初始提交来记录任务开始
             const taskCommitMessage = `🚀 Start task: ${taskDescription}`;
             try {
                 // 创建一个任务描述文件
-                await execAsync(`echo "Task: ${taskDescription}\\nStarted: ${new Date().toISOString()}\\nBranch: ${taskBranchName}" > .tempurai-task.md`);
-                await execAsync('git add .tempurai-task.md');
-                await execAsync(`git commit -m "${taskCommitMessage}"`);
+                const taskFileContent = `Task: ${taskDescription}\\nStarted: ${new Date().toISOString()}\\nBranch: ${taskBranchName}`;
+                await execAsync(`echo "${taskFileContent}" > .tempurai-task.md`, { cwd: this.workingDirectory });
+                await execAsync('git add .tempurai-task.md', { cwd: this.workingDirectory });
+                await execAsync(`git commit -m "${taskCommitMessage}"`, { cwd: this.workingDirectory });
             } catch (commitError) {
                 console.warn('⚠️ Could not create initial task commit, continuing...');
             }
@@ -132,54 +213,39 @@ export const startTaskTool = {
             };
         }
     }
-};
 
-/**
- * 提交变更到任务分支工具
- * 提交当前暂存区的文件到任务分支
- */
-export const commitChangesTool = {
-    id: 'commit_changes',
-    name: 'Commit Changes',
-    description: `Commit staged changes to the current task branch.
-    
-    This creates an atomic commit for a logical unit of work. Use this after
-    making a coherent set of changes that represent a single step in your task.
-    
-    Make sure to stage files with shell_executor first (git add ...)`,
-    
-    parameters: z.object({
-        commitMessage: z.string().describe('Descriptive commit message for the changes'),
-        autoStage: z.boolean().default(false).describe('Automatically stage all modified files before committing')
-    }),
-    
-    execute: async ({ commitMessage, autoStage }: {
-        commitMessage: string;
-        autoStage: boolean;
-    }) => {
+    /**
+     * 提交变更到任务分支
+     * 提交当前暂存区的文件到任务分支
+     */
+    async commitChanges(commitMessage: string, autoStage: boolean = false): Promise<TaskCommitResult> {
         console.log('💾 Committing changes...');
         console.log(`📝 Message: ${commitMessage}`);
         
         try {
             // 检查当前分支
-            const { stdout: currentBranch } = await execAsync('git branch --show-current');
+            const { stdout: currentBranch } = await execAsync('git branch --show-current', { 
+                cwd: this.workingDirectory 
+            });
             const current = currentBranch.trim();
             
-            if (!current.startsWith('tempurai-task-')) {
+            if (!current.startsWith('tempurai/task-')) {
                 return {
                     success: false,
-                    error: `Not on a task branch. Current branch: ${current}. Use start_task first.`
+                    error: `Not on a task branch. Current branch: ${current}. Use startTask first.`
                 };
             }
             
             // 自动暂存所有文件（如果请求）
             if (autoStage) {
                 console.log('📁 Auto-staging all modified files...');
-                await execAsync('git add -A');
+                await execAsync('git add -A', { cwd: this.workingDirectory });
             }
             
             // 检查是否有暂存的更改
-            const { stdout: stagedFiles } = await execAsync('git diff --cached --name-only');
+            const { stdout: stagedFiles } = await execAsync('git diff --cached --name-only', { 
+                cwd: this.workingDirectory 
+            });
             if (!stagedFiles.trim()) {
                 return {
                     success: false,
@@ -188,13 +254,17 @@ export const commitChangesTool = {
             }
             
             // 获取暂存文件的详细信息
-            const { stdout: diffStat } = await execAsync('git diff --cached --stat');
+            const { stdout: diffStat } = await execAsync('git diff --cached --stat', { 
+                cwd: this.workingDirectory 
+            });
             
             // 执行提交
-            await execAsync(`git commit -m "${commitMessage}"`);
+            await execAsync(`git commit -m "${commitMessage}"`, { cwd: this.workingDirectory });
             
             // 获取提交哈希
-            const { stdout: commitHash } = await execAsync('git rev-parse HEAD');
+            const { stdout: commitHash } = await execAsync('git rev-parse HEAD', { 
+                cwd: this.workingDirectory 
+            });
             
             console.log('✅ Changes committed successfully!');
             console.log(`🔗 Commit: ${commitHash.trim().substring(0, 7)}`);
@@ -216,36 +286,22 @@ export const commitChangesTool = {
             };
         }
     }
-};
 
-/**
- * 结束任务工具
- * 展示任务分支相对于主分支的所有变更
- */
-export const endTaskTool = {
-    id: 'end_task',
-    name: 'End Coding Task',
-    description: `End the current coding task and show a summary of all changes.
-    
-    This tool generates a comprehensive diff showing all changes made during
-    the task relative to the main branch. After reviewing, the user can decide
-    whether to merge the branch, continue working, or discard the changes.`,
-    
-    parameters: z.object({
-        mainBranch: z.string().default('main').describe('Main branch to compare against')
-    }),
-    
-    execute: async ({ mainBranch }: {
-        mainBranch: string;
-    }) => {
+    /**
+     * 结束任务
+     * 展示任务分支相对于主分支的所有变更
+     */
+    async endTask(mainBranch: string = 'main'): Promise<TaskEndResult> {
         console.log('🏁 Ending coding task...');
         
         try {
             // 检查当前分支
-            const { stdout: currentBranch } = await execAsync('git branch --show-current');
+            const { stdout: currentBranch } = await execAsync('git branch --show-current', { 
+                cwd: this.workingDirectory 
+            });
             const current = currentBranch.trim();
             
-            if (!current.startsWith('tempurai-task-')) {
+            if (!current.startsWith('tempurai/task-')) {
                 return {
                     success: false,
                     error: `Not on a task branch. Current branch: ${current}`
@@ -253,7 +309,9 @@ export const endTaskTool = {
             }
             
             // 检查是否有未提交的更改
-            const { stdout: statusOutput } = await execAsync('git status --porcelain');
+            const { stdout: statusOutput } = await execAsync('git status --porcelain', { 
+                cwd: this.workingDirectory 
+            });
             const hasUncommittedChanges = statusOutput.trim().length > 0;
             
             if (hasUncommittedChanges) {
@@ -268,7 +326,9 @@ export const endTaskTool = {
             
             try {
                 // 获取diff统计
-                const { stdout: statOutput } = await execAsync(`git diff ${mainBranch}...HEAD --stat`);
+                const { stdout: statOutput } = await execAsync(`git diff ${mainBranch}...HEAD --stat`, { 
+                    cwd: this.workingDirectory 
+                });
                 diffStats = statOutput.trim();
                 
                 // 计算改变的文件数
@@ -278,7 +338,9 @@ export const endTaskTool = {
                 filesChanged = match ? parseInt(match[1]) : 0;
                 
                 // 获取完整diff
-                const { stdout: fullDiff } = await execAsync(`git diff ${mainBranch}...HEAD`);
+                const { stdout: fullDiff } = await execAsync(`git diff ${mainBranch}...HEAD`, { 
+                    cwd: this.workingDirectory 
+                });
                 diffOutput = fullDiff;
                 
             } catch (diffError) {
@@ -290,7 +352,9 @@ export const endTaskTool = {
             // 获取提交历史
             let commitHistory = '';
             try {
-                const { stdout: logOutput } = await execAsync(`git log ${mainBranch}..HEAD --oneline`);
+                const { stdout: logOutput } = await execAsync(`git log ${mainBranch}..HEAD --oneline`, { 
+                    cwd: this.workingDirectory 
+                });
                 commitHistory = logOutput.trim();
             } catch (logError) {
                 commitHistory = 'Could not retrieve commit history';
@@ -299,7 +363,9 @@ export const endTaskTool = {
             // 读取任务描述（如果存在）
             let taskDescription = 'No task description available';
             try {
-                const { stdout: taskFile } = await execAsync('cat .tempurai-task.md 2>/dev/null || echo ""');
+                const { stdout: taskFile } = await execAsync('cat .tempurai-task.md 2>/dev/null || echo ""', { 
+                    cwd: this.workingDirectory 
+                });
                 if (taskFile.trim()) {
                     const lines = taskFile.trim().split('\n');
                     const taskLine = lines.find(line => line.startsWith('Task:'));
@@ -331,7 +397,7 @@ export const endTaskTool = {
                     'Review the changes above',
                     'Merge the branch if satisfied: git checkout main && git merge ' + current,
                     'Continue working: keep making changes and commits',
-                    'Discard changes: use discard_task tool'
+                    'Discard changes: use discardTask method'
                 ]
             };
             
@@ -342,32 +408,12 @@ export const endTaskTool = {
             };
         }
     }
-};
 
-/**
- * 丢弃任务工具
- * 删除任务分支并切换回主分支
- */
-export const discardTaskTool = {
-    id: 'discard_task',
-    name: 'Discard Task',
-    description: `Discard the current task branch and all its changes.
-    
-    This is a destructive operation that will permanently delete the task branch
-    and all commits made on it. Use this when you want to abandon the current
-    task and start fresh.
-    
-    WARNING: This cannot be undone!`,
-    
-    parameters: z.object({
-        mainBranch: z.string().default('main').describe('Main branch to return to'),
-        confirm: z.boolean().default(false).describe('Confirm that you want to discard all changes')
-    }),
-    
-    execute: async ({ mainBranch, confirm }: {
-        mainBranch: string;
-        confirm: boolean;
-    }) => {
+    /**
+     * 丢弃任务
+     * 删除任务分支并切换回主分支
+     */
+    async discardTask(mainBranch: string = 'main', confirm: boolean = false): Promise<TaskDiscardResult> {
         console.log('🗑️ Discarding task...');
         
         if (!confirm) {
@@ -380,10 +426,12 @@ export const discardTaskTool = {
         
         try {
             // 检查当前分支
-            const { stdout: currentBranch } = await execAsync('git branch --show-current');
+            const { stdout: currentBranch } = await execAsync('git branch --show-current', { 
+                cwd: this.workingDirectory 
+            });
             const current = currentBranch.trim();
             
-            if (!current.startsWith('tempurai-task-')) {
+            if (!current.startsWith('tempurai/task-')) {
                 return {
                     success: false,
                     error: `Not on a task branch. Current branch: ${current}`
@@ -393,7 +441,9 @@ export const discardTaskTool = {
             // 获取任务信息用于确认
             let taskInfo = `Task branch: ${current}`;
             try {
-                const { stdout: logOutput } = await execAsync(`git log ${mainBranch}..HEAD --oneline`);
+                const { stdout: logOutput } = await execAsync(`git log ${mainBranch}..HEAD --oneline`, { 
+                    cwd: this.workingDirectory 
+                });
                 const commitCount = logOutput.trim().split('\n').length;
                 taskInfo += `\\nCommits to be lost: ${commitCount}`;
             } catch {
@@ -402,15 +452,15 @@ export const discardTaskTool = {
             
             // 切换到主分支
             console.log(`🔄 Switching to ${mainBranch}...`);
-            await execAsync(`git checkout ${mainBranch}`);
+            await execAsync(`git checkout ${mainBranch}`, { cwd: this.workingDirectory });
             
             // 删除任务分支
             console.log(`🗑️ Deleting task branch: ${current}`);
-            await execAsync(`git branch -D ${current}`);
+            await execAsync(`git branch -D ${current}`, { cwd: this.workingDirectory });
             
             // 清理任务文件（如果存在）
             try {
-                await execAsync('rm -f .tempurai-task.md');
+                await execAsync('rm -f .tempurai-task.md', { cwd: this.workingDirectory });
             } catch {
                 // Ignore error if file doesn't exist
             }
@@ -433,37 +483,35 @@ export const discardTaskTool = {
             };
         }
     }
-};
 
-/**
- * 获取Git工作流状态工具
- * 显示当前Git工作流状态信息
- */
-export const getWorkflowStatusTool = {
-    id: 'get_workflow_status',
-    name: 'Get Workflow Status',
-    description: 'Get current Git workflow status and branch information',
-    
-    parameters: z.object({}),
-    
-    execute: async () => {
+    /**
+     * 获取Git工作流状态
+     * 显示当前Git工作流状态信息
+     */
+    async getWorkflowStatus(): Promise<WorkflowStatusResult> {
         try {
             // 获取当前分支
-            const { stdout: currentBranch } = await execAsync('git branch --show-current');
+            const { stdout: currentBranch } = await execAsync('git branch --show-current', { 
+                cwd: this.workingDirectory 
+            });
             const current = currentBranch.trim();
             
             // 检查是否是任务分支
-            const isTaskBranch = current.startsWith('tempurai-task-');
+            const isTaskBranch = current.startsWith('tempurai/task-');
             
             // 获取状态信息
-            const { stdout: statusOutput } = await execAsync('git status --porcelain');
+            const { stdout: statusOutput } = await execAsync('git status --porcelain', { 
+                cwd: this.workingDirectory 
+            });
             const hasChanges = statusOutput.trim().length > 0;
             const uncommittedFiles = hasChanges ? statusOutput.trim().split('\n') : [];
             
             // 获取可能的主分支
             let mainBranch = 'main';
             try {
-                const { stdout: branches } = await execAsync('git branch -r');
+                const { stdout: branches } = await execAsync('git branch -r', { 
+                    cwd: this.workingDirectory 
+                });
                 if (branches.includes('origin/master')) {
                     mainBranch = 'master';
                 }
@@ -475,7 +523,9 @@ export const getWorkflowStatusTool = {
             if (isTaskBranch) {
                 // 获取任务信息
                 try {
-                    const { stdout: taskFile } = await execAsync('cat .tempurai-task.md 2>/dev/null || echo ""');
+                    const { stdout: taskFile } = await execAsync('cat .tempurai-task.md 2>/dev/null || echo ""', { 
+                        cwd: this.workingDirectory 
+                    });
                     if (taskFile.trim()) {
                         const lines = taskFile.trim().split('\n');
                         taskInfo = {
@@ -511,13 +561,18 @@ export const getWorkflowStatusTool = {
             };
         }
     }
-};
 
-// 导出Git工作流工具集合
-export const gitWorkflowTools = {
-    start_task: startTaskTool,
-    commit_changes: commitChangesTool,
-    end_task: endTaskTool,
-    discard_task: discardTaskTool,
-    get_workflow_status: getWorkflowStatusTool
-};
+    /**
+     * 设置工作目录
+     */
+    setWorkingDirectory(directory: string): void {
+        this.workingDirectory = path.resolve(directory);
+    }
+
+    /**
+     * 获取工作目录
+     */
+    getWorkingDirectory(): string {
+        return this.workingDirectory;
+    }
+}

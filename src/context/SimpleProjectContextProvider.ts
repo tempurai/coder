@@ -23,9 +23,31 @@ export class SimpleProjectContextProvider {
 
     /**
      * 生成静态的、高层级的项目上下文摘要
-     * 提供基础项目信息，具体细节通过Agent工具动态拉取
+     * 优先读取项目本地的./.temurai/directives.md文件作为最重要的静态上下文
+     * 如果不存在，提供基础项目信息，具体细节通过Agent工具动态拉取
      */
     public getStaticContext(): string {
+        // 首先尝试读取项目本地的directives.md
+        const projectDirectives = this.loadProjectDirectives();
+        
+        if (projectDirectives) {
+            // 如果存在项目指令，将其作为主要上下文
+            const currentTime = new Date().toLocaleString();
+            const projectInfo = this.loadBasicProjectInfo();
+            
+            return [
+                '## 🎯 Project Directives',
+                '',
+                projectDirectives,
+                '',
+                '---',
+                `## 📋 Project Info: ${projectInfo.name} | ${projectInfo.language} | ${projectInfo.framework || 'No framework'} | ${currentTime}`,
+                '',
+                '> Use your tools (read_file, analyze_code_structure, find_files, etc.) to get detailed, real-time information about implementations.'
+            ].join('\n');
+        }
+
+        // Fallback到默认的项目概览
         const projectInfo = this.loadBasicProjectInfo();
         const currentTime = new Date().toLocaleString();
 
@@ -41,10 +63,36 @@ export class SimpleProjectContextProvider {
             `- **Timestamp**: ${currentTime}`,
             '',
             '> This is a high-level overview. Use your tools (read_file, find_files, etc.) to get detailed, real-time information about specific files and implementations.',
+            '> 💡 To provide project-specific context, create ./.temurai/directives.md in your project root.',
             '---'
         ];
 
         return contextParts.join('\n');
+    }
+
+    /**
+     * 加载项目本地指令文件
+     * 从./.temurai/directives.md读取项目特定的上下文和指令
+     * @returns 指令内容，如果文件不存在或读取失败则返回undefined
+     */
+    private loadProjectDirectives(): string | undefined {
+        try {
+            const directivesPath = path.join(this.workingDirectory, '.temurai', 'directives.md');
+            
+            if (fs.existsSync(directivesPath)) {
+                const directivesContent = fs.readFileSync(directivesPath, 'utf8');
+                const content = directivesContent.trim();
+                
+                if (content) {
+                    console.log(`📋 Loaded project directives from ${directivesPath}`);
+                    return content;
+                }
+            }
+        } catch (error) {
+            console.warn(`⚠️ Failed to load project directives: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+        return undefined;
     }
 
     /**

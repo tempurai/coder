@@ -1,6 +1,8 @@
 import { exec } from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
+import { ErrorHandler } from '../errors/ErrorHandler';
+import { ToolExecutionResult } from './index';
 
 const execAsync = util.promisify(exec);
 
@@ -9,13 +11,13 @@ export const gitStatusTool = {
     name: 'Git Status',
     description: 'Get the current git repository status',
     parameters: z.object({}),
-    execute: async () => {
-        try {
+    execute: async (): Promise<ToolExecutionResult<{ status: string; files: string[] }>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const { stdout } = await execAsync('git status --porcelain');
-            return { success: true, result: stdout.trim() || 'Working directory clean' };
-        } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
+            const statusOutput = stdout.trim() || 'Working directory clean';
+            const files = stdout.trim() ? stdout.trim().split('\n').map(line => line.substring(3)) : [];
+            return { status: statusOutput, files };
+        }, 'git_status');
     },
 };
 
@@ -26,13 +28,12 @@ export const gitLogTool = {
     parameters: z.object({
         count: z.number().default(10).describe('Number of commits to show'),
     }),
-    execute: async ({ count }: { count: number }) => {
-        try {
+    execute: async ({ count }: { count: number }): Promise<ToolExecutionResult<string[]>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const { stdout } = await execAsync(`git log --oneline -${count}`);
-            return { success: true, result: stdout.trim() };
-        } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
+            const commits = stdout.trim().split('\n').filter(line => line.length > 0);
+            return commits;
+        }, 'git_log');
     },
 };
 
@@ -43,14 +44,12 @@ export const gitDiffTool = {
     parameters: z.object({
         file: z.string().optional().describe('Specific file to show diff for'),
     }),
-    execute: async ({ file }: { file?: string }) => {
-        try {
+    execute: async ({ file }: { file?: string }): Promise<ToolExecutionResult<string>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const command = file ? `git diff ${file}` : 'git diff';
             const { stdout } = await execAsync(command);
-            return { success: true, result: stdout.trim() || 'No changes' };
-        } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-        }
+            return stdout.trim() || 'No changes';
+        }, 'git_diff');
     },
 };
 

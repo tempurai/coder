@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import { z } from 'zod';
+import { ErrorHandler } from '../errors/ErrorHandler';
+import { ToolExecutionResult } from './index';
 
 // Keep only essential file operations that can't be easily done via shell
 
@@ -16,8 +18,8 @@ export const readFileTool = {
         filePath: string;
         startLine?: number;
         endLine?: number;
-    }) => {
-        try {
+    }): Promise<ToolExecutionResult<{ content: string; totalLines: number; selectedRange?: string; filePath: string }>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const content = await fs.promises.readFile(filePath, 'utf8');
             
             if (startLine !== undefined || endLine !== undefined) {
@@ -27,7 +29,6 @@ export const readFileTool = {
                 const selectedLines = lines.slice(start, end);
                 
                 return {
-                    success: true,
                     content: selectedLines.join('\n'),
                     totalLines: lines.length,
                     selectedRange: `${start + 1}-${end}`,
@@ -36,18 +37,11 @@ export const readFileTool = {
             }
             
             return {
-                success: true,
                 content,
                 totalLines: content.split('\n').length,
                 filePath
             };
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to read file',
-                filePath
-            };
-        }
+        }, 'read_file');
     },
 };
 
@@ -74,8 +68,8 @@ export const writeFileTool = {
         content: string;
         createDirs: boolean;
         backup: boolean;
-    }) => {
-        try {
+    }): Promise<ToolExecutionResult<{ filePath: string; contentLength: number; linesWritten: number; backupCreated: boolean; backupPath?: string }>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const path = await import('path');
             
             // Create directories if needed
@@ -99,20 +93,13 @@ export const writeFileTool = {
             await fs.promises.writeFile(filePath, content);
             
             return {
-                success: true,
                 filePath,
                 contentLength: content.length,
                 linesWritten: content.split('\n').length,
                 backupCreated: !!backupPath,
-                backupPath
+                backupPath: backupPath || undefined
             };
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to write file',
-                filePath
-            };
-        }
+        }, 'write_file');
     },
 };
 
@@ -131,19 +118,10 @@ export const projectContextTool = {
         depth: z.number().default(2).describe('Directory depth to analyze'),
         includeHidden: z.boolean().default(false).describe('Whether to include hidden files/directories'),
     }),
-    execute: async ({ depth, includeHidden }: { depth: number; includeHidden: boolean }) => {
-        try {
-            const context = await analyzeProjectContext(depth, includeHidden);
-            return {
-                success: true,
-                context
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to analyze project context'
-            };
-        }
+    execute: async ({ depth, includeHidden }: { depth: number; includeHidden: boolean }): Promise<ToolExecutionResult<any>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
+            return await analyzeProjectContext(depth, includeHidden);
+        }, 'project_context');
     },
 };
 
@@ -168,24 +146,16 @@ export const codeSearchTool = {
         searchType: string;
         filePattern?: string;
         maxResults: number;
-    }) => {
-        try {
+    }): Promise<ToolExecutionResult<{ results: any[]; query: string; searchType: string; totalFound: number }>> => {
+        return ErrorHandler.wrapToolExecution(async () => {
             const results = await performCodeSearch(query, searchType, filePattern, maxResults);
             return {
-                success: true,
                 results,
                 query,
                 searchType,
                 totalFound: results.length
             };
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Search failed',
-                query,
-                searchType
-            };
-        }
+        }, 'code_search');
     },
 };
 

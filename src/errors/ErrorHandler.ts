@@ -1,421 +1,285 @@
-import { 
-  TempuraiError,
-  ErrorCode,
-  ErrorSeverity,
-  RecoveryStrategy,
-  ErrorContext,
-  convertToTempuraiError,
-  formatErrorMessage
-} from './TempuraiError';
+/**
+ * 统一错误处理系统
+ */
+
+import { ToolExecutionResult } from '../tools';
 
 /**
- * 错误处理响应接口
- * 定义错误处理器返回的标准响应格式
+ * 标准化错误响应接口
  */
 export interface ErrorResponse {
-  /** 处理结果是否成功 */
   success: false;
-  /** 用户友好的错误消息 */
-  userMessage: string;
-  /** 技术错误详情（用于调试） */
-  technicalDetails: string;
-  /** 错误编码 */
-  errorCode: ErrorCode;
-  /** 错误严重程度 */
-  severity: ErrorSeverity;
-  /** 恢复策略 */
-  recoveryStrategy: RecoveryStrategy;
-  /** 恢复建议 */
-  recoveryAdvice: string[];
-  /** 是否可以重试 */
-  canRetry: boolean;
-  /** 建议的重试延迟（毫秒） */
-  retryDelay?: number;
-  /** 错误上下文信息 */
-  context: ErrorContext;
-  /** 错误唯一标识符 */
-  errorId: string;
+  error: string;
+  code?: string;
+  recoveryHint?: string;
 }
 
 /**
- * 日志级别枚举
+ * 错误代码枚举
  */
-export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error',
-  FATAL = 'fatal'
+export enum ErrorCode {
+  // 工具执行错误
+  TOOL_EXECUTION_FAILED = 'TOOL_EXECUTION_FAILED',
+  TOOL_NOT_FOUND = 'TOOL_NOT_FOUND',
+  TOOL_PARAMETER_INVALID = 'TOOL_PARAMETER_INVALID',
+  
+  // Agent错误
+  AGENT_NOT_INITIALIZED = 'AGENT_NOT_INITIALIZED',
+  AGENT_INITIALIZATION_FAILED = 'AGENT_INITIALIZATION_FAILED',
+  
+  // 配置错误
+  CONFIG_VALIDATION_FAILED = 'CONFIG_VALIDATION_FAILED',
+  CONFIG_LOADING_FAILED = 'CONFIG_LOADING_FAILED',
+  
+  // 安全错误
+  SECURITY_VIOLATION = 'SECURITY_VIOLATION',
+  COMMAND_BLOCKED = 'COMMAND_BLOCKED',
+  
+  // 解析错误
+  XML_PARSING_FAILED = 'XML_PARSING_FAILED',
+  JSON_PARSING_FAILED = 'JSON_PARSING_FAILED',
+  
+  // 网络错误
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  TIMEOUT_ERROR = 'TIMEOUT_ERROR',
+  
+  // 文件系统错误
+  FILE_NOT_FOUND = 'FILE_NOT_FOUND',
+  FILE_ACCESS_DENIED = 'FILE_ACCESS_DENIED',
+  
+  // 一般错误
+  UNKNOWN_ERROR = 'UNKNOWN_ERROR',
+  VALIDATION_ERROR = 'VALIDATION_ERROR'
 }
 
 /**
- * 日志记录接口
- */
-export interface Logger {
-  debug(message: string, context?: any): void;
-  info(message: string, context?: any): void;
-  warn(message: string, context?: any): void;
-  error(message: string, context?: any): void;
-  fatal(message: string, context?: any): void;
-}
-
-/**
- * 默认控制台日志记录器
- */
-class ConsoleLogger implements Logger {
-  debug(message: string, context?: any): void {
-    console.debug(`[DEBUG] ${message}`, context ? JSON.stringify(context, null, 2) : '');
-  }
-
-  info(message: string, context?: any): void {
-    console.info(`[INFO] ${message}`, context ? JSON.stringify(context, null, 2) : '');
-  }
-
-  warn(message: string, context?: any): void {
-    console.warn(`[WARN] ${message}`, context ? JSON.stringify(context, null, 2) : '');
-  }
-
-  error(message: string, context?: any): void {
-    console.error(`[ERROR] ${message}`, context ? JSON.stringify(context, null, 2) : '');
-  }
-
-  fatal(message: string, context?: any): void {
-    console.error(`[FATAL] ${message}`, context ? JSON.stringify(context, null, 2) : '');
-  }
-}
-
-/**
- * 错误处理器配置接口
- */
-export interface ErrorHandlerConfig {
-  /** 是否在控制台输出详细错误信息 */
-  verbose: boolean;
-  /** 是否记录错误堆栈 */
-  logStackTrace: boolean;
-  /** 是否启用错误统计 */
-  enableStatistics: boolean;
-  /** 错误统计历史最大数量 */
-  maxStatisticsHistory: number;
-  /** 自定义日志记录器 */
-  logger?: Logger;
-  /** 自定义错误ID生成器 */
-  errorIdGenerator?: () => string;
-}
-
-/**
- * 全局错误处理器
- * 提供统一的错误处理策略和用户体验
+ * 统一错误处理器
  */
 export class ErrorHandler {
-  private config: ErrorHandlerConfig;
-  private logger: Logger;
-  private statisticsCollector: ErrorStatisticsCollector;
-  private errorIdGenerator: () => string;
-
-  constructor(config: Partial<ErrorHandlerConfig> = {}) {
-    this.config = {
-      verbose: false,
-      logStackTrace: true,
-      enableStatistics: true,
-      maxStatisticsHistory: 100,
-      ...config
-    };
-
-    this.logger = config.logger || new ConsoleLogger();
-    this.statisticsCollector = new ErrorStatisticsCollector(this.config.maxStatisticsHistory);
-    this.errorIdGenerator = config.errorIdGenerator || this.defaultErrorIdGenerator;
-  }
-
+  
   /**
-   * 处理错误并返回标准化响应
-   * @param error 要处理的错误
-   * @param additionalContext 额外的上下文信息
+   * 标准化错误对象
+   * @param error 原始错误
+   * @param code 错误代码
+   * @param recoveryHint 恢复提示
    * @returns 标准化的错误响应
    */
-  public handleError(error: Error | TempuraiError, additionalContext: ErrorContext = {}): ErrorResponse {
-    // 转换为TempuraiError
-    const tempuraiError = error instanceof TempuraiError ? 
-      error : 
-      convertToTempuraiError(error, additionalContext);
+  static standardize(error: unknown, code?: string, recoveryHint?: string): ErrorResponse {
+    let errorMessage: string;
+    let errorCode = code;
 
-    // 合并上下文信息
-    const mergedContext = { ...tempuraiError.context, ...additionalContext };
-    const errorWithContext = tempuraiError.clone({ context: mergedContext });
-
-    // 记录统计信息
-    if (this.config.enableStatistics) {
-      this.statisticsCollector.recordError(errorWithContext);
-    }
-
-    // 记录日志
-    this.logError(errorWithContext);
-
-    // 生成错误ID
-    const errorId = this.errorIdGenerator();
-
-    // 创建响应
-    const response: ErrorResponse = {
-      success: false,
-      userMessage: this.formatUserMessage(errorWithContext),
-      technicalDetails: this.formatTechnicalDetails(errorWithContext),
-      errorCode: errorWithContext.code,
-      severity: errorWithContext.severity,
-      recoveryStrategy: errorWithContext.recoveryStrategy,
-      recoveryAdvice: errorWithContext.recoveryAdvice,
-      canRetry: errorWithContext.canRetry(),
-      retryDelay: this.calculateRetryDelay(errorWithContext),
-      context: mergedContext,
-      errorId
-    };
-
-    return response;
-  }
-
-  /**
-   * 格式化用户友好的错误消息
-   * @param error TempuraiError实例
-   * @returns 用户友好的错误消息
-   */
-  public formatUserMessage(error: TempuraiError): string {
-    // 使用统一的错误消息格式
-    return formatErrorMessage(error);
-  }
-
-  /**
-   * 记录错误日志
-   * @param error TempuraiError实例
-   * @param additionalContext 额外上下文信息
-   */
-  public logError(error: TempuraiError, additionalContext?: any): void {
-    const logLevel = this.getLogLevel(error.severity);
-    const message = `Error [${error.code}]: ${error.message}`;
-    
-    const logContext = {
-      errorCode: error.code,
-      severity: error.severity,
-      recoveryStrategy: error.recoveryStrategy,
-      context: error.context,
-      timestamp: error.timestamp.toISOString(),
-      ...(additionalContext && { additionalContext }),
-      ...(this.config.logStackTrace && error.stack && { stack: error.stack }),
-      ...(error.cause && { cause: error.cause.message })
-    };
-
-    switch (logLevel) {
-      case LogLevel.DEBUG:
-        this.logger.debug(message, logContext);
-        break;
-      case LogLevel.INFO:
-        this.logger.info(message, logContext);
-        break;
-      case LogLevel.WARN:
-        this.logger.warn(message, logContext);
-        break;
-      case LogLevel.ERROR:
-        this.logger.error(message, logContext);
-        break;
-      case LogLevel.FATAL:
-        this.logger.fatal(message, logContext);
-        break;
-    }
-
-    // 如果开启详细模式，额外输出到控制台
-    if (this.config.verbose && !(this.logger instanceof ConsoleLogger)) {
-      console.error(`[${error.severity.toUpperCase()}] ${error.toString()}`);
-      if (this.config.logStackTrace && error.stack) {
-        console.error(error.stack);
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // 根据错误类型推断错误代码
+      if (!errorCode) {
+        errorCode = this.inferErrorCode(error);
       }
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+      errorCode = errorCode || ErrorCode.UNKNOWN_ERROR;
+    } else {
+      errorMessage = 'An unknown error occurred';
+      errorCode = ErrorCode.UNKNOWN_ERROR;
+    }
+
+    return {
+      success: false,
+      error: errorMessage,
+      code: errorCode,
+      recoveryHint: recoveryHint || this.getRecoveryHint(errorCode)
+    };
+  }
+
+  /**
+   * 包装工具执行，提供统一的错误处理
+   * @param fn 要执行的函数
+   * @param toolName 工具名称
+   * @returns 包装后的执行结果
+   */
+  static async wrapToolExecution<T>(
+    fn: () => Promise<T>,
+    toolName: string = 'unknown'
+  ): Promise<ToolExecutionResult<T>> {
+    const startTime = Date.now();
+    
+    try {
+      const result = await fn();
+      const executionTime = Date.now() - startTime;
+      
+      return {
+        success: true,
+        data: result,
+        metadata: {
+          executionTime,
+          toolName,
+          timestamp: new Date().toISOString()
+        }
+      };
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      const standardizedError = this.standardize(error, ErrorCode.TOOL_EXECUTION_FAILED);
+      
+      return {
+        success: false,
+        error: standardizedError.error,
+        metadata: {
+          executionTime,
+          toolName,
+          timestamp: new Date().toISOString()
+        }
+      };
     }
   }
 
   /**
-   * 获取错误统计信息
-   * @param timeRangeMs 时间范围（毫秒）
-   * @returns 错误统计信息
+   * 从错误对象推断错误代码
+   * @param error 错误对象
+   * @returns 错误代码
    */
-  public getErrorStatistics(timeRangeMs?: number) {
-    if (!this.config.enableStatistics) {
-      throw new Error('Error statistics is not enabled');
+  private static inferErrorCode(error: Error): string {
+    const message = error.message.toLowerCase();
+    const name = error.name.toLowerCase();
+
+    // 网络相关错误
+    if (message.includes('timeout') || name.includes('timeout')) {
+      return ErrorCode.TIMEOUT_ERROR;
     }
     
-    return this.statisticsCollector.getStatistics(timeRangeMs);
-  }
+    if (message.includes('network') || message.includes('fetch') || name.includes('network')) {
+      return ErrorCode.NETWORK_ERROR;
+    }
 
-  /**
-   * 检查是否存在严重错误
-   * @param timeRangeMs 时间范围（毫秒）
-   * @returns 是否存在严重错误
-   */
-  public hasCriticalErrors(timeRangeMs?: number): boolean {
-    if (!this.config.enableStatistics) {
-      return false;
+    // 文件系统错误
+    if (message.includes('no such file') || message.includes('not found')) {
+      return ErrorCode.FILE_NOT_FOUND;
     }
     
-    return this.statisticsCollector.hasCriticalErrors(timeRangeMs);
-  }
-
-  /**
-   * 清除错误统计历史
-   */
-  public clearErrorHistory(): void {
-    if (this.config.enableStatistics) {
-      this.statisticsCollector.clearHistory();
+    if (message.includes('permission denied') || message.includes('access denied')) {
+      return ErrorCode.FILE_ACCESS_DENIED;
     }
-  }
 
-  /**
-   * 更新错误处理器配置
-   * @param newConfig 新的配置项
-   */
-  public updateConfig(newConfig: Partial<ErrorHandlerConfig>): void {
-    this.config = { ...this.config, ...newConfig };
-    
-    if (newConfig.logger) {
-      this.logger = newConfig.logger;
+    // 解析错误
+    if (message.includes('xml') || message.includes('parsing')) {
+      return ErrorCode.XML_PARSING_FAILED;
     }
     
-    if (newConfig.errorIdGenerator) {
-      this.errorIdGenerator = newConfig.errorIdGenerator;
+    if (message.includes('json') || name.includes('syntaxerror')) {
+      return ErrorCode.JSON_PARSING_FAILED;
     }
+
+    // 验证错误
+    if (message.includes('validation') || message.includes('invalid')) {
+      return ErrorCode.VALIDATION_ERROR;
+    }
+
+    // 安全错误
+    if (message.includes('security') || message.includes('blocked') || message.includes('denied')) {
+      return ErrorCode.SECURITY_VIOLATION;
+    }
+
+    return ErrorCode.UNKNOWN_ERROR;
   }
 
   /**
-   * 格式化技术错误详情
-   * @param error TempuraiError实例
-   * @returns 技术错误详情字符串
+   * 根据错误代码获取恢复提示
+   * @param code 错误代码
+   * @returns 恢复提示
    */
-  private formatTechnicalDetails(error: TempuraiError): string {
-    const details: string[] = [
-      `Error: ${error.name}`,
-      `Message: ${error.message}`,
-      `Code: ${error.code}`,
-      `Severity: ${error.severity}`,
-      `Recovery Strategy: ${error.recoveryStrategy}`,
-      `Timestamp: ${error.timestamp.toISOString()}`
-    ];
-
-    if (error.context.component) {
-      details.push(`Component: ${error.context.component}`);
-    }
-
-    if (error.context.operation) {
-      details.push(`Operation: ${error.context.operation}`);
-    }
-
-    if (error.cause) {
-      details.push(`Caused by: ${error.cause.message}`);
-    }
-
-    return details.join('\n');
-  }
-
-  /**
-   * 根据错误严重程度获取日志级别
-   * @param severity 错误严重程度
-   * @returns 日志级别
-   */
-  private getLogLevel(severity: ErrorSeverity): LogLevel {
-    switch (severity) {
-      case ErrorSeverity.LOW:
-        return LogLevel.WARN;
-      case ErrorSeverity.MEDIUM:
-        return LogLevel.ERROR;
-      case ErrorSeverity.HIGH:
-        return LogLevel.ERROR;
-      case ErrorSeverity.CRITICAL:
-        return LogLevel.FATAL;
+  private static getRecoveryHint(code?: string): string {
+    switch (code) {
+      case ErrorCode.TOOL_NOT_FOUND:
+        return 'Check if the tool is properly registered and available';
+        
+      case ErrorCode.TOOL_PARAMETER_INVALID:
+        return 'Verify the tool parameters match the expected schema';
+        
+      case ErrorCode.AGENT_NOT_INITIALIZED:
+        return 'Call initializeAsync() before using the agent';
+        
+      case ErrorCode.CONFIG_VALIDATION_FAILED:
+        return 'Check your configuration file for syntax errors or missing required fields';
+        
+      case ErrorCode.SECURITY_VIOLATION:
+        return 'Review security settings and ensure the operation is allowed';
+        
+      case ErrorCode.XML_PARSING_FAILED:
+        return 'Check XML format and ensure all tags are properly closed';
+        
+      case ErrorCode.FILE_NOT_FOUND:
+        return 'Verify the file path exists and is accessible';
+        
+      case ErrorCode.FILE_ACCESS_DENIED:
+        return 'Check file permissions and ensure you have necessary access rights';
+        
+      case ErrorCode.NETWORK_ERROR:
+        return 'Check network connectivity and retry the operation';
+        
+      case ErrorCode.TIMEOUT_ERROR:
+        return 'The operation took too long. Consider increasing timeout or breaking into smaller tasks';
+        
       default:
-        return LogLevel.ERROR;
+        return 'Check the error message for more details and retry if appropriate';
     }
   }
 
   /**
-   * 计算重试延迟时间
-   * @param error TempuraiError实例
-   * @returns 重试延迟时间（毫秒）
+   * 创建工具执行错误
+   * @param toolName 工具名称
+   * @param error 原始错误
+   * @returns 工具执行结果
    */
-  private calculateRetryDelay(error: TempuraiError): number | undefined {
-    if (!error.canRetry()) {
-      return undefined;
-    }
-
-    // 根据错误类型和严重程度计算延迟
-    let baseDelay = 1000; // 1秒基础延迟
-
-    switch (error.severity) {
-      case ErrorSeverity.LOW:
-        baseDelay = 500;
-        break;
-      case ErrorSeverity.MEDIUM:
-        baseDelay = 1000;
-        break;
-      case ErrorSeverity.HIGH:
-        baseDelay = 2000;
-        break;
-      case ErrorSeverity.CRITICAL:
-        baseDelay = 5000;
-        break;
-    }
-
-    // 根据错误类型调整
-    // 根据错误代码确定重试延迟
-    if (error.code === ErrorCode.API_RATE_LIMIT) {
-      baseDelay = 60000; // API限制需要等待更长时间
-    } else if (error.code === ErrorCode.CONNECTION_TIMEOUT) {
-      baseDelay = 5000; // 连接超时需要较长等待
-    } else if (error.code === ErrorCode.FILE_LOCKED) {
-      baseDelay = 2000; // 文件锁定需要等待
-    }
-
-    return baseDelay;
+  static createToolError<T = any>(toolName: string, error: unknown): ToolExecutionResult<T> {
+    const standardizedError = this.standardize(error, ErrorCode.TOOL_EXECUTION_FAILED);
+    
+    return {
+      success: false,
+      error: standardizedError.error,
+      metadata: {
+        executionTime: 0,
+        toolName,
+        timestamp: new Date().toISOString()
+      }
+    };
   }
 
   /**
-   * 默认错误ID生成器
-   * @returns 错误唯一标识符
+   * 创建参数验证错误
+   * @param toolName 工具名称
+   * @param parameterName 参数名称
+   * @param expectedType 期望类型
+   * @returns 工具执行结果
    */
-  private defaultErrorIdGenerator(): string {
-    return `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  static createParameterError<T = any>(
+    toolName: string, 
+    parameterName: string, 
+    expectedType: string
+  ): ToolExecutionResult<T> {
+    return {
+      success: false,
+      error: `Invalid parameter '${parameterName}': expected ${expectedType}`,
+      metadata: {
+        executionTime: 0,
+        toolName,
+        timestamp: new Date().toISOString()
+      }
+    };
   }
-}
 
-/**
- * 全局错误处理器实例
- */
-export const globalErrorHandler = new ErrorHandler();
+  /**
+   * 日志错误（可选的中央错误记录）
+   * @param error 错误信息
+   * @param context 上下文信息
+   */
+  static logError(error: ErrorResponse | unknown, context?: Record<string, any>): void {
+    const timestamp = new Date().toISOString();
+    const errorData = typeof error === 'object' && error !== null && 'success' in error 
+      ? error 
+      : this.standardize(error);
 
-/**
- * 便捷函数：处理错误
- * @param error 要处理的错误
- * @param context 错误上下文
- * @returns 错误处理响应
- */
-export function handleError(error: Error | TempuraiError, context?: ErrorContext): ErrorResponse {
-  return globalErrorHandler.handleError(error, context);
-}
-
-/**
- * 便捷函数：记录错误日志
- * @param error 要记录的错误
- * @param context 错误上下文
- */
-export function logError(error: Error | TempuraiError, context?: any): void {
-  const tempuraiError = error instanceof TempuraiError ? 
-    error : 
-    convertToTempuraiError(error);
-  
-  globalErrorHandler.logError(tempuraiError, context);
-}
-
-/**
- * 便捷函数：格式化用户消息
- * @param error 错误实例
- * @returns 用户友好的错误消息
- */
-export function formatUserMessage(error: Error | TempuraiError): string {
-  const tempuraiError = error instanceof TempuraiError ? 
-    error : 
-    convertToTempuraiError(error);
-  
-  return globalErrorHandler.formatUserMessage(tempuraiError);
+    console.error(`[${timestamp}] Error:`, {
+      ...errorData,
+      context: context || {}
+    });
+  }
 }

@@ -21,9 +21,6 @@ export class ToolsConfigValidator {
         // 验证Shell执行器配置
         this.validateShellExecutorConfig(config, result);
 
-        // 验证智能差异工具配置
-        this.validateSmartDiffConfig(config, result);
-
         // 验证Web工具配置
         this.validateWebToolsConfig(config, result);
 
@@ -120,55 +117,6 @@ export class ToolsConfigValidator {
         if (typeof security.allowDangerousCommands !== 'boolean') {
             result.errors.push('allowDangerousCommands must be a boolean');
             result.isValid = false;
-        }
-    }
-
-    /**
-     * 验证智能差异工具配置
-     * @param config 完整配置
-     * @param result 验证结果
-     */
-    private validateSmartDiffConfig(config: Config, result: ValidationResult): void {
-        const diffConfig = config.tools.smartDiff;
-
-        // 验证上下文行数
-        if (diffConfig.contextLines < 0) {
-            result.errors.push('SmartDiff contextLines cannot be negative');
-            result.isValid = false;
-        }
-
-        if (diffConfig.contextLines > 50) {
-            result.warnings.push('Very high contextLines may produce large diffs');
-        }
-
-        if (diffConfig.contextLines === 0) {
-            result.warnings.push('Zero contextLines may make diffs hard to understand');
-        }
-
-        // 验证重试次数
-        if (diffConfig.maxRetries < 0) {
-            result.errors.push('SmartDiff maxRetries cannot be negative');
-            result.isValid = false;
-        }
-
-        if (diffConfig.maxRetries > 10) {
-            result.warnings.push('Very high maxRetries may cause long delays on diff failures');
-        }
-
-        // 验证布尔配置
-        if (typeof diffConfig.enableFuzzyMatching !== 'boolean') {
-            result.errors.push('SmartDiff enableFuzzyMatching must be a boolean');
-            result.isValid = false;
-        }
-
-        if (typeof diffConfig.requireConfirmation !== 'boolean') {
-            result.errors.push('SmartDiff requireConfirmation must be a boolean');
-            result.isValid = false;
-        }
-
-        // 安全性建议
-        if (!diffConfig.requireConfirmation && diffConfig.enableFuzzyMatching) {
-            result.warnings.push('Fuzzy matching without confirmation may apply unintended changes');
         }
     }
 
@@ -323,13 +271,9 @@ export class ToolsConfigValidator {
             recommendations.push('Consider reducing shell timeout for better responsiveness');
         }
 
-        // 差异工具优化建议
-        if (config.tools.smartDiff.contextLines > 10) {
-            recommendations.push('Consider reducing contextLines for cleaner diffs');
-        }
-
-        if (!config.tools.smartDiff.enableFuzzyMatching) {
-            recommendations.push('Consider enabling fuzzy matching for more flexible diff application');
+        // Shell工具优化建议
+        if (config.tools.shellExecutor.security.allowlist.length === 0) {
+            recommendations.push('Consider adding commonly used safe commands to the allowlist');
         }
 
         // Web工具优化建议

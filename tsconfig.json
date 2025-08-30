@@ -17,7 +17,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
-  "include": ["src/config/**/*", "src/agents/**/*", "src/tools/**/*", "src/context/**/*", "src/services/**/*", "src/utils/**/*", "src/cli/index.ts", "src/cli/types.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "src/gui/**/*", "src/cli/InkUI.tsx", "src/cli/components/**/*"],
   "ts-node": {
     "esm": false,

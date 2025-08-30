@@ -80,7 +80,7 @@ export class InitializationCoordinator {
    */
   async initialize(): Promise<InitializationStatus> {
     console.log('🚀 开始系统初始化...');
-    
+
     try {
       // 生成执行顺序（拓扑排序）
       const executionOrder = this.topologicalSort();
@@ -93,12 +93,12 @@ export class InitializationCoordinator {
 
       this.status.isCompleted = true;
       console.log('✅ 系统初始化完成');
-      
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知初始化错误';
       this.status.errors.push(errorMessage);
       ErrorHandler.logError(error, { context: 'InitializationCoordinator', step: this.status.currentStep });
-      
+
       throw new Error(`系统初始化失败: ${errorMessage}`);
     }
 
@@ -149,10 +149,10 @@ export class InitializationCoordinator {
           this.config.model,
           this.config.customContext
         );
-        
+
         // 异步初始化Agent
         await agent.initializeAsync(this.config.customContext);
-        
+
         this.status.results['simple-agent'] = agent;
       }
     });
@@ -166,7 +166,7 @@ export class InitializationCoordinator {
         const fileWatcher = new FileWatcherService({
           verbose: false // 简化配置，避免Config接口依赖
         });
-        
+
         this.status.results['file-watcher'] = fileWatcher;
       }
     });
@@ -179,15 +179,15 @@ export class InitializationCoordinator {
         console.log('📋 创建会话服务...');
         const agent = this.status.results['simple-agent'];
         const fileWatcher = this.status.results['file-watcher'];
-        
+
         const sessionDependencies: SessionServiceDependencies = {
           agent,
           fileWatcher,
           config: this.config.config
         };
-        
+
         const sessionService = new SessionService(sessionDependencies);
-        
+
         this.status.results['session-service'] = sessionService;
       }
     });
@@ -200,19 +200,19 @@ export class InitializationCoordinator {
         console.log('✅ 执行系统就绪检查...');
         const agent = this.status.results['simple-agent'];
         const sessionService = this.status.results['session-service'];
-        
+
         // 检查Agent健康状态
         const agentHealth = await agent.healthCheck();
         if (agentHealth.status !== 'healthy') {
           throw new Error(`Agent健康检查失败: ${agentHealth.message}`);
         }
-        
+
         // 检查SessionService状态
         const sessionHealth = await sessionService.checkAgentHealth();
         if (sessionHealth.status !== 'healthy') {
           throw new Error(`SessionService健康检查失败: ${sessionHealth.message}`);
         }
-        
+
         this.status.results['readiness-check'] = {
           agentHealth,
           sessionHealth,
@@ -249,24 +249,24 @@ export class InitializationCoordinator {
     try {
       console.log(`⏳ 执行步骤: ${stepName}...`);
       await step.execute();
-      
+
       this.executedSteps.add(stepName);
       this.status.completedSteps++;
-      
+
       const duration = Date.now() - startTime;
       console.log(`✅ 步骤完成: ${stepName} (${duration}ms)`);
-      
+
     } catch (error) {
       const errorMessage = `步骤 ${stepName} 执行失败: ${error instanceof Error ? error.message : '未知错误'}`;
       this.status.errors.push(errorMessage);
-      
+
       // 根据配置决定是否重试
       const maxRetries = this.config.maxRetries || 0;
       if (maxRetries > 0) {
         console.warn(`⚠️ ${errorMessage}, 准备重试...`);
         // 这里可以添加重试逻辑
       }
-      
+
       throw new Error(errorMessage);
     } finally {
       this.status.currentStep = undefined;
@@ -286,7 +286,7 @@ export class InitializationCoordinator {
       if (visiting.has(stepName)) {
         throw new Error(`检测到循环依赖: ${stepName}`);
       }
-      
+
       if (visited.has(stepName)) {
         return;
       }
@@ -321,7 +321,7 @@ export class InitializationCoordinator {
    */
   async cleanup(): Promise<void> {
     console.log('🧹 清理初始化协调器资源...');
-    
+
     // 清理创建的服务
     try {
       const sessionService = this.status.results['session-service'];
@@ -362,8 +362,8 @@ export async function createSystemComponents(config: InitializationConfig): Prom
 
   return {
     coordinator,
-    agent: coordinator.getResult('simple-agent'),
-    sessionService: coordinator.getResult('session-service'),
-    fileWatcher: coordinator.getResult('file-watcher')
+    agent: coordinator.getResult('simple-agent') as SimpleAgent,
+    sessionService: coordinator.getResult('session-service') as SessionService,
+    fileWatcher: coordinator.getResult('file-watcher') as FileWatcherService
   };
 }

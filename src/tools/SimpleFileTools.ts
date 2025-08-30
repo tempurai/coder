@@ -49,17 +49,8 @@ export const readFileTool = tool({
     description: 'Read the contents of a file and return as text',
     inputSchema: z.object({
         filePath: z.string().describe('Path to the file to read'),
-        // Use z.enum for type-safety and runtime validation of encodings.
-        encoding: z.enum([
-            'utf-8',
-            'utf8',
-            'ascii',
-            'base64',
-            'hex',
-            'latin1'
-        ]).default('utf-8').describe('File encoding (e.g., utf-8, ascii, base64)')
     }),
-    execute: async ({ filePath, encoding }) => {
+    execute: async ({ filePath }) => {
         console.log(`📖 Reading file: ${filePath}`);
         try {
             const absolutePath = path.resolve(filePath);
@@ -70,17 +61,15 @@ export const readFileTool = tool({
                     error: `File not found: ${filePath}`
                 };
             }
-            // The risky 'as BufferEncoding' cast is no longer needed.
-            // The type of 'encoding' is now guaranteed by Zod to be a valid encoding string.
-            const content = await fs.promises.readFile(absolutePath, encoding);
+
+            const content = await fs.promises.readFile(absolutePath, 'utf-8');
             const stats = await fs.promises.stat(absolutePath);
 
             console.log(`✅ File read successfully: ${filePath}`);
-            console.log(`📊 Size: ${content.length} characters`);
             return {
                 success: true,
                 filePath: absolutePath,
-                content,
+                content: content, // This is now guaranteed to be a string
                 size: content.length,
                 lastModified: stats.mtime.toISOString(),
                 message: `File '${filePath}' read successfully`

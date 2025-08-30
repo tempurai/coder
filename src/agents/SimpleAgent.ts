@@ -2,6 +2,7 @@ import { Agent } from '@mastra/core';
 import { Config } from '../config/ConfigLoader.js';
 import type { LanguageModel } from 'ai';
 import { LoopDetectionService, LoopDetectionResult } from '../services/LoopDetectionService.js';
+import { ProgressCallback } from '../events/index.js';
 import { SimpleProjectContextProvider } from '../context/SimpleProjectContextProvider.js';
 
 // Agent流可以产出的事件类型
@@ -576,9 +577,10 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
      * 简化的工具执行引擎，包含循环检测
      * @param toolName 工具名称
      * @param args 工具参数
+     * @param progressCallback 可选的进度回调
      * @returns Promise<any> 工具执行结果
      */
-    async executeTool(toolName: string, args: any): Promise<any> {
+    async executeTool(toolName: string, args: any, progressCallback?: ProgressCallback): Promise<any> {
         // 循环检测 - 在执行前检查
         const loopResult = this.loopDetector.addAndCheck({
             toolName: toolName,
@@ -604,7 +606,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
 
         try {
             // 执行工具
-            const result = await tool.execute(args);
+            const result = await tool.execute(args, progressCallback);
 
             // 执行成功，记录用于后续分析
             console.log(`🔧 工具执行成功: ${toolName}`);

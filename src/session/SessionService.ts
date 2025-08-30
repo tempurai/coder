@@ -3,6 +3,7 @@ import { FileWatcherService } from '../services/FileWatcherService.js';
 import { Config } from '../config/ConfigLoader.js';
 import { ErrorHandler } from '../errors/ErrorHandler.js';
 import { IReActAgent, IGitWorkflowManager, IReActAgentFactory, IGitWorkflowManagerFactory } from '../di/interfaces.js';
+import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, GitBranchCreatedEvent, GitTaskEndedEvent } from '../events/index.js';
 
 /**
  * SessionService依赖接口
@@ -93,6 +94,7 @@ export class SessionService {
     private config: Config;
     private sessionHistory: SessionHistoryItem[] = [];
     private sessionStartTime: Date;
+    private eventEmitter: UIEventEmitter;
     private uniqueFilesAccessed: Set<string> = new Set();
     private totalTokensUsed: number = 0;
     private totalResponseTime: number = 0;
@@ -107,6 +109,7 @@ export class SessionService {
         this.fileWatcherService = dependencies.fileWatcher;
         this.config = dependencies.config;
         this.sessionStartTime = new Date();
+        this.eventEmitter = new UIEventEmitter();
 
         // 使用工厂函数或延迟加载来避免循环依赖
         this.createReActAgent = dependencies.createReActAgent || this.defaultCreateReActAgent;
@@ -123,6 +126,13 @@ export class SessionService {
     }
 
     /**
+     * Get the event emitter instance for UI integration
+     */
+    get events(): UIEventEmitter {
+        return this.eventEmitter;
+    }
+
+    /**
      * 处理任务（新架构的核心方法）
      * 编排ReActAgent和GitWorkflowManager的协作
      * @param query 用户任务查询
@@ -133,6 +143,13 @@ export class SessionService {
 
         console.log('\n🚀 开始处理任务（新架构）...');
         console.log(`📝 任务描述: ${query.substring(0, 80)}${query.length > 80 ? '...' : ''}`);
+
+        // Emit task started event
+        this.eventEmitter.emit<TaskStartedEvent>({
+            type: 'task_started',
+            description: query,
+            workingDirectory: process.cwd(),
+        });
 
         try {
             // 第一步：通过工厂函数创建Git工作流管理器

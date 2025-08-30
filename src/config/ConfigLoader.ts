@@ -370,16 +370,66 @@ export class ConfigLoader {
       // 确保全局配置目录存在
       fs.mkdirSync(this.globalConfigDir, { recursive: true });
 
-      // 写入默认配置
-      const defaultConfigJson = JSON.stringify(DEFAULT_CONFIG, null, 2);
-      fs.writeFileSync(this.globalConfigFilePath, defaultConfigJson, 'utf8');
+      // 创建包含详细说明的默认配置
+      const configWithComments = this.createUserFriendlyConfig();
+      fs.writeFileSync(this.globalConfigFilePath, configWithComments, 'utf8');
 
-      console.log(`📁 Created default global configuration at ${this.globalConfigFilePath}`);
+      // 创建示例上下文文件
+      this.createExampleContextFile();
+
+      console.log(`📁 Created default configuration at ${this.globalConfigFilePath}`);
       console.log('💡 Please edit this file to add your API keys and customize settings.');
-      console.log(`💡 You can also create ${this.globalContextFilePath} for global context.`);
-      console.log(`💡 Or create ./.tempurai/config.json and ./.tempurai/directives.md for project-specific settings.`);
     } catch (error) {
       console.error(`❌ Failed to create default config: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * 创建包含用户友好说明的配置文件内容
+   */
+  private createUserFriendlyConfig(): string {
+    return JSON.stringify(DEFAULT_CONFIG, null, 2);
+  }
+
+  /**
+   * 创建示例上下文文件
+   */
+  private createExampleContextFile(): void {
+    const exampleContext = `# Tempurai Custom Context
+
+This file allows you to provide additional context to the AI assistant.
+Add any project-specific information, coding guidelines, or preferences here.
+
+## Examples:
+
+### Coding Style Preferences
+- Use TypeScript with strict typing
+- Prefer functional programming approaches
+- Use meaningful variable names
+- Include comprehensive error handling
+
+### Project-Specific Guidelines
+- Follow the existing architecture patterns
+- Use the logging framework consistently
+- Write tests for all new functionality
+- Document public APIs
+
+### Personal Preferences
+- Explain complex code changes
+- Suggest optimizations when appropriate
+- Follow security best practices
+
+You can edit this file anytime to customize how the AI assistant helps you.
+For project-specific context, create ./.tempurai/directives.md in your project folder.
+`;
+
+    try {
+      if (!fs.existsSync(this.globalContextFilePath)) {
+        fs.writeFileSync(this.globalContextFilePath, exampleContext, 'utf8');
+        console.log(`📄 Created example context file at ${this.globalContextFilePath}`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ Could not create context file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -393,6 +443,32 @@ export class ConfigLoader {
       await fs.promises.mkdir(configDir, { recursive: true });
     } catch (error) {
       throw new Error(`Failed to create config directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * 静态方法：在应用启动时初始化配置
+   * 这个方法应该在应用启动的早期阶段调用，确保配置文件存在
+   * @returns Promise<void>
+   */
+  public static async initializeConfigOnStartup(): Promise<void> {
+    const globalConfigDir = path.join(os.homedir(), '.tempurai');
+    const globalConfigFilePath = path.join(globalConfigDir, 'config.json');
+
+    // 检查配置文件是否存在
+    if (!fs.existsSync(globalConfigFilePath)) {
+      console.log('🔧 First time setup: Creating configuration files...');
+      
+      try {
+        // 创建临时ConfigLoader实例来初始化配置
+        const tempLoader = new ConfigLoader();
+        // 配置会在构造函数中自动创建
+        
+        console.log('✅ Configuration initialized successfully!');
+      } catch (error) {
+        console.error(`❌ Failed to initialize configuration: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        throw error;
+      }
     }
   }
 

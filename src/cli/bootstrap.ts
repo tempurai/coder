@@ -241,6 +241,9 @@ export function parseArguments(args: string[]): LaunchContext {
  * @param args 命令行参数
  */
 export async function bootstrapApplication(args: string[] = []): Promise<void> {
+  // 在任何其他操作之前初始化配置
+  await ConfigLoader.initializeConfigOnStartup();
+  
   const context = parseArguments(args);
   const bootstrap = new ApplicationBootstrap();
   await bootstrap.launch(context);

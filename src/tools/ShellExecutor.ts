@@ -317,15 +317,5 @@ Examples:
     } as const;
 };
 
-/**
- * 向后兼容的 Shell 执行器工具
- * @deprecated 建议使用 createShellExecutorTool(configLoader) 代替
- */
-const defaultConfigLoader = new ConfigLoader();
-export const shellExecutorTool = createShellExecutorTool(defaultConfigLoader);
-
-/**
- * 向后兼容的多命令工具
- * @deprecated 建议使用 createShellExecutorTool(configLoader).multiCommand 代替
- */
-export const multiCommandTool = shellExecutorTool.multiCommand;
+// 注意：shellExecutorTool 和 multiCommandTool 已被移除
+// 请使用 createShellExecutorTool(configLoader) 代替

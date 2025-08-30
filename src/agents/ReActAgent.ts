@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { SimpleAgent } from './SimpleAgent';
-import { ErrorHandler, ErrorCode } from '../errors/ErrorHandler';
+import { SimpleAgent } from './SimpleAgent.js';
+import { ErrorHandler, ErrorCode } from '../errors/ErrorHandler.js';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 
 /**
@@ -69,7 +69,7 @@ export class ReActAgent {
   constructor(simpleAgent: SimpleAgent, maxIterations: number = 20) {
     this.simpleAgent = simpleAgent;
     this.maxIterations = maxIterations;
-    
+
     // 设置项目目录和状态文件路径
     this.projectRoot = process.cwd();
     this.statusDir = path.join(this.projectRoot, '.temurai');
@@ -86,7 +86,7 @@ export class ReActAgent {
   async runTask(initialQuery: string): Promise<TaskResult> {
     const startTime = Date.now();
     const history: ReActIteration[] = [];
-    
+
     console.log(`🚀 Starting ReAct task: ${initialQuery.substring(0, 60)}...`);
 
     try {
@@ -118,7 +118,7 @@ export class ReActAgent {
               ErrorCode.XML_PARSING_FAILED
             );
             console.error(`❌ ${error.error} - ${error.recoveryHint}`);
-            
+
             // 尝试提供更好的错误反馈给下次迭代
             currentObservation = `Previous response could not be parsed as valid XML. Please ensure your response follows the exact XML format specified in the instructions.`;
             continue;
@@ -149,13 +149,13 @@ export class ReActAgent {
           // 执行动作（如果不是finish）
           if (!finished) {
             console.log(`🔧 Executing tool: ${parsedResponse.action.tool}`);
-            
+
             try {
               const toolResult = await this.simpleAgent.executeTool(
-                parsedResponse.action.tool, 
+                parsedResponse.action.tool,
                 parsedResponse.action.args
               );
-              
+
               currentIteration.action.result = toolResult;
               currentObservation = `Tool '${parsedResponse.action.tool}' executed. Result: ${JSON.stringify(toolResult, null, 2)}`;
             } catch (toolError) {
@@ -174,7 +174,7 @@ export class ReActAgent {
         } catch (iterationError) {
           const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown iteration error';
           console.error(`❌ Iteration ${iteration} failed: ${errorMessage}`);
-          
+
           // 记录失败的迭代
           history.push({
             iteration,
@@ -184,10 +184,10 @@ export class ReActAgent {
             action: { tool: 'error', args: {}, error: errorMessage },
             finished: true
           });
-          
+
           // 如果单次迭代失败，我们继续尝试，但更新观察结果
           currentObservation = `Previous iteration failed: ${errorMessage}. Please adjust your approach.`;
-          
+
           // 如果连续多次失败，终止任务
           const recentErrors = history.slice(-3).filter(h => h.action.error).length;
           if (recentErrors >= 3) {
@@ -200,7 +200,7 @@ export class ReActAgent {
       // 生成最终结果
       const duration = Date.now() - startTime;
       const success = finished || history.some(h => h.finished && !h.action.error);
-      
+
       const result: TaskResult = {
         success,
         summary: this.generateTaskSummary(history, success),
@@ -210,8 +210,8 @@ export class ReActAgent {
       };
 
       if (!success) {
-        result.error = iteration >= this.maxIterations 
-          ? 'Maximum iterations reached' 
+        result.error = iteration >= this.maxIterations
+          ? 'Maximum iterations reached'
           : 'Task failed due to errors';
       }
 
@@ -221,9 +221,9 @@ export class ReActAgent {
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+
       console.error(`💥 ReAct task failed: ${errorMessage}`);
-      
+
       return {
         success: false,
         summary: `Task failed: ${errorMessage}`,
@@ -260,7 +260,7 @@ export class ReActAgent {
 
       await fs.promises.writeFile(this.planFilePath, initialPlan, 'utf8');
       console.log(`📋 Initialized plan file: ${this.planFilePath}`);
-      
+
     } catch (error) {
       throw new Error(`Failed to prepare environment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -282,7 +282,7 @@ export class ReActAgent {
     }
 
     // 构建历史摘要
-    const historyText = history.length > 0 
+    const historyText = history.length > 0
       ? history.slice(-3).map(h => `Iteration ${h.iteration}: ${h.thought} -> ${h.action.tool}(${JSON.stringify(h.action.args)}) -> ${h.action.result || h.action.error || 'No result'}`).join('\n')
       : 'No previous iterations';
 
@@ -355,7 +355,7 @@ Use "finish" as the tool when the task is completed successfully.`;
     try {
       // 1. 首先清理和准备XML内容
       const cleanedResponse = this.cleanXmlResponse(response);
-      
+
       // 2. 验证XML格式
       const validationResult = XMLValidator.validate(cleanedResponse);
       if (validationResult !== true) {
@@ -372,7 +372,7 @@ Use "finish" as the tool when the task is completed successfully.`;
       });
 
       const parsed = parser.parse(cleanedResponse);
-      
+
       // 4. 验证必需的元素
       if (!parsed.response) {
         console.error('Missing root <response> element');
@@ -380,7 +380,7 @@ Use "finish" as the tool when the task is completed successfully.`;
       }
 
       const { response: reactResponse } = parsed;
-      
+
       if (!reactResponse.thought || !reactResponse.plan || !reactResponse.action) {
         console.error('Missing required elements: thought, plan, or action');
         return this.parseWithFallbackRegex(response);
@@ -431,10 +431,10 @@ Use "finish" as the tool when the task is completed successfully.`;
    */
   private cleanXmlResponse(response: string): string {
     let cleaned = response.trim();
-    
+
     // 移除代码块标记
     cleaned = cleaned.replace(/```xml\s*/, '').replace(/```\s*$/, '');
-    
+
     // 如果没有根元素，尝试查找response标签
     if (!cleaned.includes('<response>')) {
       const responseMatch = cleaned.match(/<response[\s\S]*<\/response>/);
@@ -444,12 +444,12 @@ Use "finish" as the tool when the task is completed successfully.`;
         throw new Error('No valid response XML structure found');
       }
     }
-    
+
     // 确保XML声明存在（如果需要）
     if (!cleaned.startsWith('<?xml') && !cleaned.startsWith('<response>')) {
       cleaned = `<?xml version="1.0" encoding="UTF-8"?>\n${cleaned}`;
     }
-    
+
     return cleaned;
   }
 
@@ -462,15 +462,15 @@ Use "finish" as the tool when the task is completed successfully.`;
       if (typeof planObj === 'string') {
         return planObj;
       }
-      
+
       if (planObj.plan) {
         const plan = planObj.plan;
         let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<plan>\n';
-        
+
         if (plan.task) xml += `  <task>${plan.task}</task>\n`;
         if (plan.status) xml += `  <status>${plan.status}</status>\n`;
         if (plan.updated) xml += `  <updated>${plan.updated}</updated>\n`;
-        
+
         if (plan.steps) {
           xml += '  <steps>\n';
           if (Array.isArray(plan.steps.step)) {
@@ -485,13 +485,13 @@ Use "finish" as the tool when the task is completed successfully.`;
           }
           xml += '  </steps>\n';
         }
-        
+
         if (plan.notes) xml += `  <notes>${plan.notes}</notes>\n`;
         xml += '</plan>';
-        
+
         return xml;
       }
-      
+
       return JSON.stringify(planObj);
     } catch (error) {
       console.warn('Failed to serialize plan XML:', error);
@@ -509,7 +509,7 @@ Use "finish" as the tool when the task is completed successfully.`;
   } | null {
     try {
       console.log('Using regex fallback for XML parsing');
-      
+
       // 使用更宽松的正则表达式
       const thoughtMatch = response.match(/<thought[^>]*>([\s\S]*?)<\/thought>/);
       const planMatch = response.match(/<plan[^>]*>([\s\S]*?)<\/plan>/);

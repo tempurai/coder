@@ -197,7 +197,20 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ sessionService, age
         const resultMessage: AssistantMessageItem = {
           id: generateId(),
           type: 'assistantMessage',
-          content: `✅ 任务${result.success ? '完成' : '失败'}\n📝 ${result.summary}\n⏱️ 执行时间: ${result.duration}ms\n🔄 迭代: ${result.iterations}次${result.diff ? `\n📁 文件变更: ${result.diff.filesChanged}个` : ''}${result.error ? `\n❌ 错误: ${result.error}` : ''}`,
+          content: `✅ 任务${result.success ? '完成' : '失败'}
+      📝 ${result.summary}
+      ⏱️ 执行时间: ${result.duration}ms
+      🔄 迭代: ${result.iterations}次${
+        result.diff
+          ? `
+      📁 文件变更: ${result.diff.filesChanged}个`
+          : ''
+      }${
+        result.error
+          ? `
+      ❌ 错误: ${result.error}`
+          : ''
+      }`,
           timestamp: new Date(),
         };
 
@@ -271,45 +284,4 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ sessionService, age
 export const startEnhancedInkUI = async (sessionService: SessionService) => {
   console.log('🎨 启动增强版 InkUI 界面...');
   render(<CodeAssistantApp sessionService={sessionService} />);
-};
-
-// 传统启动函数 - 直接使用Agent（向后兼容）
-export const startInkUI = async () => {
-  console.warn('⚠️ 使用传统启动模式，建议升级到依赖注入架构');
-  const { ConfigLoader } = await import('../config/ConfigLoader.js');
-  const { SimpleAgent } = await import('../agents/SimpleAgent.js');
-
-  const configLoader = new ConfigLoader();
-  const config = configLoader.getConfig();
-
-  // 验证配置
-  const validation = configLoader.validateConfig();
-  if (!validation.isValid) {
-    console.error('❌ 配置验证失败:');
-    validation.errors.forEach((error: string) => console.error(`   - ${error}`));
-    process.exit(1);
-  }
-
-  // 创建语言模型实例和Agent
-  const model = await configLoader.createLanguageModel();
-  const agent = new SimpleAgent(config, model, config.customContext);
-  await agent.initializeAsync(config.customContext);
-
-  // 创建临时SessionService以保持功能完整性
-  const { SessionService } = await import('../session/SessionService.js');
-  const { FileWatcherService } = await import('../services/FileWatcherService.js');
-
-  const fileWatcher = new FileWatcherService({
-    verbose: false,
-    debounceMs: 500,
-    maxWatchedFiles: 50,
-  });
-
-  const sessionService = new SessionService({
-    agent,
-    fileWatcher,
-    config,
-  });
-
-  render(<CodeAssistantApp sessionService={sessionService} agent={agent} />);
 };

@@ -4,6 +4,7 @@ import { Config, ConfigLoader } from '../config/ConfigLoader.js';
 import { SimpleAgent } from '../agents/SimpleAgent.js';
 import { SessionService, SessionServiceDependencies } from '../session/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
+import { IReActAgentFactory, IGitWorkflowManagerFactory } from './interfaces.js';
 
 /**
  * 依赖注入服务标识符
@@ -32,12 +33,6 @@ export const TYPES = {
   ReActAgentFactory: Symbol.for('ReActAgentFactory'),
   GitWorkflowManagerFactory: Symbol.for('GitWorkflowManagerFactory'),
 };
-
-/**
- * 工厂函数类型定义
- */
-export type ReActAgentFactory = (agent: any) => any;
-export type GitWorkflowManagerFactory = () => any;
 
 /**
  * 创建和配置依赖注入容器
@@ -112,7 +107,7 @@ export function createContainer(): Container {
     });
 
   // 5) 工厂函数 - 使用 toFactory（避免循环依赖）
-  container.bind<ReActAgentFactory>(TYPES.ReActAgentFactory)
+  container.bind<IReActAgentFactory>(TYPES.ReActAgentFactory)
     .toFactory(() => {
       return (agent: SimpleAgent) => {
         // 延迟导入避免循环依赖
@@ -121,7 +116,7 @@ export function createContainer(): Container {
       };
     });
 
-  container.bind<GitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory)
+  container.bind<IGitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory)
     .toFactory(() => {
       return () => {
         // 延迟导入避免循环依赖
@@ -139,8 +134,8 @@ export function createContainer(): Container {
         const agent = await agentFactory();
         const fileWatcher = container.get<FileWatcherService>(TYPES.FileWatcherService);
         const config = container.get<Config>(TYPES.Config);
-        const createReActAgent = container.get<ReActAgentFactory>(TYPES.ReActAgentFactory);
-        const createGitWorkflowManager = container.get<GitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory);
+        const createReActAgent = container.get<IReActAgentFactory>(TYPES.ReActAgentFactory);
+        const createGitWorkflowManager = container.get<IGitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory);
 
         const dependencies: SessionServiceDependencies = {
           agent,

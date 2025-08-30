@@ -12,11 +12,12 @@ export type AgentStreamEvent =
     | { type: 'error'; content: string };
 
 // 增强工具集
-import { shellExecutorTool, multiCommandTool } from '../tools/ShellExecutor.js';
+import { createShellExecutorTool } from '../tools/ShellExecutor.js';
+import { ConfigLoader } from '../config/ConfigLoader.js';
 // 简化的文件工具集
 import { simpleFileTools } from '../tools/SimpleFileTools.js';
 // Web工具集
-import { webSearchTool, urlFetchTool } from '../tools/WebTools.js';
+import { createWebSearchTool, createUrlFetchTool } from '../tools/WebTools.js';
 // MCP工具集
 import { loadMcpTools, mcpToolLoader, McpTool } from '../tools/McpToolLoader.js';
 // 传统工具(后备)
@@ -295,12 +296,12 @@ export class SimpleAgent {
             read_file: simpleFileTools.read_file,
 
             // 🌐 WEB ACCESS TOOLS
-            web_search: webSearchTool,
-            url_fetch: urlFetchTool,
+            web_search: createWebSearchTool(this.config),
+            url_fetch: createUrlFetchTool(this.config),
 
             // 🔧 SHELL EXECUTION TOOLS  
-            shell_executor: this.createConfigurableShellTool(shellExecutorTool),
-            multi_command: this.createConfigurableShellTool(multiCommandTool),
+            shell_executor: this.createConfigurableShellTool(createShellExecutorTool(new ConfigLoader()).execute),
+            multi_command: this.createConfigurableShellTool(createShellExecutorTool(new ConfigLoader()).multiCommand),
 
             // 🔍 CODE ANALYSIS TOOLS
             find_files: findFilesTool,

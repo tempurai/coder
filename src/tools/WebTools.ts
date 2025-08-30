@@ -288,11 +288,8 @@ export const createWebSearchTool = (config: Config) => ({
   }
 });
 
-/**
- * 向后兼容的 web 搜索工具
- * @deprecated 建议使用 createWebSearchTool(config) 代替
- */
-export const webSearchTool = createWebSearchTool({} as Config);
+// 注意：webSearchTool 和 urlFetchTool 已被移除
+// 请使用 createWebSearchTool(config) 和 createUrlFetchTool(config) 代替
 
 /**
  * URL 获取工具 - 安全地获取并提取网页内容
@@ -489,9 +486,3 @@ export const createUrlFetchTool = (config: Config) => ({
     }
   }
 });
-
-/**
- * 向后兼容的 URL 获取工具
- * @deprecated 建议使用 createUrlFetchTool(config) 代替
- */
-export const urlFetchTool = createUrlFetchTool({} as Config);

@@ -286,21 +286,5 @@ export class CommandValidator {
   }
 }
 
-/**
- * 便捷的全局验证函数
- * 提供快速的命令验证访问
- * @deprecated 建议直接使用 CommandValidator 实例
- */
-export function validateCommand(commandLine: string, configLoader: ConfigLoader): CommandValidationResult {
-  const validator = new CommandValidator(configLoader);
-  return validator.validateCommand(commandLine);
-}
-
-/**
- * 便捷的批量验证函数
- * @deprecated 建议直接使用 CommandValidator 实例
- */
-export function validateCommands(commands: string[], configLoader: ConfigLoader): CommandValidationResult[] {
-  const validator = new CommandValidator(configLoader);
-  return validator.validateCommands(commands);
-}
+// 注意：validateCommand 和 validateCommands 全局函数已被移除
+// 请直接使用 CommandValidator 实例的方法

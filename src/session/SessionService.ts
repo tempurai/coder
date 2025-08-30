@@ -1,11 +1,8 @@
 import { SimpleAgent } from '../agents/SimpleAgent.js';
-import { FileWatcherService } from '../services/FileWatcherService';
-import { Config } from '../config/ConfigLoader';
-import { ErrorHandler } from '../errors/ErrorHandler';
-
-// 前置声明，避免循环依赖
-type ReActAgent = any;
-type GitWorkflowManager = any;
+import { FileWatcherService } from '../services/FileWatcherService.js';
+import { Config } from '../config/ConfigLoader.js';
+import { ErrorHandler } from '../errors/ErrorHandler.js';
+import { IReActAgent, IGitWorkflowManager, IReActAgentFactory, IGitWorkflowManagerFactory } from '../di/interfaces.js';
 
 /**
  * SessionService依赖接口
@@ -14,8 +11,8 @@ export interface SessionServiceDependencies {
     agent: SimpleAgent;
     fileWatcher: FileWatcherService;
     config: Config;
-    createReActAgent?: (agent: SimpleAgent) => ReActAgent;
-    createGitWorkflowManager?: () => GitWorkflowManager;
+    createReActAgent?: IReActAgentFactory;
+    createGitWorkflowManager?: IGitWorkflowManagerFactory;
 }
 
 /**
@@ -102,8 +99,8 @@ export class SessionService {
     private interactionCount: number = 0;
 
     // 工厂函数，避免直接导入
-    private createReActAgent: (agent: SimpleAgent) => ReActAgent;
-    private createGitWorkflowManager: () => GitWorkflowManager;
+    private createReActAgent: IReActAgentFactory;
+    private createGitWorkflowManager: IGitWorkflowManagerFactory;
 
     constructor(dependencies: SessionServiceDependencies) {
         this._agent = dependencies.agent;
@@ -479,7 +476,7 @@ export class SessionService {
     /**
      * 默认的ReActAgent创建工厂（延迟加载避免循环依赖）
      */
-    private defaultCreateReActAgent = (agent: SimpleAgent): ReActAgent => {
+    private defaultCreateReActAgent: IReActAgentFactory = (agent: SimpleAgent): IReActAgent => {
         // 延迟导入避免循环依赖
         const { ReActAgent: ReActAgentClass } = require('../agents/ReActAgent');
         return new ReActAgentClass(agent);
@@ -488,7 +485,7 @@ export class SessionService {
     /**
      * 默认的GitWorkflowManager创建工厂（延迟加载避免循环依赖）
      */
-    private defaultCreateGitWorkflowManager = (): GitWorkflowManager => {
+    private defaultCreateGitWorkflowManager: IGitWorkflowManagerFactory = (): IGitWorkflowManager => {
         // 延迟导入避免循环依赖
         const { GitWorkflowManager: GitWorkflowManagerClass } = require('../tools/GitWorkflowManager');
         return new GitWorkflowManagerClass();

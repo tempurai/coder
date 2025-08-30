@@ -19,15 +19,15 @@ const HELP_CONTENT = [
   '/clear - Clear history',
   '/theme [name] - Change theme',
   '/exit - Exit application',
-  '',
+  ' ',
   '⌨️ Keyboard Shortcuts:',
   'Ctrl+C - Exit application',
   'Ctrl+T - Cycle through themes',
   'Tab - Toggle iteration details',
-  '',
+  ' ',
   '🎨 Available Themes:',
   'dark, light, monokai, solarized, dracula, high-contrast',
-  '',
+  ' ',
   '💡 Example Commands:',
   '"Fix the TypeScript errors in this file"',
   '"Add error handling to the API endpoint"',
@@ -37,21 +37,14 @@ const HELP_CONTENT = [
 
 export const DynamicInput: React.FC<DynamicInputProps> = ({ value, onChange, onSubmit, placeholder, isProcessing }) => {
   const { currentTheme } = useTheme();
-  const [showHelp, setShowHelp] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
 
   // Monitor input for help trigger
   useEffect(() => {
-    if (value === '?') {
-      setShowHelp(true);
+    if (value === '?' || value === '/help') {
       setHelpVisible(true);
-    } else if (value.length === 0 || !value.includes('?')) {
-      setShowHelp(false);
-      // Delay hiding help to avoid flickering
-      const timer = setTimeout(() => {
-        setHelpVisible(false);
-      }, 100);
-      return () => clearTimeout(timer);
+    } else {
+      setHelpVisible(false);
     }
   }, [value]);
 
@@ -71,12 +64,12 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ value, onChange, onS
         <Box flexDirection='column' marginBottom={1} paddingX={2} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.info}>
           <Box marginBottom={1}>
             <Text color={currentTheme.colors.info} bold>
-              ? Quick Help
+              Quick Help
             </Text>
-            <Text color={currentTheme.colors.text.muted}>(Clear input to hide)</Text>
+            <Text color={currentTheme.colors.text.muted}> (Clear input to hide)</Text>
           </Box>
 
-          <Box flexDirection='column' marginLeft={1}>
+          <Box flexDirection='column'>
             {HELP_CONTENT.map((line, index) => (
               <Text
                 key={index}
@@ -123,7 +116,7 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ value, onChange, onS
       {/* Input Hints */}
       <Box marginTop={1}>
         <Text color={currentTheme.colors.text.muted}>
-          {!showHelp ? (
+          {!helpVisible ? (
             <>
               Type <Text color={currentTheme.colors.accent}>?</Text> for help •<Text color={currentTheme.colors.accent}>/theme</Text> to change colors •<Text color={currentTheme.colors.accent}>Ctrl+C</Text> to exit
             </>

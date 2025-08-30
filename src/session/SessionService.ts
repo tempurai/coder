@@ -153,10 +153,10 @@ export class SessionService {
 
         try {
             // 第一步：通过工厂函数创建Git工作流管理器
-            const gitManager = this.createGitWorkflowManager();
+            const gitManager = await this.createGitWorkflowManager();
 
             // 第二步：通过工厂函数创建ReActAgent（使用SimpleAgent作为能力层）
-            const reactAgent = this.createReActAgent(this._agent);
+            const reactAgent = await this.createReActAgent(this._agent);
 
             // 第三步：启动Git任务分支
             console.log('🌿 创建任务分支...');
@@ -253,7 +253,7 @@ export class SessionService {
 
             // 尝试清理：丢弃可能创建的任务分支
             try {
-                const gitManager = this.createGitWorkflowManager();
+                const gitManager = await this.createGitWorkflowManager();
                 const status = await gitManager.getWorkflowStatus();
                 if (status.success && status.isTaskBranch) {
                     console.log('🧹 清理失败的任务分支...');
@@ -493,18 +493,18 @@ export class SessionService {
     /**
      * 默认的ReActAgent创建工厂（延迟加载避免循环依赖）
      */
-    private defaultCreateReActAgent: IReActAgentFactory = (agent: SimpleAgent): IReActAgent => {
+    private defaultCreateReActAgent: IReActAgentFactory = async (agent: SimpleAgent): Promise<IReActAgent> => {
         // 延迟导入避免循环依赖
-        const { ReActAgent: ReActAgentClass } = require('../agents/ReActAgent');
+        const { ReActAgent: ReActAgentClass } = await import('../agents/ReActAgent.js');
         return new ReActAgentClass(agent);
     };
 
     /**
      * 默认的GitWorkflowManager创建工厂（延迟加载避免循环依赖）
      */
-    private defaultCreateGitWorkflowManager: IGitWorkflowManagerFactory = (): IGitWorkflowManager => {
+    private defaultCreateGitWorkflowManager: IGitWorkflowManagerFactory = async (): Promise<IGitWorkflowManager> => {
         // 延迟导入避免循环依赖
-        const { GitWorkflowManager: GitWorkflowManagerClass } = require('../tools/GitWorkflowManager');
+        const { GitWorkflowManager: GitWorkflowManagerClass } = await import('../tools/GitWorkflowManager.js');
         return new GitWorkflowManagerClass();
     };
 }

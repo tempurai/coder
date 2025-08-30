@@ -87,9 +87,9 @@ export interface IGitWorkflowManager {
 /**
  * ReAct Agent工厂函数类型
  */
-export type IReActAgentFactory = (agent: any) => IReActAgent;
+export type IReActAgentFactory = (agent: any) => Promise<IReActAgent>;
 
 /**
  * Git工作流管理器工厂函数类型
  */
-export type IGitWorkflowManagerFactory = () => IGitWorkflowManager;
+export type IGitWorkflowManagerFactory = () => Promise<IGitWorkflowManager>;

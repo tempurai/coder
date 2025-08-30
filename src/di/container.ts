@@ -109,18 +109,18 @@ export function createContainer(): Container {
   // 5) 工厂函数 - 使用 toFactory（避免循环依赖）
   container.bind<IReActAgentFactory>(TYPES.ReActAgentFactory)
     .toFactory(() => {
-      return (agent: SimpleAgent) => {
+      return async (agent: SimpleAgent) => {
         // 延迟导入避免循环依赖
-        const { ReActAgent } = require('../agents/ReActAgent');
+        const { ReActAgent } = await import('../agents/ReActAgent.js');
         return new ReActAgent(agent);
       };
     });
 
   container.bind<IGitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory)
     .toFactory(() => {
-      return () => {
+      return async () => {
         // 延迟导入避免循环依赖
-        const { GitWorkflowManager } = require('../tools/GitWorkflowManager');
+        const { GitWorkflowManager } = await import('../tools/GitWorkflowManager.js');
         return new GitWorkflowManager();
       };
     });

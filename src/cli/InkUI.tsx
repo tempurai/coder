@@ -114,6 +114,8 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
     (input: string): boolean => {
       const command = input.toLowerCase();
 
+      console.log('Handling command:', command);
+
       if (['/help', 'help'].includes(command)) {
         const helpEvent: SystemInfoEvent = {
           id: generateId(),
@@ -217,6 +219,8 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   // Handle user submission
   const handleSubmit = useCallback(
     async (userInput: string) => {
+      console.log('User submitted:', userInput);
+
       if (!userInput.trim() || isProcessing) {
         return;
       }

@@ -22,7 +22,7 @@ interface BaseTool {
 
 // 导出现有工具
 export * from './ShellExecutor.js';
-export * from './GitWorkflowManager.js';
+export * from '../services/SnapshotManager.js';
 
 // 核心工具(非冲突导出)
 export { projectContextTool, codeSearchTool } from './CoreTools.js';

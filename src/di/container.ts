@@ -6,7 +6,7 @@ import { ReActAgent } from '../agents/ReActAgent.js';
 import { SessionService } from '../session/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
-import { IReActAgentFactory, IGitWorkflowManagerFactory } from './interfaces.js';
+import { IReActAgentFactory, ISnapshotManagerFactory } from './interfaces.js';
 import { TYPES } from './types.js';
 import type { LanguageModel } from 'ai';
 
@@ -84,12 +84,11 @@ export function createContainer(): Container {
       };
     });
 
-  container.bind<IGitWorkflowManagerFactory>(TYPES.GitWorkflowManagerFactory)
+  container.bind<ISnapshotManagerFactory>(TYPES.SnapshotManagerFactory)
     .toFactory(() => {
-      return async () => {
-        // 延迟导入避免循环依赖
-        const { GitWorkflowManager } = await import('../tools/GitWorkflowManager.js');
-        return new GitWorkflowManager();
+      return async (projectRoot?: string) => {
+        const { SnapshotManager } = await import('../services/SnapshotManager.js');
+        return new SnapshotManager(projectRoot || process.cwd());
       };
     });
 
@@ -99,7 +98,7 @@ export function createContainer(): Container {
       return async () => {
         const agent = container.get<SimpleAgent>(TYPES.SimpleAgent);
         const config = container.get<Config>(TYPES.Config);
-        
+
         console.log('✅ Agent已创建，开始异步初始化...');
         await agent.initializeAsync(config.customContext);
         console.log('✅ Agent异步初始化完成');
@@ -124,7 +123,7 @@ export function createContainer(): Container {
         // 获取完全初始化的SimpleAgent
         const agentFactory = container.get<() => Promise<SimpleAgent>>(TYPES.InitializedSimpleAgent);
         const agent = await agentFactory();
-        
+
         // 然后获取SessionService并手动设置依赖
         const sessionService = container.get<SessionService>(TYPES.SessionService);
         console.log('✅ 会话管理服务已初始化');

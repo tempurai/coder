@@ -3,12 +3,11 @@ import { FileWatcherService } from '../services/FileWatcherService.js';
 import { Config } from '../config/ConfigLoader.js';
 import { injectable, inject } from 'inversify';
 import { TYPES } from '../di/types.js';
-import { ErrorHandler } from '../errors/ErrorHandler.js';
-import { IReActAgent, IGitWorkflowManager, IReActAgentFactory, IGitWorkflowManagerFactory } from '../di/interfaces.js';
-import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, GitBranchCreatedEvent, GitTaskEndedEvent } from '../events/index.js';
+import { IReActAgent, IReActAgentFactory, ISnapshotManagerFactory } from '../di/interfaces.js';
+import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent } from '../events/index.js';
 
 /**
- * 任务执行结果接口（新架构）
+ * 任务执行结果接口（简化版）
  */
 export interface TaskExecutionResult {
     success: boolean;
@@ -16,11 +15,7 @@ export interface TaskExecutionResult {
     duration: number;
     iterations: number;
     summary: string;
-    diff?: {
-        filesChanged: number;
-        diffStats: string;
-        fullDiff: string;
-    };
+    snapshotId?: string;  // 替代diff信息
     error?: string;
 }
 
@@ -73,11 +68,16 @@ export interface SessionStats {
         tools: string[];
         error?: string;
     };
+    snapshotStats: {
+        totalSnapshots: number;
+        latestSnapshot?: string;
+        shadowRepoExists: boolean;
+    };
 }
 
 /**
  * 会话管理服务
- * 作为CLI和新两层架构之间的中介层，编排ReActAgent和GitWorkflowManager
+ * 作为CLI和新架构之间的中介层，编排ReActAgent和SnapshotManager
  */
 @injectable()
 export class SessionService {
@@ -92,12 +92,12 @@ export class SessionService {
         @inject(TYPES.SimpleAgent) private _agent: SimpleAgent,
         @inject(TYPES.FileWatcherService) private fileWatcherService: FileWatcherService,
         @inject(TYPES.Config) private config: Config,
+        @inject(TYPES.SnapshotManagerFactory) private createSnapshotManager: ISnapshotManagerFactory,
         @inject(TYPES.ReActAgentFactory) private createReActAgent: IReActAgentFactory,
-        @inject(TYPES.GitWorkflowManagerFactory) private createGitWorkflowManager: IGitWorkflowManagerFactory,
         @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter
     ) {
         this.sessionStartTime = new Date();
-        console.log('✅ 会话管理服务已初始化（依赖注入模式）');
+        console.log('✅ 会话管理服务已初始化（快照模式）');
     }
 
     /**
@@ -115,15 +115,14 @@ export class SessionService {
     }
 
     /**
-     * 处理任务（新架构的核心方法）
-     * 编排ReActAgent和GitWorkflowManager的协作
+     * 处理任务（基于快照管理的简化版）
      * @param query 用户任务查询
      * @returns TaskExecutionResult 任务执行结果
      */
     async processTask(query: string): Promise<TaskExecutionResult> {
         const startTime = Date.now();
 
-        console.log('\n🚀 开始处理任务（新架构）...');
+        console.log('\n🚀 开始处理任务（快照模式）...');
         console.log(`📝 任务描述: ${query.substring(0, 80)}${query.length > 80 ? '...' : ''}`);
 
         // Emit task started event
@@ -134,82 +133,54 @@ export class SessionService {
         });
 
         try {
-            // 第一步：通过工厂函数创建Git工作流管理器
-            const gitManager = await this.createGitWorkflowManager();
+            // 第一步：通过工厂创建SnapshotManager
+            const snapshotManager = await this.createSnapshotManager(process.cwd());
 
-            // 第二步：通过工厂函数创建ReActAgent（使用SimpleAgent作为能力层）
-            const reactAgent = await this.createReActAgent(this._agent);
+            // 第二步：创建安全快照
+            console.log('📸 创建任务开始前的快照...');
+            const snapshotResult = await snapshotManager.createSnapshot(
+                `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
+            );
 
-            // 第三步：启动Git任务分支
-            console.log('🌿 创建任务分支...');
-            const startResult = await gitManager.startTask(query);
-
-            if (!startResult.success) {
+            if (!snapshotResult.success) {
+                console.error('❌ 快照创建失败:', snapshotResult.error);
                 return {
                     success: false,
                     taskDescription: query,
                     duration: Date.now() - startTime,
                     iterations: 0,
-                    summary: 'Failed to start Git task branch',
-                    error: startResult.error
+                    summary: 'Failed to create safety snapshot',
+                    error: snapshotResult.error
                 };
             }
 
-            console.log(`✅ 任务分支已创建: ${startResult.taskBranchName}`);
+            console.log(`✅ 安全快照已创建: ${snapshotResult.snapshotId}`);
 
-            // 第四步：执行ReAct任务循环
+            // Emit snapshot created event
+            this.eventEmitter.emit<SnapshotCreatedEvent>({
+                type: 'snapshot_created',
+                snapshotId: snapshotResult.snapshotId!,
+                description: snapshotResult.description!,
+                filesCount: snapshotResult.filesCount || 0,
+            });
+
+            // 第二步：通过工厂函数创建ReActAgent
+            const reactAgent = await this.createReActAgent(this._agent);
+
+            // 第三步：执行ReAct任务循环
             console.log('🔄 开始ReAct推理循环...');
             const taskResult = await reactAgent.runTask(query);
 
-            // 第五步：处理任务结果
-            let finalResult: TaskExecutionResult;
-
-            if (taskResult.success) {
-                // 任务成功完成，生成摘要
-                console.log('🏁 生成任务摘要...');
-                const endResult = await gitManager.endTask();
-
-                if (endResult.success) {
-                    finalResult = {
-                        success: true,
-                        taskDescription: query,
-                        duration: taskResult.duration,
-                        iterations: taskResult.iterations,
-                        summary: taskResult.summary,
-                        diff: {
-                            filesChanged: endResult.filesChanged || 0,
-                            diffStats: endResult.diffStats || 'No changes',
-                            fullDiff: endResult.fullDiff || 'No diff available'
-                        }
-                    };
-                } else {
-                    finalResult = {
-                        success: true,
-                        taskDescription: query,
-                        duration: taskResult.duration,
-                        iterations: taskResult.iterations,
-                        summary: taskResult.summary + ' (Note: Could not generate diff)',
-                        error: 'Diff generation failed: ' + endResult.error
-                    };
-                }
-            } else {
-                // 任务失败，丢弃任务分支
-                console.log('❌ 任务执行失败，丢弃任务分支...');
-                const discardResult = await gitManager.discardTask('main', true);
-
-                finalResult = {
-                    success: false,
-                    taskDescription: query,
-                    duration: taskResult.duration,
-                    iterations: taskResult.iterations,
-                    summary: taskResult.summary,
-                    error: taskResult.error
-                };
-
-                if (!discardResult.success) {
-                    finalResult.error += ` (Additionally, failed to discard branch: ${discardResult.error})`;
-                }
-            }
+            // 第四步：构建最终结果
+            const finalResult: TaskExecutionResult = {
+                success: taskResult.success,
+                taskDescription: query,
+                duration: taskResult.duration,
+                iterations: taskResult.iterations,
+                summary: taskResult.summary,
+                snapshotId: snapshotResult.snapshotId,
+                error: taskResult.error
+            };
 
             // 更新会话统计
             this.interactionCount++;
@@ -225,6 +196,16 @@ export class SessionService {
             const duration = Date.now() - startTime;
             console.log(`\n✅ 任务处理完成: ${finalResult.success ? '成功' : '失败'} (${duration}ms)`);
 
+            // Emit task completed event
+            this.eventEmitter.emit<TaskCompletedEvent>({
+                type: 'task_completed',
+                success: finalResult.success,
+                duration: finalResult.duration,
+                iterations: finalResult.iterations,
+                summary: finalResult.summary,
+                error: finalResult.error,
+            });
+
             return finalResult;
 
         } catch (error) {
@@ -232,18 +213,6 @@ export class SessionService {
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
 
             console.error(`💥 ${errorMessage}`);
-
-            // 尝试清理：丢弃可能创建的任务分支
-            try {
-                const gitManager = await this.createGitWorkflowManager();
-                const status = await gitManager.getWorkflowStatus();
-                if (status.success && status.isTaskBranch) {
-                    console.log('🧹 清理失败的任务分支...');
-                    await gitManager.discardTask('main', true);
-                }
-            } catch (cleanupError) {
-                console.warn('⚠️ 清理任务分支失败:', cleanupError);
-            }
 
             return {
                 success: false,
@@ -257,30 +226,54 @@ export class SessionService {
     }
 
     /**
+     * 恢复到指定快照（新增功能）
+     * @param snapshotId 快照ID
+     * @returns 恢复结果
+     */
+    async restoreFromSnapshot(snapshotId: string): Promise<{ success: boolean, error?: string }> {
+        console.log(`🔄 恢复快照: ${snapshotId}`);
+
+        try {
+            const snapshotManager = await this.createSnapshotManager(process.cwd());
+            const restoreResult = await snapshotManager.restoreSnapshot(snapshotId);
+
+            if (restoreResult.success) {
+                console.log(`✅ 快照恢复成功: ${restoreResult.restoredFiles} 文件已恢复`);
+                return { success: true };
+            } else {
+                return { success: false, error: restoreResult.error };
+            }
+        } catch (error) {
+            const errorMessage = `快照恢复失败: ${error instanceof Error ? error.message : '未知错误'}`;
+            console.error(errorMessage);
+            return { success: false, error: errorMessage };
+        }
+    }
+
+    /**
+     * 获取快照列表
+     * @returns 快照信息列表
+     */
+    async getSnapshots() {
+        const snapshotManager = await this.createSnapshotManager(process.cwd());
+        return await snapshotManager.listSnapshots();
+    }
+
+    /**
      * 处理用户输入，包括文件引用提取和意图解析（简化版）
      * @param input 原始用户输入
      * @returns 处理后的输入信息
      */
     async processUserInput(input: string): Promise<ProcessedInput> {
         const timestamp = new Date();
-        const wordCount = input.split(/\\s+/).filter(word => word.length > 0).length;
+        const wordCount = input.split(/\s+/).filter(word => word.length > 0).length;
 
         console.log('🔍 正在分析用户输入...');
 
-        // 在新的混合模式下，不再主动提取文件路径
+        // 在快照模式下，不再主动提取文件路径
         // Agent将使用其工具动态探索和访问文件
         const extractedFilePaths: string[] = [];
         const hasFileReferences = false;
-
-        // 注意：在混合模式下，我们不再主动提取和监听文件
-        // 文件访问将通过Agent工具按需进行
-        // if (hasFileReferences) {
-        //     console.log(`📄 发现 ${extractedFilePaths.length} 个文件引用: ${extractedFilePaths.join(', ')}`);
-        //     extractedFilePaths.forEach(filePath => {
-        //         this.uniqueFilesAccessed.add(filePath);
-        //     });
-        //     await this.manageFileWatching(extractedFilePaths);
-        // }
 
         const processedInput: ProcessedInput = {
             originalInput: input,
@@ -291,7 +284,7 @@ export class SessionService {
             wordCount
         };
 
-        // 添加到会话历史（在混合模式下不包含预提取的文件路径）
+        // 添加到会话历史
         this.addToHistory('user', input);
 
         return processedInput;
@@ -320,10 +313,14 @@ export class SessionService {
      * 获取会话统计信息
      * @returns 会话统计数据
      */
-    getSessionStats(): SessionStats {
+    async getSessionStats(): Promise<SessionStats> {
         const loopStats = this._agent.getLoopDetectionStats();
         const mcpStatus = this._agent.getMcpStatus();
         const sessionDuration = Date.now() - this.sessionStartTime.getTime();
+
+        // 获取快照统计
+        const snapshotManager = await this.createSnapshotManager();
+        const snapshotStatus = await snapshotManager.getStatus();
 
         return {
             totalInteractions: this.interactionCount,
@@ -340,7 +337,12 @@ export class SessionService {
                 mostUsedTool: loopStats.mostUsedTool,
                 historyLength: loopStats.historyLength
             },
-            mcpStatus
+            mcpStatus,
+            snapshotStats: {
+                totalSnapshots: snapshotStatus.snapshotCount,
+                latestSnapshot: snapshotStatus.latestSnapshot?.id,
+                shadowRepoExists: snapshotStatus.shadowRepoExists
+            }
         };
     }
 
@@ -399,7 +401,7 @@ export class SessionService {
         return {
             watchedFileCount: this.fileWatcherService.getWatchedFiles().length,
             recentChangesCount: this.fileWatcherService.getRecentChangeEvents().length,
-            totalChangeEvents: this.fileWatcherService.getRecentChangeEvents().length // 暂时使用相同值
+            totalChangeEvents: this.fileWatcherService.getRecentChangeEvents().length
         };
     }
 
@@ -416,7 +418,6 @@ export class SessionService {
      * 停止所有文件监听
      */
     stopAllFileWatching(): void {
-        // 获取所有监听的文件并逐个停止
         const watchedFiles = this.fileWatcherService.getWatchedFiles();
         for (const filePath of watchedFiles) {
             this.fileWatcherService.unwatchFile(filePath);
@@ -430,6 +431,7 @@ export class SessionService {
     async cleanup(): Promise<void> {
         this.stopAllFileWatching();
         await this._agent.cleanup();
+        // 注意：SnapshotManager通过工厂创建，不需要在这里清理
         console.log('✅ 会话服务资源已清理');
     }
 
@@ -468,7 +470,6 @@ export class SessionService {
      */
     private estimateTokenCount(text: string): number {
         // 简单的token估算：大约4个字符 = 1个token
-        // 这是一个粗略估算，实际token化会更复杂
         return Math.ceil(text.length / 4);
     }
 
@@ -476,19 +477,7 @@ export class SessionService {
      * 默认的ReActAgent创建工厂（延迟加载避免循环依赖）
      */
     private defaultCreateReActAgent: IReActAgentFactory = async (agent: SimpleAgent): Promise<IReActAgent> => {
-        // 延迟导入避免循环依赖
         const { ReActAgent: ReActAgentClass } = await import('../agents/ReActAgent.js');
-        // Note: ReActAgent now uses dependency injection, so we would need the container here
-        // For now, we'll throw an error indicating this should be provided via DI
         throw new Error('ReActAgent factory should be provided via dependency injection');
-    };
-
-    /**
-     * 默认的GitWorkflowManager创建工厂（延迟加载避免循环依赖）
-     */
-    private defaultCreateGitWorkflowManager: IGitWorkflowManagerFactory = async (): Promise<IGitWorkflowManager> => {
-        // 延迟导入避免循环依赖
-        const { GitWorkflowManager: GitWorkflowManagerClass } = await import('../tools/GitWorkflowManager.js');
-        return new GitWorkflowManagerClass();
     };
 }

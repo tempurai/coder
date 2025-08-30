@@ -24,17 +24,11 @@ export interface TaskCompletedEvent extends BaseEvent {
   error?: string;
 }
 
-export interface GitBranchCreatedEvent extends BaseEvent {
-  type: 'git_branch_created';
-  branchName: string;
-  baseBranch: string;
-}
-
-export interface GitTaskEndedEvent extends BaseEvent {
-  type: 'git_task_ended';
-  filesChanged: number;
-  diffStats: string;
-  success: boolean;
+export interface SnapshotCreatedEvent extends BaseEvent {
+  type: 'snapshot_created';
+  snapshotId: string;
+  description: string;
+  filesCount: number;
 }
 
 export interface ReActIterationStartedEvent extends BaseEvent {
@@ -125,11 +119,10 @@ export interface SessionStatsEvent extends BaseEvent {
   };
 }
 
-export type UIEvent = 
+export type UIEvent =
   | TaskStartedEvent
   | TaskCompletedEvent
-  | GitBranchCreatedEvent
-  | GitTaskEndedEvent
+  | SnapshotCreatedEvent
   | ReActIterationStartedEvent
   | ThoughtGeneratedEvent
   | PlanUpdatedEvent
@@ -148,6 +141,7 @@ export type UIEventType = UIEvent['type'];
 export const UIEventType = {
   TaskStart: 'task_started' as const,
   TaskComplete: 'task_completed' as const,
+  SnapshotCreated: 'snapshot_created' as const,
   ReActIteration: 'react_iteration_started' as const,
   SystemInfo: 'system_info' as const,
   UserInput: 'user_input' as const,
@@ -159,8 +153,6 @@ export const UIEventType = {
   ToolCallCompleted: 'tool_call_completed' as const,
   ObservationMade: 'observation_made' as const,
   SessionStats: 'session_stats' as const,
-  GitBranchCreated: 'git_branch_created' as const,
-  GitTaskEnded: 'git_task_ended' as const,
 } as const;
 
 export type ProgressCallback = (event: ToolProgressEvent) => void;

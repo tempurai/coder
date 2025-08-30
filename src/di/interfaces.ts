@@ -1,4 +1,5 @@
 import { TaskExecutionResult } from '../session/SessionService.js';
+import { SnapshotResult, RestoreResult, SnapshotInfo } from '../services/SnapshotManager.js';
 
 /**
  * ReAct Agent接口定义
@@ -14,74 +15,57 @@ export interface IReActAgent {
 }
 
 /**
- * Git工作流任务开始结果
+ * 快照管理器接口定义
+ * 提供项目状态快照和恢复功能
  */
-export interface GitTaskStartResult {
-  success: boolean;
-  taskBranchName?: string;
-  error?: string;
-}
-
-/**
- * Git工作流任务结束结果
- */
-export interface GitTaskEndResult {
-  success: boolean;
-  filesChanged?: number;
-  diffStats?: string;
-  fullDiff?: string;
-  error?: string;
-}
-
-/**
- * Git工作流丢弃任务结果
- */
-export interface GitTaskDiscardResult {
-  success: boolean;
-  error?: string;
-}
-
-/**
- * Git工作流状态
- */
-export interface GitWorkflowStatus {
-  success: boolean;
-  isTaskBranch: boolean;
-  currentBranch?: string;
-  error?: string;
-}
-
-/**
- * Git工作流管理器接口定义
- * 提供基于Git分支的任务工作流管理
- */
-export interface IGitWorkflowManager {
+export interface ISnapshotManager {
   /**
-   * 开始一个新任务，创建任务分支
-   * @param taskDescription 任务描述
-   * @returns 任务开始结果
+   * 初始化快照管理器
    */
-  startTask(taskDescription: string): Promise<GitTaskStartResult>;
+  initialize(): Promise<void>;
 
   /**
-   * 结束当前任务，生成摘要和diff
-   * @returns 任务结束结果
+   * 创建项目状态快照
+   * @param description 快照描述
+   * @returns 快照创建结果
    */
-  endTask(): Promise<GitTaskEndResult>;
+  createSnapshot(description: string): Promise<SnapshotResult>;
 
   /**
-   * 丢弃当前任务，切换到指定分支
-   * @param targetBranch 目标分支名
-   * @param force 是否强制丢弃
-   * @returns 丢弃结果
+   * 恢复到指定快照
+   * @param snapshotId 快照ID
+   * @returns 恢复结果
    */
-  discardTask(targetBranch: string, force: boolean): Promise<GitTaskDiscardResult>;
+  restoreSnapshot(snapshotId: string): Promise<RestoreResult>;
 
   /**
-   * 获取当前工作流状态
-   * @returns 工作流状态
+   * 列出所有快照
+   * @returns 快照信息列表
    */
-  getWorkflowStatus(): Promise<GitWorkflowStatus>;
+  listSnapshots(): Promise<SnapshotInfo[]>;
+
+  /**
+   * 清理旧快照
+   * @param retentionDays 保留天数
+   * @returns 清理的快照数量
+   */
+  cleanupOldSnapshots(retentionDays?: number): Promise<number>;
+
+  /**
+   * 获取快照管理器状态
+   * @returns 状态信息
+   */
+  getStatus(): Promise<{
+    initialized: boolean;
+    shadowRepoExists: boolean;
+    snapshotCount: number;
+    latestSnapshot?: SnapshotInfo;
+  }>;
+
+  /**
+   * 清理资源
+   */
+  cleanup(): Promise<void>;
 }
 
 /**
@@ -90,6 +74,6 @@ export interface IGitWorkflowManager {
 export type IReActAgentFactory = (agent: any) => Promise<IReActAgent>;
 
 /**
- * Git工作流管理器工厂函数类型
+ * 快照管理器工厂函数类型
  */
-export type IGitWorkflowManagerFactory = () => Promise<IGitWorkflowManager>;
+export type ISnapshotManagerFactory = (projectRoot?: string) => Promise<ISnapshotManager>;

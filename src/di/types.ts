@@ -14,11 +14,11 @@ export const TYPES = {
   FileWatcherService: Symbol.for('FileWatcherService'),
   ReActAgent: Symbol.for('ReActAgent'),
 
+  // 快照管理 (替代Git工作流管理)
+  SnapshotManager: Symbol.for('SnapshotManager'),
+
   // 事件系统
   UIEventEmitter: Symbol.for('UIEventEmitter'),
-
-  // 工具和管理器
-  GitWorkflowManager: Symbol.for('GitWorkflowManager'),
 
   // CLI和UI组件
   TempuraiCLI: Symbol.for('TempuraiCLI'),
@@ -27,8 +27,8 @@ export const TYPES = {
   // 异步初始化的服务
   InitializedSimpleAgent: Symbol.for('InitializedSimpleAgent'),
   InitializedSessionService: Symbol.for('InitializedSessionService'),
-  
+
   // 工厂函数
   ReActAgentFactory: Symbol.for('ReActAgentFactory'),
-  GitWorkflowManagerFactory: Symbol.for('GitWorkflowManagerFactory'),
+  SnapshotManagerFactory: Symbol.for('SnapshotManagerFactory'),
 };

@@ -55,7 +55,7 @@ export class ApplicationBootstrap {
 
       // 验证模型配置
       try {
-        const model = await this.container.get<LanguageModel>(TYPES.LanguageModel);
+        const model = await this.container.getAsync<LanguageModel>(TYPES.LanguageModel);
       } catch (error) {
         return {
           valid: false,

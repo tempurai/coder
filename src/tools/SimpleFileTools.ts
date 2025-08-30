@@ -49,7 +49,15 @@ export const readFileTool = tool({
     description: 'Read the contents of a file and return as text',
     inputSchema: z.object({
         filePath: z.string().describe('Path to the file to read'),
-        encoding: z.string().default('utf-8').describe('File encoding (default: utf-8)')
+        // Use z.enum for type-safety and runtime validation of encodings.
+        encoding: z.enum([
+            'utf-8',
+            'utf8',
+            'ascii',
+            'base64',
+            'hex',
+            'latin1'
+        ]).default('utf-8').describe('File encoding (e.g., utf-8, ascii, base64)')
     }),
     execute: async ({ filePath, encoding }) => {
         console.log(`📖 Reading file: ${filePath}`);
@@ -62,8 +70,11 @@ export const readFileTool = tool({
                     error: `File not found: ${filePath}`
                 };
             }
-            const content = await fs.promises.readFile(absolutePath, encoding as BufferEncoding);
+            // The risky 'as BufferEncoding' cast is no longer needed.
+            // The type of 'encoding' is now guaranteed by Zod to be a valid encoding string.
+            const content = await fs.promises.readFile(absolutePath, encoding);
             const stats = await fs.promises.stat(absolutePath);
+
             console.log(`✅ File read successfully: ${filePath}`);
             console.log(`📊 Size: ${content.length} characters`);
             return {
@@ -107,12 +118,10 @@ export const applyPatchTool = tool({
                 };
             }
 
-            // Create temporary patch file
             const tempPatchFile = path.join(path.dirname(absolutePath), `.patch_${Date.now()}.tmp`);
             await fs.promises.writeFile(tempPatchFile, patchContent, 'utf-8');
 
             try {
-                // Try using system patch command first
                 const patchCmd = dryRun
                     ? `patch --dry-run "${absolutePath}" < "${tempPatchFile}"`
                     : `patch "${absolutePath}" < "${tempPatchFile}"`;
@@ -124,10 +133,7 @@ export const applyPatchTool = tool({
                 }
 
                 const { stdout, stderr } = await execAsync(patchCmd);
-
-                // Clean up temp file
                 await fs.promises.unlink(tempPatchFile);
-
                 console.log(`✅ Patch ${dryRun ? 'preview' : 'applied'} successfully`);
 
                 return {
@@ -139,12 +145,8 @@ export const applyPatchTool = tool({
                     dryRun
                 };
             } catch (patchError) {
-                // Fallback to manual patch application
                 console.log('⚠️ System patch failed, attempting manual application...');
-
                 const result = await applyPatchManually(absolutePath, patchContent, dryRun, backup);
-
-                // Clean up temp file
                 await fs.promises.unlink(tempPatchFile);
 
                 return result;
@@ -160,25 +162,17 @@ export const applyPatchTool = tool({
     }
 });
 
-
-// Manual patch application as fallback
 async function applyPatchManually(filePath: string, patchContent: string, dryRun: boolean, backup: boolean) {
-    function detectNewline(text: string): '\\n' | '\\r\\n' {
+    function detectNewline(text: string): '\n' | '\r\n' {
         const idx = text.indexOf('\r\n');
-        return idx !== -1 ? '\\r\\n' : '\\n';
-    }
-
-    /** Very conservative shell escaping (double-quote context). */
-    function dq(str: string): string {
-        // Escape backslashes first, then quotes, dollars, and backticks to avoid shell interpolation.
-        return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
+        return idx !== -1 ? '\r\n' : '\n';
     }
 
     interface Change { type: 'add' | 'delete' | 'context'; content: string }
     interface Hunk {
-        oldStart: number; // 0-based
+        oldStart: number;
         oldCount: number;
-        newStart: number; // 0-based
+        newStart: number;
         newCount: number;
         changes: Change[];
     }
@@ -186,19 +180,16 @@ async function applyPatchManually(filePath: string, patchContent: string, dryRun
     const originalContent = await fs.promises.readFile(filePath, 'utf-8');
     const eol = detectNewline(originalContent);
     const originalLines = originalContent.split(/\r?\n/);
-
-    // Parse unified diff (very basic, strict context checking)
     const patchLines = patchContent.split(/\r?\n/);
     const hunks: Hunk[] = [];
     let currentHunk: Hunk | null = null;
 
     for (const line of patchLines) {
         if (line.startsWith('@@')) {
-            // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
             const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/);
             if (match) {
                 currentHunk = {
-                    oldStart: parseInt(match[1], 10) - 1, // Convert to 0-based
+                    oldStart: parseInt(match[1], 10) - 1,
                     oldCount: parseInt(match[2] || '1', 10),
                     newStart: parseInt(match[3], 10) - 1,
                     newCount: parseInt(match[4] || '1', 10),
@@ -206,20 +197,17 @@ async function applyPatchManually(filePath: string, patchContent: string, dryRun
                 };
                 hunks.push(currentHunk);
             } else {
-                currentHunk = null; // malformed header
+                currentHunk = null;
             }
         } else if (currentHunk && (line.startsWith('+') || line.startsWith('-') || line.startsWith(' '))) {
             currentHunk.changes.push({
                 type: line[0] === '+' ? 'add' : line[0] === '-' ? 'delete' : 'context',
                 content: line.substring(1),
             });
-        } else {
-            // ignore other lines like ---/+++ headers
         }
     }
 
     if (dryRun) {
-        // Just validate and show what would change
         let preview = `Preview of changes for ${filePath}:\n`;
         for (const hunk of hunks) {
             preview += `\nAt line ${hunk.oldStart + 1}:\n`;
@@ -236,26 +224,23 @@ async function applyPatchManually(filePath: string, patchContent: string, dryRun
         };
     }
 
-    // Apply changes manually (strict context checking)
     let modifiedLines = [...originalLines];
     let lineOffset = 0;
 
     for (const hunk of hunks) {
         let pos = hunk.oldStart + lineOffset;
-
         for (const change of hunk.changes) {
             if (change.type === 'context') {
                 if (modifiedLines[pos] !== change.content) {
-                    throw new Error(`Context mismatch near line ${pos + 1}: expected "${change.content}"`);
+                    throw new Error(`Context mismatch near line ${pos + 1}: expected "${change.content}" but got "${modifiedLines[pos]}"`);
                 }
                 pos++;
             } else if (change.type === 'delete') {
                 if (modifiedLines[pos] !== change.content) {
-                    throw new Error(`Delete mismatch near line ${pos + 1}: expected "${change.content}"`);
+                    throw new Error(`Delete mismatch near line ${pos + 1}: expected "${change.content}" but got "${modifiedLines[pos]}"`);
                 }
                 modifiedLines.splice(pos, 1);
                 lineOffset--;
-                // pos stays the same because we removed the current line
             } else if (change.type === 'add') {
                 modifiedLines.splice(pos, 0, change.content);
                 lineOffset++;

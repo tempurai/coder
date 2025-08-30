@@ -55,7 +55,7 @@ export function createContainer(): Container {
     .inSingletonScope();
 
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter)
-    .to(UIEventEmitter)
+    .toDynamicValue(() => new UIEventEmitter())
     .inSingletonScope();
 
   container.bind<SessionService>(TYPES.SessionService)

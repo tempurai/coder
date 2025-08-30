@@ -9,8 +9,6 @@ import { ProgressIndicator } from './components/ProgressIndicator.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
 import { ThemeSelector } from './components/ThemeSelector.js';
 import { DynamicInput } from './components/DynamicInput.js';
-import { SystemMessage } from './components/SystemMessage.js';
-import { UserMessage } from './components/UserMessage.js';
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
 
@@ -27,15 +25,13 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [expandedIterations, setExpandedIterations] = useState<Set<number>>(new Set());
   const [currentActivity, setCurrentActivity] = useState<string>('');
-  const [isFirstRun, setIsFirstRun] = useState(true);
 
   const generateId = useCallback((): string => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }, []);
 
   // Utility function to mask sensitive information
-  const mask = (val?: string) =>
-    val ? `${val.slice(0, 6)}…${val.slice(-4)}` : 'not set';
+  const mask = (val?: string) => (val ? `${val.slice(0, 6)}…${val.slice(-4)}` : 'not set');
 
   // Handle keyboard shortcuts
   useInput((input: string, key: any) => {
@@ -46,11 +42,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
     // Welcome screen - any key dismisses
     if (appState === 'welcome') {
-      if (isFirstRun) {
-        setAppState('theme-selection');
-      } else {
-        setAppState('ready');
-      }
+      setAppState('theme-selection');
       return;
     }
 
@@ -75,12 +67,8 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   // Handle welcome screen dismissal
   const handleWelcomeDismiss = useCallback(() => {
-    if (isFirstRun) {
-      setAppState('theme-selection');
-    } else {
-      setAppState('ready');
-    }
-  }, [isFirstRun]);
+    setAppState('theme-selection');
+  }, []);
 
   // Handle theme selection
   const handleThemeSelected = useCallback(() => {
@@ -233,11 +221,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         return;
       }
 
-      // Hide startup info after first interaction
-      if (isFirstRun) {
-        setIsFirstRun(false);
-      }
-
       // Handle special commands
       if (handleSpecialCommands(userInput)) {
         setInput('');
@@ -306,23 +289,19 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   // Main application interface
   return (
     <Box flexDirection='column'>
+      {/* Startup info */}
+      <Box flexDirection='column' marginY={1} paddingX={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
+        <Text color={currentTheme.colors.info}>• Welcome!</Text>
+        <Text> </Text>
+        <Text>Type /help for help, /status for your current setup</Text>
+        <Text color={currentTheme.colors.text.muted}>cwd: {process.cwd()}</Text>
+        <Text> </Text>
+        <Text>Overrides (via env):</Text>
+        <Text color={currentTheme.colors.text.muted}>• API Key: {mask(process.env.API_KEY || process.env.OPENAI_API_KEY)}</Text>
+        <Text color={currentTheme.colors.text.muted}>• API Base URL: {process.env.API_BASE_URL || process.env.OPENAI_BASE_URL || 'not set'}</Text>
+      </Box>
+
       <TaskContainer events={events}>
-        {/* Startup info - show on first run */}
-        {isFirstRun && (
-          <Box marginY={1} padding={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
-            <Text color={currentTheme.colors.info}>• Welcome!</Text>
-            <Text></Text>
-            <Text>  Type /help for help, /status for your current setup</Text>
-            <Text></Text>
-            <Text color={currentTheme.colors.text.muted}>cwd: {process.cwd()}</Text>
-            <Text></Text>
-            <Text>  Overrides (via env):</Text>
-            <Text></Text>
-            <Text color={currentTheme.colors.text.muted}>  • API Key: {mask(process.env.API_KEY || process.env.OPENAI_API_KEY)}</Text>
-            <Text color={currentTheme.colors.text.muted}>  • API Base URL: {process.env.API_BASE_URL || process.env.OPENAI_BASE_URL || 'not set'}</Text>
-          </Box>
-        )}
-        
         {/* Current Activity Indicator */}
         {isProcessing && (
           <Box marginY={1}>

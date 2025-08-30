@@ -12,36 +12,30 @@ interface DynamicInputProps {
 }
 
 const HELP_CONTENT = [
-  "📋 Available Commands:",
-  "/help - Show this help",
-  "/status - Show system status",
-  "/session - Show session statistics", 
-  "/clear - Clear history",
-  "/theme [name] - Change theme",
-  "/exit - Exit application",
-  "",
-  "⌨️ Keyboard Shortcuts:",
-  "Ctrl+C - Exit application",
-  "Ctrl+T - Cycle through themes",
-  "Tab - Toggle iteration details",
-  "",
-  "🎨 Available Themes:",
-  "dark, light, monokai, solarized, dracula, high-contrast",
-  "",
-  "💡 Example Commands:",
-  "\"Fix the TypeScript errors in this file\"",
-  "\"Add error handling to the API endpoint\"",
-  "\"Refactor this component to use hooks\"",
-  "\"Create a new React component for user profile\"",
+  '📋 Available Commands:',
+  '/help - Show this help',
+  '/status - Show system status',
+  '/session - Show session statistics',
+  '/clear - Clear history',
+  '/theme [name] - Change theme',
+  '/exit - Exit application',
+  '',
+  '⌨️ Keyboard Shortcuts:',
+  'Ctrl+C - Exit application',
+  'Ctrl+T - Cycle through themes',
+  'Tab - Toggle iteration details',
+  '',
+  '🎨 Available Themes:',
+  'dark, light, monokai, solarized, dracula, high-contrast',
+  '',
+  '💡 Example Commands:',
+  '"Fix the TypeScript errors in this file"',
+  '"Add error handling to the API endpoint"',
+  '"Refactor this component to use hooks"',
+  '"Create a new React component for user profile"',
 ];
 
-export const DynamicInput: React.FC<DynamicInputProps> = ({
-  value,
-  onChange,
-  onSubmit,
-  placeholder,
-  isProcessing
-}) => {
+export const DynamicInput: React.FC<DynamicInputProps> = ({ value, onChange, onSubmit, placeholder, isProcessing }) => {
   const { currentTheme } = useTheme();
   const [showHelp, setShowHelp] = useState(false);
   const [helpVisible, setHelpVisible] = useState(false);
@@ -71,40 +65,31 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({
   };
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection='column'>
       {/* Dynamic Help Display */}
       {helpVisible && (
-        <Box 
-          flexDirection="column" 
-          marginBottom={1}
-          paddingX={2}
-          paddingY={1}
-          borderStyle="round"
-          borderColor={currentTheme.colors.info}
-        >
+        <Box flexDirection='column' marginBottom={1} paddingX={2} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.info}>
           <Box marginBottom={1}>
             <Text color={currentTheme.colors.info} bold>
-              ❓ Quick Help
+              ? Quick Help
             </Text>
-            <Text color={currentTheme.colors.text.muted} marginLeft={1}>
-              (Clear input to hide)
-            </Text>
+            <Text color={currentTheme.colors.text.muted}>(Clear input to hide)</Text>
           </Box>
-          
-          <Box flexDirection="column" marginLeft={1}>
+
+          <Box flexDirection='column' marginLeft={1}>
             {HELP_CONTENT.map((line, index) => (
-              <Text 
-                key={index} 
+              <Text
+                key={index}
                 color={
-                  line.startsWith('📋') || line.startsWith('⌨️') || line.startsWith('🎨') || line.startsWith('💡') 
-                    ? currentTheme.colors.accent 
+                  line.startsWith('📋') || line.startsWith('⌨️') || line.startsWith('🎨') || line.startsWith('💡')
+                    ? currentTheme.colors.accent
                     : line.startsWith('/') || line.startsWith('Ctrl+') || line.startsWith('Tab')
-                    ? currentTheme.colors.primary
-                    : line.includes(',')
-                    ? currentTheme.colors.text.secondary
-                    : line.startsWith('"')
-                    ? currentTheme.colors.success
-                    : currentTheme.colors.text.primary
+                      ? currentTheme.colors.primary
+                      : line.includes(',')
+                        ? currentTheme.colors.text.secondary
+                        : line.startsWith('"')
+                          ? currentTheme.colors.success
+                          : currentTheme.colors.text.primary
                 }
               >
                 {line}
@@ -113,54 +98,37 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({
           </Box>
         </Box>
       )}
-      
+
       {/* Input Section with Border */}
-      <Box 
-        borderStyle="round" 
-        borderColor={isProcessing ? currentTheme.colors.warning : currentTheme.colors.ui.border}
-        paddingX={1}
-        paddingY={0}
-      >
-        <Box alignItems="center" width="100%">
-          <Text 
-            color={isProcessing ? currentTheme.colors.warning : currentTheme.colors.success} 
-            bold
-          >
+      <Box borderStyle='round' borderColor={isProcessing ? currentTheme.colors.warning : currentTheme.colors.ui.border} paddingX={1} paddingY={0}>
+        <Box alignItems='center' width='100%'>
+          <Text color={isProcessing ? currentTheme.colors.warning : currentTheme.colors.success} bold>
             {isProcessing ? '⏳ ' : '❯ '}
           </Text>
-          
+
           {!isProcessing ? (
             <Box flexGrow={1} marginLeft={1}>
-              <TextInput
-                value={value}
-                onChange={onChange}
-                onSubmit={handleSubmit}
-                placeholder={placeholder}
-              />
+              <Text color={currentTheme.colors.text.primary}>
+                <TextInput value={value} onChange={onChange} onSubmit={handleSubmit} placeholder={placeholder} showCursor={true} />
+              </Text>
             </Box>
           ) : (
             <Box marginLeft={1}>
-              <Text color={currentTheme.colors.warning}>
-                Processing your request...
-              </Text>
+              <Text color={currentTheme.colors.warning}>Processing your request...</Text>
             </Box>
           )}
         </Box>
       </Box>
-      
+
       {/* Input Hints */}
       <Box marginTop={1}>
         <Text color={currentTheme.colors.text.muted}>
           {!showHelp ? (
             <>
-              Type <Text color={currentTheme.colors.accent}>?</Text> for help • 
-              <Text color={currentTheme.colors.accent}>/theme</Text> to change colors • 
-              <Text color={currentTheme.colors.accent}>Ctrl+C</Text> to exit
+              Type <Text color={currentTheme.colors.accent}>?</Text> for help •<Text color={currentTheme.colors.accent}>/theme</Text> to change colors •<Text color={currentTheme.colors.accent}>Ctrl+C</Text> to exit
             </>
           ) : (
-            <>
-              Clear input to hide help • Enter to execute commands
-            </>
+            <>Clear input to hide help • Enter to execute commands</>
           )}
         </Text>
       </Box>

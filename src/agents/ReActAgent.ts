@@ -3,6 +3,17 @@ import * as path from 'path';
 import { injectable, inject } from 'inversify';
 import { TYPES } from '../di/types.js';
 import { SimpleAgent } from './SimpleAgent.js';
+import { UIEventEmitter } from '../events/UIEventEmitter.js';
+import { 
+  UIEventType, 
+  ReActIterationStartedEvent, 
+  ThoughtGeneratedEvent, 
+  PlanUpdatedEvent, 
+  ActionSelectedEvent,
+  ToolCallStartedEvent,
+  ToolCallCompletedEvent,
+  ObservationMadeEvent
+} from '../events/EventTypes.js';
 import { ErrorHandler, ErrorCode } from '../errors/ErrorHandler.js';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 
@@ -71,7 +82,8 @@ export class ReActAgent {
   private maxIterations: number;
 
   constructor(
-    @inject(TYPES.SimpleAgent) private simpleAgent: SimpleAgent, 
+    @inject(TYPES.SimpleAgent) private simpleAgent: SimpleAgent,
+    @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
     maxIterations: number = 20
   ) {
     this.maxIterations = maxIterations;
@@ -108,6 +120,14 @@ export class ReActAgent {
         iteration++;
         console.log(`\n🔄 ReAct Iteration ${iteration}/${this.maxIterations}`);
 
+        // 发射迭代开始事件
+        this.eventEmitter.emit<ReActIterationStartedEvent>({
+          type: UIEventType.ReActIteration,
+          iteration,
+          maxIterations: this.maxIterations,
+          observation: currentObservation,
+        });
+
         try {
           // 构建ReAct提示词
           const reactPrompt = await this.buildReActPrompt(currentObservation, history);
@@ -130,8 +150,33 @@ export class ReActAgent {
             continue;
           }
 
+          // 发射思考生成事件
+          this.eventEmitter.emit<ThoughtGeneratedEvent>({
+            type: UIEventType.ThoughtGenerated,
+            iteration,
+            thought: parsedResponse.thought,
+            context: currentObservation,
+          });
+
           // 更新计划文件
           await this.updatePlanFile(parsedResponse.plan);
+
+          // 发射计划更新事件
+          this.eventEmitter.emit<PlanUpdatedEvent>({
+            type: UIEventType.PlanUpdated,
+            iteration,
+            plan: parsedResponse.plan,
+            status: finished ? 'completed' : 'in_progress',
+          });
+
+          // 发射动作选择事件
+          this.eventEmitter.emit<ActionSelectedEvent>({
+            type: UIEventType.ActionSelected,
+            iteration,
+            tool: parsedResponse.action.tool,
+            args: parsedResponse.action.args,
+            reasoning: parsedResponse.thought,
+          });
 
           // 检查是否完成
           if (parsedResponse.action.tool === 'finish') {
@@ -156,24 +201,64 @@ export class ReActAgent {
           if (!finished) {
             console.log(`🔧 Executing tool: ${parsedResponse.action.tool}`);
 
+            // 发射工具调用开始事件
+            this.eventEmitter.emit<ToolCallStartedEvent>({
+              type: UIEventType.ToolCallStarted,
+              iteration,
+              toolName: parsedResponse.action.tool,
+              args: parsedResponse.action.args,
+              description: `Executing ${parsedResponse.action.tool}`,
+            });
+
             try {
+              const toolStartTime = Date.now();
               const toolResult = await this.simpleAgent.executeTool(
                 parsedResponse.action.tool,
                 parsedResponse.action.args
               );
+              const toolDuration = Date.now() - toolStartTime;
 
               currentIteration.action.result = toolResult;
               currentObservation = `Tool '${parsedResponse.action.tool}' executed. Result: ${JSON.stringify(toolResult, null, 2)}`;
+
+              // 发射工具调用完成事件
+              this.eventEmitter.emit<ToolCallCompletedEvent>({
+                type: UIEventType.ToolCallCompleted,
+                iteration,
+                toolName: parsedResponse.action.tool,
+                success: true,
+                result: toolResult,
+                duration: toolDuration,
+              });
+
             } catch (toolError) {
               const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
               currentIteration.action.error = errorMessage;
               currentObservation = `Tool '${parsedResponse.action.tool}' failed: ${errorMessage}`;
               console.error(`❌ Tool execution failed: ${errorMessage}`);
+
+              // 发射工具调用失败事件
+              this.eventEmitter.emit<ToolCallCompletedEvent>({
+                type: UIEventType.ToolCallCompleted,
+                iteration,
+                toolName: parsedResponse.action.tool,
+                success: false,
+                error: errorMessage,
+                duration: 0,
+              });
             }
           } else {
             currentIteration.action.result = 'Task finished';
             currentObservation = 'Task completed successfully';
           }
+
+          // 发射观察事件
+          this.eventEmitter.emit<ObservationMadeEvent>({
+            type: UIEventType.ObservationMade,
+            iteration,
+            observation: currentObservation,
+            analysis: finished ? 'Task completed successfully' : undefined,
+          });
 
           history.push(currentIteration);
 

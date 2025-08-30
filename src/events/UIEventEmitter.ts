@@ -1,10 +1,12 @@
 import { EventEmitter } from 'events';
+import { injectable } from 'inversify';
 import { UIEvent, UIEventType, EventListener, EventSubscription, ProgressCallback, ToolProgressEvent } from './EventTypes.js';
 
 /**
  * Specialized event emitter for Tempurai UI events
  * Provides type-safe event handling with automatic cleanup
  */
+@injectable()
 export class UIEventEmitter {
   private emitter = new EventEmitter();
   private sessionId: string;

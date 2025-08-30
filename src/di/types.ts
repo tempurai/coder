@@ -14,6 +14,9 @@ export const TYPES = {
   FileWatcherService: Symbol.for('FileWatcherService'),
   ReActAgent: Symbol.for('ReActAgent'),
 
+  // 事件系统
+  UIEventEmitter: Symbol.for('UIEventEmitter'),
+
   // 工具和管理器
   GitWorkflowManager: Symbol.for('GitWorkflowManager'),
 

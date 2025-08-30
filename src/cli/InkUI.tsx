@@ -4,7 +4,7 @@ import { UIEvent, UIEventType, SystemInfoEvent, UserInputEvent } from '../events
 import { SessionService, TaskExecutionResult } from '../session/SessionService.js';
 import { ThemeName, ThemeProvider, useTheme } from './themes/index.js';
 import { TaskContainer } from './components/TaskContainer.js';
-import { ReActIteration, ReActIterationData } from './components/ReActIteration.js';
+import { EventStream } from './components/EventStream.js';
 import { ProgressIndicator } from './components/ProgressIndicator.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
 import { ThemeSelector } from './components/ThemeSelector.js';
@@ -20,10 +20,8 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   const { currentTheme, setTheme, availableThemes, themeName } = useTheme();
   const [appState, setAppState] = useState<AppState>('welcome');
   const [events, setEvents] = useState<UIEvent[]>([]);
-  const [reactIterations, setReactIterations] = useState<Map<number, ReActIterationData>>(new Map());
   const [input, setInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [expandedIterations, setExpandedIterations] = useState<Set<number>>(new Set());
   const [currentActivity, setCurrentActivity] = useState<string>('');
 
   const generateId = useCallback((): string => {
@@ -55,14 +53,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       const nextIndex = (currentIndex + 1) % availableThemes.length;
       setTheme(availableThemes[nextIndex]);
     }
-    if (key.tab) {
-      // Toggle all iteration details
-      if (expandedIterations.size === reactIterations.size) {
-        setExpandedIterations(new Set());
-      } else {
-        setExpandedIterations(new Set(reactIterations.keys()));
-      }
-    }
   });
 
   // Handle welcome screen dismissal
@@ -84,16 +74,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
     const subscription = eventEmitter.onAll((event: UIEvent) => {
       setEvents((prevEvents) => [...prevEvents, event]);
-
-      // Handle specific event types for reactive updates
-      if (event.type === UIEventType.ReActIteration) {
-        const iterationData = event as any; // TODO: Fix type
-        setReactIterations((prev) => {
-          const newIterations = new Map(prev);
-          newIterations.set(iterationData.iteration, iterationData);
-          return newIterations;
-        });
-      }
 
       if (event.type === UIEventType.TaskStart) {
         setIsProcessing(true);
@@ -194,7 +174,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
       if (['/clear', 'clear'].includes(command)) {
         setEvents([]);
-        setReactIterations(new Map());
         sessionService.clearSession();
         const clearEvent: SystemInfoEvent = {
           id: generateId(),
@@ -313,16 +292,8 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
           </Box>
         )}
 
-        {/* ReAct Iterations Display */}
-        {reactIterations.size > 0 && (
-          <Box flexDirection='column' marginY={1}>
-            {Array.from(reactIterations.entries())
-              .sort(([a], [b]) => a - b)
-              .map(([iterationNum, data]) => (
-                <ReActIteration key={iterationNum} data={data} showDetails={expandedIterations.has(iterationNum)} />
-              ))}
-          </Box>
-        )}
+        {/* Event Stream Display - Real-time flattened event view */}
+        <EventStream events={events} />
       </TaskContainer>
 
       {/* Input Section */}

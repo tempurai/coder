@@ -83,7 +83,6 @@ export interface SessionStats {
 export class SessionService {
     private sessionHistory: SessionHistoryItem[] = [];
     private sessionStartTime: Date;
-    private eventEmitter: UIEventEmitter;
     private uniqueFilesAccessed: Set<string> = new Set();
     private totalTokensUsed: number = 0;
     private totalResponseTime: number = 0;
@@ -94,10 +93,10 @@ export class SessionService {
         @inject(TYPES.FileWatcherService) private fileWatcherService: FileWatcherService,
         @inject(TYPES.Config) private config: Config,
         @inject(TYPES.ReActAgentFactory) private createReActAgent: IReActAgentFactory,
-        @inject(TYPES.GitWorkflowManagerFactory) private createGitWorkflowManager: IGitWorkflowManagerFactory
+        @inject(TYPES.GitWorkflowManagerFactory) private createGitWorkflowManager: IGitWorkflowManagerFactory,
+        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter
     ) {
         this.sessionStartTime = new Date();
-        this.eventEmitter = new UIEventEmitter();
         console.log('✅ 会话管理服务已初始化（依赖注入模式）');
     }
 
@@ -479,7 +478,9 @@ export class SessionService {
     private defaultCreateReActAgent: IReActAgentFactory = async (agent: SimpleAgent): Promise<IReActAgent> => {
         // 延迟导入避免循环依赖
         const { ReActAgent: ReActAgentClass } = await import('../agents/ReActAgent.js');
-        return new ReActAgentClass(agent);
+        // Note: ReActAgent now uses dependency injection, so we would need the container here
+        // For now, we'll throw an error indicating this should be provided via DI
+        throw new Error('ReActAgent factory should be provided via dependency injection');
     };
 
     /**

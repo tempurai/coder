@@ -5,6 +5,7 @@ import { SimpleAgent } from '../agents/SimpleAgent.js';
 import { ReActAgent } from '../agents/ReActAgent.js';
 import { SessionService } from '../session/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
+import { UIEventEmitter } from '../events/UIEventEmitter.js';
 import { IReActAgentFactory, IGitWorkflowManagerFactory } from './interfaces.js';
 import { TYPES } from './types.js';
 import type { LanguageModel } from 'ai';
@@ -60,7 +61,12 @@ export function createContainer(): Container {
     .to(SimpleAgent)
     .inSingletonScope();
 
-  // 5) ReActAgent - 标准构造函数注入
+  // 5) UIEventEmitter - 事件系统
+  container.bind<UIEventEmitter>(TYPES.UIEventEmitter)
+    .toDynamicValue(() => new UIEventEmitter())
+    .inSingletonScope();
+
+  // 6) ReActAgent - 标准构造函数注入
   container.bind<ReActAgent>(TYPES.ReActAgent)
     .to(ReActAgent)
     .inSingletonScope();

@@ -28,9 +28,11 @@ const IndividualToolCallComponent: React.FC<IndividualToolCallProps> = ({ call }
             <Text color="yellow">
               <Spinner type="dots" />
             </Text>
-            <Text color="yellow" marginLeft={1}>
-              执行中...
-            </Text>
+            <Box marginLeft={1}>
+              <Text color="yellow">
+                执行中...
+              </Text>
+            </Box>
           </Box>
         );
       case 'success':
@@ -95,9 +97,11 @@ const IndividualToolCallComponent: React.FC<IndividualToolCallProps> = ({ call }
         <Text color="cyan" bold>
           🛠️  {call.toolName}
         </Text>
-        <Text color="gray" marginLeft={1}>
-          (ID: {call.id.substring(0, 8)}...)
-        </Text>
+        <Box marginLeft={1}>
+          <Text color="gray">
+            (ID: {call.id.substring(0, 8)}...)
+          </Text>
+        </Box>
       </Box>
       
       {call.toolInput && Object.keys(call.toolInput).length > 0 && (

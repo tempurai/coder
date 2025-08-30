@@ -56,9 +56,11 @@
     "ink": "^6.2.3",
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
+    "inversify": "^7.9.1",
     "mastra": "^0.11.2",
     "prettier": "^3.6.2",
     "react": "^19.1.1",
+    "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.1",
     "undici": "^7.15.0",
     "zod": "^3.25.76"

@@ -91,7 +91,7 @@ export interface SessionStats {
  * 作为CLI和新两层架构之间的中介层，编排ReActAgent和GitWorkflowManager
  */
 export class SessionService {
-    private agent: SimpleAgent;
+    private _agent: SimpleAgent;
     private fileWatcherService: FileWatcherService;
     private config: Config;
     private sessionHistory: SessionHistoryItem[] = [];
@@ -106,7 +106,7 @@ export class SessionService {
     private createGitWorkflowManager: () => GitWorkflowManager;
 
     constructor(dependencies: SessionServiceDependencies) {
-        this.agent = dependencies.agent;
+        this._agent = dependencies.agent;
         this.fileWatcherService = dependencies.fileWatcher;
         this.config = dependencies.config;
         this.sessionStartTime = new Date();
@@ -116,6 +116,13 @@ export class SessionService {
         this.createGitWorkflowManager = dependencies.createGitWorkflowManager || this.defaultCreateGitWorkflowManager;
 
         console.log('✅ 会话管理服务已初始化（依赖注入模式）');
+    }
+
+    /**
+     * Get the agent instance
+     */
+    get agent(): SimpleAgent {
+        return this._agent;
     }
 
     /**
@@ -135,7 +142,7 @@ export class SessionService {
             const gitManager = this.createGitWorkflowManager();
             
             // 第二步：通过工厂函数创建ReActAgent（使用SimpleAgent作为能力层）
-            const reactAgent = this.createReActAgent(this.agent);
+            const reactAgent = this.createReActAgent(this._agent);
 
             // 第三步：启动Git任务分支
             console.log('🌿 创建任务分支...');
@@ -318,8 +325,8 @@ export class SessionService {
      * @returns 会话统计数据
      */
     getSessionStats(): SessionStats {
-        const loopStats = this.agent.getLoopDetectionStats();
-        const mcpStatus = this.agent.getMcpStatus();
+        const loopStats = this._agent.getLoopDetectionStats();
+        const mcpStatus = this._agent.getMcpStatus();
         const sessionDuration = Date.now() - this.sessionStartTime.getTime();
 
         return {
@@ -363,7 +370,7 @@ export class SessionService {
         this.sessionStartTime = new Date();
 
         // 清除Agent的循环检测历史
-        this.agent.clearLoopDetectionHistory();
+        this._agent.clearLoopDetectionHistory();
 
         console.log('✨ 会话历史和状态已清除');
     }
@@ -373,7 +380,7 @@ export class SessionService {
      * @returns Agent配置
      */
     getAgentConfig(): Config {
-        return this.agent.getConfig();
+        return this._agent.getConfig();
     }
 
     /**
@@ -381,7 +388,7 @@ export class SessionService {
      * @returns 健康检查结果
      */
     async checkAgentHealth(): Promise<{ status: 'healthy' | 'unhealthy'; message: string }> {
-        return await this.agent.healthCheck();
+        return await this._agent.healthCheck();
     }
 
     /**
@@ -426,7 +433,7 @@ export class SessionService {
      */
     async cleanup(): Promise<void> {
         this.stopAllFileWatching();
-        await this.agent.cleanup();
+        await this._agent.cleanup();
         console.log('✅ 会话服务资源已清理');
     }
 

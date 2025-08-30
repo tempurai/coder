@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { render, Text, Box, Static, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { SimpleAgent, AgentStreamEvent } from '../agents/SimpleAgent';
-import { ConfigLoader } from '../config/ConfigLoader';
+import { SessionService, TaskExecutionResult } from '../session/SessionService';
 import { UserMessage } from './components/UserMessage';
 import { AssistantMessage } from './components/AssistantMessage';
 import { ToolCall } from './components/ToolCall';
@@ -63,14 +63,18 @@ export type HistoryItem =
   | ErrorItem;
 
 interface CodeAssistantAppProps {
-  agent: SimpleAgent;
+  sessionService: SessionService;
+  agent?: SimpleAgent; // 保持向后兼容，但推荐使用sessionService
 }
 
-const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ agent }) => {
+const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ sessionService, agent }) => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [input, setInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [streamingResponse, setStreamingResponse] = useState<string>('');
+  
+  // 使用sessionService或fallback到agent (向后兼容)
+  const actualAgent = agent || sessionService.agent;
 
   // 生成唯一 ID 的辅助函数
   const generateId = useCallback((): string => {
@@ -101,9 +105,74 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ agent }) => {
     }
   }, []);
 
+  // 处理特殊命令
+  const handleSpecialCommands = useCallback((input: string): boolean => {
+    const command = input.toLowerCase();
+    
+    if (['/help', 'help'].includes(command)) {
+      const helpItem: SystemInfoItem = {
+        id: generateId(),
+        type: 'systemInfo',
+        content: '🔧 可用命令:\n/help - 显示帮助\n/status - 显示状态\n/session - 显示会话统计\n/clear - 清除历史\n/exit - 退出应用',
+        timestamp: new Date()
+      };
+      setHistory(prev => [...prev, helpItem]);
+      return true;
+    }
+    
+    if (['/status', 'status'].includes(command)) {
+      const stats = sessionService.getSessionStats();
+      const statusItem: SystemInfoItem = {
+        id: generateId(),
+        type: 'systemInfo',
+        content: `📊 当前状态:\n交互次数: ${stats.totalInteractions}\n平均响应时间: ${stats.averageResponseTime}ms\n已访问文件: ${stats.uniqueFilesAccessed}\n会话时长: ${stats.sessionDuration}s`,
+        timestamp: new Date()
+      };
+      setHistory(prev => [...prev, statusItem]);
+      return true;
+    }
+    
+    if (['/session', 'session'].includes(command)) {
+      const stats = sessionService.getSessionStats();
+      const fileWatcherStats = sessionService.getFileWatcherStats();
+      const sessionItem: SystemInfoItem = {
+        id: generateId(),
+        type: 'systemInfo',
+        content: `📈 会话统计:\n总交互: ${stats.totalInteractions}\nToken使用: ${stats.totalTokensUsed}\n监听文件: ${fileWatcherStats.watchedFileCount}\n文件变更: ${fileWatcherStats.recentChangesCount}`,
+        timestamp: new Date()
+      };
+      setHistory(prev => [...prev, sessionItem]);
+      return true;
+    }
+    
+    if (['/clear', 'clear'].includes(command)) {
+      setHistory([]);
+      sessionService.clearSession();
+      const clearItem: SystemInfoItem = {
+        id: generateId(),
+        type: 'systemInfo',
+        content: '✨ 历史记录和会话状态已清除',
+        timestamp: new Date()
+      };
+      setHistory(prev => [...prev, clearItem]);
+      return true;
+    }
+    
+    if (['/exit', 'exit', 'quit'].includes(command)) {
+      process.exit(0);
+    }
+    
+    return false;
+  }, [sessionService, generateId]);
+
   // 处理用户提交
   const handleSubmit = useCallback(async (userInput: string) => {
     if (!userInput.trim() || isProcessing) {
+      return;
+    }
+
+    // 处理特殊命令
+    if (handleSpecialCommands(userInput)) {
       return;
     }
 
@@ -122,109 +191,28 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ agent }) => {
     setInput('');
 
     try {
-      let currentToolCallGroup: ToolCallGroupItem | null = null;
-      let currentStreamingText = '';
-
-      // 处理流式事件
-      for await (const event of agent.processStream(userInput)) {
-        switch (event.type) {
-          case 'text-chunk':
-            currentStreamingText = event.content;
-            setStreamingResponse(currentStreamingText);
-            break;
-
-          case 'tool-call':
-            // 如果没有当前工具调用组，创建一个新的
-            if (!currentToolCallGroup) {
-              currentToolCallGroup = {
-                id: generateId(),
-                type: 'toolCallGroup',
-                timestamp: new Date(),
-                calls: []
-              };
-              setHistory(prev => [...prev, currentToolCallGroup!]);
-            }
-
-            // 添加新的工具调用
-            const newToolCall: IndividualToolCall = {
-              id: generateId(),
-              toolName: event.toolName,
-              toolInput: event.toolInput,
-              status: 'executing'
-            };
-
-            currentToolCallGroup.calls.push(newToolCall);
-            
-            // 更新历史记录中的工具调用组
-            setHistory(prev => prev.map(item => 
-              item.id === currentToolCallGroup!.id ? { ...currentToolCallGroup! } : item
-            ));
-            break;
-
-          case 'tool-result':
-            // 找到对应的工具调用并更新结果
-            if (currentToolCallGroup) {
-              const targetCall = currentToolCallGroup.calls.find(call => 
-                call.toolName === event.toolName && call.status === 'executing'
-              );
-              
-              if (targetCall) {
-                targetCall.status = 'success';
-                targetCall.result = event.result;
-                
-                // 更新历史记录
-                setHistory(prev => prev.map(item => 
-                  item.id === currentToolCallGroup!.id ? { ...currentToolCallGroup! } : item
-                ));
-              }
-            }
-            break;
-
-          case 'error':
-            // 创建错误项
-            const errorItem: ErrorItem = {
-              id: generateId(),
-              type: 'error',
-              content: event.content,
-              timestamp: new Date()
-            };
-            
-            setHistory(prev => [...prev, errorItem]);
-            
-            // 如果有正在执行的工具调用，标记为失败
-            if (currentToolCallGroup) {
-              const executingCall = currentToolCallGroup.calls.find(call => call.status === 'executing');
-              if (executingCall) {
-                executingCall.status = 'error';
-                executingCall.error = event.content;
-                
-                setHistory(prev => prev.map(item => 
-                  item.id === currentToolCallGroup!.id ? { ...currentToolCallGroup! } : item
-                ));
-              }
-            }
-            break;
-        }
-      }
-
-      // 如果有流式文本响应，将其添加为助手消息
-      if (currentStreamingText.trim()) {
-        const assistantMessage: AssistantMessageItem = {
-          id: generateId(),
-          type: 'assistantMessage',
-          content: currentStreamingText,
-          timestamp: new Date()
-        };
-        
-        setHistory(prev => [...prev, assistantMessage]);
-      }
+      // 使用SessionService的新任务处理架构
+      const result: TaskExecutionResult = await sessionService.processTask(userInput);
+      
+      // 显示任务执行结果
+      const resultMessage: AssistantMessageItem = {
+        id: generateId(),
+        type: 'assistantMessage',
+        content: `✅ 任务${result.success ? '完成' : '失败'}\n📝 ${result.summary}\n⏱️ 执行时间: ${result.duration}ms\n🔄 迭代: ${result.iterations}次${result.diff ? `\n📁 文件变更: ${result.diff.filesChanged}个` : ''}${result.error ? `\n❌ 错误: ${result.error}` : ''}`,
+        timestamp: new Date()
+      };
+      
+      setHistory(prev => [...prev, resultMessage]);
 
     } catch (error) {
+      // Fallback到原始流式处理模式  
+      console.warn('⚠️ SessionService模式失败，回退到流式模式');
+      
       // 创建错误消息
       const errorItem: ErrorItem = {
         id: generateId(),
         type: 'error',
-        content: `处理请求时出错: ${error instanceof Error ? error.message : '未知错误'}`,
+        content: `任务处理失败: ${error instanceof Error ? error.message : '未知错误'}`,
         timestamp: new Date()
       };
       
@@ -233,7 +221,7 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ agent }) => {
       setIsProcessing(false);
       setStreamingResponse('');
     }
-  }, [agent, isProcessing, generateId]);
+  }, [sessionService, actualAgent, isProcessing, generateId, handleSpecialCommands]);
 
   return (
     <Box flexDirection="column">
@@ -281,15 +269,25 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = ({ agent }) => {
       {/* 帮助信息 */}
       <Box marginTop={1}>
         <Text color="gray" dimColor>
-          输入问题回车发送 • Ctrl+C 退出
+          输入问题回车发送 • /help 查看命令 • Ctrl+C 退出
         </Text>
       </Box>
     </Box>
   );
 };
 
-// 启动函数
+// 新的启动函数 - 使用SessionService（推荐）
+export const startEnhancedInkUI = async (sessionService: SessionService) => {
+  console.log('🎨 启动增强版 InkUI 界面...');
+  render(<CodeAssistantApp sessionService={sessionService} />);
+};
+
+// 传统启动函数 - 直接使用Agent（向后兼容）
 export const startInkUI = async () => {
+  console.warn('⚠️ 使用传统启动模式，建议升级到依赖注入架构');
+  const { ConfigLoader } = await import('../config/ConfigLoader.js');
+  const { SimpleAgent } = await import('../agents/SimpleAgent.js');
+  
   const configLoader = new ConfigLoader();
   const config = configLoader.getConfig();
   
@@ -297,15 +295,32 @@ export const startInkUI = async () => {
   const validation = configLoader.validateConfig();
   if (!validation.isValid) {
     console.error('❌ 配置验证失败:');
-    validation.errors.forEach(error => console.error(`   - ${error}`));
+    validation.errors.forEach((error: string) => console.error(`   - ${error}`));
     process.exit(1);
   }
 
-  // 创建语言模型实例
+  // 创建语言模型实例和Agent
   const model = await configLoader.createLanguageModel();
   const agent = new SimpleAgent(config, model, config.customContext);
+  await agent.initializeAsync(config.customContext);
   
-  render(<CodeAssistantApp agent={agent} />);
+  // 创建临时SessionService以保持功能完整性
+  const { SessionService } = await import('../session/SessionService.js');
+  const { FileWatcherService } = await import('../services/FileWatcherService.js');
+  
+  const fileWatcher = new FileWatcherService({
+    verbose: false,
+    debounceMs: 500,
+    maxWatchedFiles: 50
+  });
+  
+  const sessionService = new SessionService({
+    agent,
+    fileWatcher,
+    config
+  });
+  
+  render(<CodeAssistantApp sessionService={sessionService} agent={agent} />);
 };
 
 // 如果直接运行此文件则启动

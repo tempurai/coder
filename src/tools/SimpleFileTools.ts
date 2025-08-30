@@ -1,56 +1,39 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
+import * as util from 'util';
 import { z } from 'zod';
+import { tool } from 'ai';
 
-/**
- * 简单文件写入工具
- * 在Git工作流模式下，直接写入文件而不需要复杂的备份和diff机制
- */
-export const writeFileTool = {
-    id: 'write_file',
-    name: 'Write File Tool',
+const execAsync = util.promisify(exec);
+
+export const writeFileTool = tool({
     description: `Write content to a file or overwrite an existing file.
-    
     This operation is direct and atomic. All changes should be made on a task branch.
     The Git workflow handles versioning, backups, and rollbacks automatically.
-    
     IMPORTANT: Always use this tool within a Git task branch created by start_task.`,
-    
-    parameters: z.object({
+    inputSchema: z.object({
         filePath: z.string().describe('Path to the file to write'),
         content: z.string().describe('Content to write to the file')
     }),
-    
-    execute: async ({ filePath, content }: {
-        filePath: string;
-        content: string;
-    }) => {
+    execute: async ({ filePath, content }) => {
         console.log(`📝 Writing to file: ${filePath}`);
-        
         try {
-            // 解析为绝对路径
             const absolutePath = path.resolve(filePath);
-            
-            // 创建目录（如果需要）
             const dir = path.dirname(absolutePath);
             if (!fs.existsSync(dir)) {
                 console.log(`📁 Creating directory: ${dir}`);
                 fs.mkdirSync(dir, { recursive: true });
             }
-            
-            // 直接写入文件
             await fs.promises.writeFile(absolutePath, content, 'utf-8');
-            
             console.log(`✅ File written successfully: ${filePath}`);
             console.log(`📊 Size: ${content.length} characters`);
-            
             return {
                 success: true,
                 filePath: absolutePath,
                 size: content.length,
                 message: `File '${filePath}' written successfully`
             };
-            
         } catch (error) {
             console.error(`❌ Failed to write file: ${error}`);
             return {
@@ -60,118 +43,18 @@ export const writeFileTool = {
             };
         }
     }
-};
+});
 
-/**
- * 文件修改工具 - 基于diff内容
- * 读取现有文件，应用修改，然后写回
- */
-export const amendFileTool = {
-    id: 'amend_file',
-    name: 'Amend File Tool',
-    description: `Apply targeted modifications to an existing file.
-    
-    This tool reads the existing file, applies the specified changes, and writes
-    the updated content back. It's designed for making focused edits while
-    preserving the rest of the file content.
-    
-    IMPORTANT: Always use this tool within a Git task branch created by start_task.`,
-    
-    parameters: z.object({
-        filePath: z.string().describe('Path to the file to modify'),
-        searchText: z.string().describe('Text to search for in the file'),
-        replaceText: z.string().describe('Text to replace the search text with'),
-        description: z.string().optional().describe('Description of the change being made')
-    }),
-    
-    execute: async ({ filePath, searchText, replaceText, description }: {
-        filePath: string;
-        searchText: string;
-        replaceText: string;
-        description?: string;
-    }) => {
-        console.log(`🔧 Amending file: ${filePath}`);
-        console.log(`🔍 Search: "${searchText}"`);
-        console.log(`🔄 Replace: "${replaceText}"`);
-        if (description) {
-            console.log(`📝 Description: ${description}`);
-        }
-        
-        try {
-            // 读取现有文件
-            const absolutePath = path.resolve(filePath);
-            
-            if (!fs.existsSync(absolutePath)) {
-                return {
-                    success: false,
-                    filePath,
-                    error: `File not found: ${filePath}`
-                };
-            }
-            
-            const originalContent = await fs.promises.readFile(absolutePath, 'utf-8');
-            
-            // 检查搜索文本是否存在
-            if (!originalContent.includes(searchText)) {
-                return {
-                    success: false,
-                    filePath,
-                    error: `Search text not found in file: "${searchText}"`
-                };
-            }
-            
-            // 应用替换
-            const updatedContent = originalContent.replace(searchText, replaceText);
-            
-            // 写回文件
-            await fs.promises.writeFile(absolutePath, updatedContent, 'utf-8');
-            
-            console.log(`✅ File amended successfully: ${filePath}`);
-            console.log(`📊 Changed from ${originalContent.length} to ${updatedContent.length} characters`);
-            
-            return {
-                success: true,
-                filePath: absolutePath,
-                originalSize: originalContent.length,
-                updatedSize: updatedContent.length,
-                description: description || `Replaced "${searchText}" with "${replaceText}"`,
-                message: `File '${filePath}' amended successfully`
-            };
-            
-        } catch (error) {
-            console.error(`❌ Failed to amend file: ${error}`);
-            return {
-                success: false,
-                filePath,
-                error: `Amend failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-            };
-        }
-    }
-};
-
-/**
- * 读取文件工具
- * 简单的文件读取功能
- */
-export const readFileTool = {
-    id: 'read_file',
-    name: 'Read File Tool',
+export const readFileTool = tool({
     description: 'Read the contents of a file and return as text',
-    
-    parameters: z.object({
+    inputSchema: z.object({
         filePath: z.string().describe('Path to the file to read'),
         encoding: z.string().default('utf-8').describe('File encoding (default: utf-8)')
     }),
-    
-    execute: async ({ filePath, encoding }: {
-        filePath: string;
-        encoding: string;
-    }) => {
+    execute: async ({ filePath, encoding }) => {
         console.log(`📖 Reading file: ${filePath}`);
-        
         try {
             const absolutePath = path.resolve(filePath);
-            
             if (!fs.existsSync(absolutePath)) {
                 return {
                     success: false,
@@ -179,13 +62,10 @@ export const readFileTool = {
                     error: `File not found: ${filePath}`
                 };
             }
-            
             const content = await fs.promises.readFile(absolutePath, encoding as BufferEncoding);
             const stats = await fs.promises.stat(absolutePath);
-            
             console.log(`✅ File read successfully: ${filePath}`);
             console.log(`📊 Size: ${content.length} characters`);
-            
             return {
                 success: true,
                 filePath: absolutePath,
@@ -194,7 +74,6 @@ export const readFileTool = {
                 lastModified: stats.mtime.toISOString(),
                 message: `File '${filePath}' read successfully`
             };
-            
         } catch (error) {
             console.error(`❌ Failed to read file: ${error}`);
             return {
@@ -204,14 +83,274 @@ export const readFileTool = {
             };
         }
     }
-};
+});
 
-/**
- * 文件操作工具集合
- * 专为Git工作流设计的简化文件工具
- */
-export const simpleFileTools = {
-    write_file: writeFileTool,
-    amend_file: amendFileTool,
-    read_file: readFileTool
-};
+export const applyPatchTool = tool({
+    description: `Apply a unified diff patch to a file. 
+    The LLM should generate the patch in standard unified diff format.
+    This tool will apply the patch using the system patch command or fallback to manual application.`,
+    inputSchema: z.object({
+        filePath: z.string().describe('Path to the file to patch'),
+        patchContent: z.string().describe('Unified diff content generated by LLM'),
+        dryRun: z.boolean().default(false).describe('If true, show what would be changed without applying'),
+        backup: z.boolean().default(true).describe('Create backup before applying patch')
+    }),
+    execute: async ({ filePath, patchContent, dryRun, backup }) => {
+        console.log(`🔧 ${dryRun ? 'Previewing' : 'Applying'} patch to: ${filePath}`);
+        try {
+            const absolutePath = path.resolve(filePath);
+            if (!fs.existsSync(absolutePath)) {
+                return {
+                    success: false,
+                    filePath,
+                    error: `File not found: ${filePath}`
+                };
+            }
+
+            // Create temporary patch file
+            const tempPatchFile = path.join(path.dirname(absolutePath), `.patch_${Date.now()}.tmp`);
+            await fs.promises.writeFile(tempPatchFile, patchContent, 'utf-8');
+
+            try {
+                // Try using system patch command first
+                const patchCmd = dryRun
+                    ? `patch --dry-run "${absolutePath}" < "${tempPatchFile}"`
+                    : `patch "${absolutePath}" < "${tempPatchFile}"`;
+
+                if (!dryRun && backup) {
+                    const backupPath = `${absolutePath}.backup.${Date.now()}`;
+                    await fs.promises.copyFile(absolutePath, backupPath);
+                    console.log(`💾 Backup created: ${backupPath}`);
+                }
+
+                const { stdout, stderr } = await execAsync(patchCmd);
+
+                // Clean up temp file
+                await fs.promises.unlink(tempPatchFile);
+
+                console.log(`✅ Patch ${dryRun ? 'preview' : 'applied'} successfully`);
+
+                return {
+                    success: true,
+                    filePath: absolutePath,
+                    stdout: stdout.trim(),
+                    stderr: stderr.trim(),
+                    message: `Patch ${dryRun ? 'preview completed' : 'applied successfully'}`,
+                    dryRun
+                };
+            } catch (patchError) {
+                // Fallback to manual patch application
+                console.log('⚠️ System patch failed, attempting manual application...');
+
+                const result = await applyPatchManually(absolutePath, patchContent, dryRun, backup);
+
+                // Clean up temp file
+                await fs.promises.unlink(tempPatchFile);
+
+                return result;
+            }
+        } catch (error) {
+            console.error(`❌ Failed to apply patch: ${error}`);
+            return {
+                success: false,
+                filePath,
+                error: `Patch failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            };
+        }
+    }
+});
+
+
+// Manual patch application as fallback
+async function applyPatchManually(filePath: string, patchContent: string, dryRun: boolean, backup: boolean) {
+    function detectNewline(text: string): '\\n' | '\\r\\n' {
+        const idx = text.indexOf('\r\n');
+        return idx !== -1 ? '\\r\\n' : '\\n';
+    }
+
+    /** Very conservative shell escaping (double-quote context). */
+    function dq(str: string): string {
+        // Escape backslashes first, then quotes, dollars, and backticks to avoid shell interpolation.
+        return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
+    }
+
+    interface Change { type: 'add' | 'delete' | 'context'; content: string }
+    interface Hunk {
+        oldStart: number; // 0-based
+        oldCount: number;
+        newStart: number; // 0-based
+        newCount: number;
+        changes: Change[];
+    }
+
+    const originalContent = await fs.promises.readFile(filePath, 'utf-8');
+    const eol = detectNewline(originalContent);
+    const originalLines = originalContent.split(/\r?\n/);
+
+    // Parse unified diff (very basic, strict context checking)
+    const patchLines = patchContent.split(/\r?\n/);
+    const hunks: Hunk[] = [];
+    let currentHunk: Hunk | null = null;
+
+    for (const line of patchLines) {
+        if (line.startsWith('@@')) {
+            // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+            const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/);
+            if (match) {
+                currentHunk = {
+                    oldStart: parseInt(match[1], 10) - 1, // Convert to 0-based
+                    oldCount: parseInt(match[2] || '1', 10),
+                    newStart: parseInt(match[3], 10) - 1,
+                    newCount: parseInt(match[4] || '1', 10),
+                    changes: [],
+                };
+                hunks.push(currentHunk);
+            } else {
+                currentHunk = null; // malformed header
+            }
+        } else if (currentHunk && (line.startsWith('+') || line.startsWith('-') || line.startsWith(' '))) {
+            currentHunk.changes.push({
+                type: line[0] === '+' ? 'add' : line[0] === '-' ? 'delete' : 'context',
+                content: line.substring(1),
+            });
+        } else {
+            // ignore other lines like ---/+++ headers
+        }
+    }
+
+    if (dryRun) {
+        // Just validate and show what would change
+        let preview = `Preview of changes for ${filePath}:\n`;
+        for (const hunk of hunks) {
+            preview += `\nAt line ${hunk.oldStart + 1}:\n`;
+            for (const change of hunk.changes) {
+                preview += `${change.type === 'add' ? '+' : change.type === 'delete' ? '-' : ' '}${change.content}\n`;
+            }
+        }
+        return {
+            success: true,
+            filePath,
+            preview,
+            message: 'Patch preview completed (manual parser)',
+            dryRun: true,
+        };
+    }
+
+    // Apply changes manually (strict context checking)
+    let modifiedLines = [...originalLines];
+    let lineOffset = 0;
+
+    for (const hunk of hunks) {
+        let pos = hunk.oldStart + lineOffset;
+
+        for (const change of hunk.changes) {
+            if (change.type === 'context') {
+                if (modifiedLines[pos] !== change.content) {
+                    throw new Error(`Context mismatch near line ${pos + 1}: expected "${change.content}"`);
+                }
+                pos++;
+            } else if (change.type === 'delete') {
+                if (modifiedLines[pos] !== change.content) {
+                    throw new Error(`Delete mismatch near line ${pos + 1}: expected "${change.content}"`);
+                }
+                modifiedLines.splice(pos, 1);
+                lineOffset--;
+                // pos stays the same because we removed the current line
+            } else if (change.type === 'add') {
+                modifiedLines.splice(pos, 0, change.content);
+                lineOffset++;
+                pos++;
+            }
+        }
+    }
+
+    if (backup) {
+        const backupPath = `${filePath}.backup.${Date.now()}`;
+        await fs.promises.copyFile(filePath, backupPath);
+        console.log(`💾 Backup created: ${backupPath}`);
+    }
+
+    await fs.promises.writeFile(filePath, modifiedLines.join(eol), 'utf-8');
+
+    return {
+        success: true,
+        filePath,
+        message: 'Patch applied successfully (manual parser)',
+        changesApplied: hunks.length,
+    };
+}
+
+export const findFilesTool = tool({
+    description: 'Search for files by pattern in the current directory',
+    inputSchema: z.object({
+        pattern: z.string().describe('File name pattern to search for'),
+    }),
+    execute: async ({ pattern }) => {
+        console.log(`🔍 Finding files matching: ${pattern}`);
+        try {
+            const { stdout } = await execAsync(`find . -name "*${pattern}*" -type f`);
+            const files = stdout.trim().split('\n').filter(f => f.length > 0);
+            console.log(`✅ Found ${files.length} files`);
+            return {
+                success: true,
+                files,
+                count: files.length,
+                pattern,
+                message: `Found ${files.length} files matching '${pattern}'`
+            };
+        } catch (error) {
+            console.error(`❌ Failed to find files: ${error}`);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+                files: [],
+                count: 0,
+                pattern
+            };
+        }
+    },
+});
+
+export const searchInFilesTool = tool({
+    description: 'Search for keywords in TypeScript and JavaScript files',
+    inputSchema: z.object({
+        keyword: z.string().describe('Keyword to search for in files'),
+        filePattern: z.string().default('*.{ts,js,tsx,jsx}').describe('File pattern to search in')
+    }),
+    execute: async ({ keyword, filePattern }) => {
+        console.log(`🔍 Searching for '${keyword}' in ${filePattern} files`);
+        try {
+            const { stdout } = await execAsync(`grep -r -n "${keyword}" --include="${filePattern}" .`);
+            const matches = stdout.trim().split('\n').filter(m => m.length > 0);
+
+            const parsedMatches = matches.map(match => {
+                const [filePath, lineNumber, ...contentParts] = match.split(':');
+                return {
+                    file: filePath,
+                    line: parseInt(lineNumber),
+                    content: contentParts.join(':').trim()
+                };
+            });
+
+            console.log(`✅ Found ${matches.length} matches`);
+            return {
+                success: true,
+                matches: parsedMatches,
+                count: matches.length,
+                keyword,
+                filePattern,
+                message: `Found ${matches.length} matches for '${keyword}'`
+            };
+        } catch (error) {
+            console.error(`❌ Search failed: ${error}`);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+                matches: [],
+                count: 0,
+                keyword,
+                filePattern
+            };
+        }
+    },
+});

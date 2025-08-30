@@ -15,18 +15,18 @@ export type AgentStreamEvent =
     | { type: 'tool-result'; toolName: string; result: any; warning?: string }
     | { type: 'error'; content: string };
 
-// 增强工具集
+// 直接导入具体工具，无需中间转换层
 import { createShellExecutorTool } from '../tools/ShellExecutor.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
-// 简化的文件工具集
-import { simpleFileTools } from '../tools/SimpleFileTools.js';
-// Web工具集
-import { createWebSearchTool, createUrlFetchTool } from '../tools/WebTools.js';
+// 文件工具
+import { writeFileTool, applyPatchTool, readFileTool, findFilesTool, searchInFilesTool } from '../tools/SimpleFileTools.js';
+// Web工具
+import { webSearchTool, urlFetchTool } from '../tools/WebTools.js';
 // MCP工具集
-import { loadMcpTools, mcpToolLoader, McpTool } from '../tools/McpToolLoader.js';
-// 传统工具(后备)
-import { findFilesTool, searchInFilesTool } from '../tools/FileTools.js';
+import { loadMCPTools, mcpToolLoader, MCPTool } from '../tools/McpToolLoader.js';
+// Git工具
 import { gitStatusTool, gitLogTool, gitDiffTool } from '../tools/GitTools.js';
+// 代码分析工具
 import { findFunctionsTool, findImportsTool, getProjectStructureTool, analyzeCodeStructureTool } from '../tools/CodeTools.js';
 
 /**
@@ -64,7 +64,7 @@ interface McpStatus {
 export class SimpleAgent {
     private tools: ToolSet = {};
     private systemInstructions: string = '';
-    private mcpTools: McpTool[] = [];
+    private mcpTools: MCPTool[] = [];
     private mcpStatus: McpStatus = { isLoaded: false, toolCount: 0, connectionCount: 0, tools: [] };
     private loopDetector: LoopDetectionService;
     private simpleContextProvider: SimpleProjectContextProvider;
@@ -75,12 +75,6 @@ export class SimpleAgent {
         toolCount: 0
     };
 
-    /**
-     * 初始化SimpleAgent
-     * @param config 应用配置对象
-     * @param model 语言模型实例
-     * @param customContext 可选的用户自定义上下文（向后兼容）
-     */
     constructor(
         @inject(TYPES.Config) private config: Config,
         @inject(TYPES.LanguageModel) private model: LanguageModel
@@ -97,8 +91,6 @@ export class SimpleAgent {
         // 初始化简单项目上下文提供者
         this.simpleContextProvider = new SimpleProjectContextProvider();
 
-        // 不再在构造函数中创建Agent
-        // Agent现在在initializeAsync中统一创建
         console.log('🔧 SimpleAgent构造完成，等待异步初始化...');
     }
 
@@ -147,18 +139,18 @@ export class SimpleAgent {
      */
     private loadBuiltinTools(): void {
         console.log('🔄 加载内置工具...');
-        // 这里可以添加内置工具的预加载逻辑
-        // 目前内置工具是静态的，所以直接标记为已加载
+        // 内置工具现在都是AI SDK格式，无需转换
     }
 
     /**
-     * 创建带有内置工具的Agent配置
+     * 初始化Agent配置
      * @param customContext 用户自定义上下文
      */
     private initializeAgentConfiguration(customContext?: string): void {
         try {
             this.systemInstructions = this.buildSystemInstructionsSync(customContext);
-            this.tools = this.convertToAISdkTools(this.getBuiltinTools());
+            // 直接使用 AI SDK 格式的工具，无需转换
+            this.tools = this.getAISdkTools();
         } catch (error) {
             console.warn('⚠️ 初始化Agent配置时发生错误:', error instanceof Error ? error.message : '未知错误');
             throw error;
@@ -191,15 +183,14 @@ export class SimpleAgent {
             console.log('🔄 开始加载MCP工具...');
             this.mcpStatus = { isLoaded: false, toolCount: 0, connectionCount: 0, tools: [], error: undefined };
 
-            this.mcpTools = await loadMcpTools(this.config);
+            this.mcpTools = await loadMCPTools(this.config);
             console.log(`✅ MCP工具加载完成: ${this.mcpTools.length}个工具`);
 
             // 动态添加MCP工具到现有Agent
             if (this.mcpTools.length > 0) {
-                const mcpToolsMap: Record<string, any> = {};
-                for (const mcpTool of this.mcpTools) {
-                    mcpToolsMap[mcpTool.name] = mcpTool;
-                }
+                const mcpToolsMap = Object.fromEntries(
+                    this.mcpTools.map(tool => [tool.name, tool])
+                );
                 this.addToolsToAgent(mcpToolsMap);
             }
 
@@ -229,15 +220,13 @@ export class SimpleAgent {
 
     /**
      * 动态添加工具（核心扩展方法）
+     * 所有工具都已经是 AI SDK 格式
      * @param tools 要添加的工具映射
      */
     addToolsToAgent(tools: Record<string, any>): void {
         try {
-            // 转换新工具为AI SDK格式
-            const aiSdkTools = this.convertToAISdkTools(tools);
-
-            // 合并新工具
-            this.tools = { ...this.tools, ...aiSdkTools };
+            // 直接合并工具，无需转换
+            this.tools = { ...this.tools, ...tools };
 
             const toolNames = Object.keys(tools);
             console.log(`🔧 已动态添加 ${toolNames.length} 个工具: ${toolNames.join(', ')}`);
@@ -247,143 +236,61 @@ export class SimpleAgent {
     }
 
     /**
-     * 等待MCP工具加载完成
-     * @param timeoutMs 等待超时时间（毫秒）
+     * 获取 AI SDK 格式的工具集 - 现在直接使用，无需转换
      */
-    private async waitForMcpTools(timeoutMs: number = 10000): Promise<void> {
-        const startTime = Date.now();
+    private getAISdkTools(): ToolSet {
+        const tools: ToolSet = {};
 
-        while (!this.mcpStatus.isLoaded && (Date.now() - startTime) < timeoutMs) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        // 📝 文件操作工具 (已经是AI SDK格式)
+        tools.write_file = writeFileTool;
+        tools.apply_patch = applyPatchTool;
+        tools.find_files = findFilesTool;
+        tools.search_in_files = searchInFilesTool;
+        tools.read_file = readFileTool;
 
-        if (!this.mcpStatus.isLoaded) {
-            console.warn('⚠️ MCP工具加载超时，继续使用内置工具');
-        }
-    }
+        // 🔍 搜索工具 (已经是AI SDK格式)
+        tools.find_files = findFilesTool;
+        tools.search_in_files = searchInFilesTool;
 
-    /**
-     * 转换传统工具格式为AI SDK工具格式
-     * @param legacyTools 传统格式的工具
-     * @returns AI SDK格式的工具
-     */
-    private convertToAISdkTools(legacyTools: Record<string, any>): ToolSet {
-        const aisdkTools: ToolSet = {};
+        // 📊 代码分析工具 (已经是AI SDK格式)
+        tools.find_functions = findFunctionsTool;
+        tools.find_imports = findImportsTool;
+        tools.get_project_structure = getProjectStructureTool;
+        tools.analyze_code_structure = analyzeCodeStructureTool;
 
-        for (const [toolName, legacyTool] of Object.entries(legacyTools)) {
-            try {
-                // 将传统工具格式转换为AI SDK工具格式
-                aisdkTools[toolName] = tool({
-                    description: legacyTool.description || `Execute ${toolName}`,
-                    inputSchema: this.convertParametersToZodSchema(legacyTool.parameters || {}),
-                    execute: async (args) => {
-                        if (typeof legacyTool.execute === 'function') {
-                            return await legacyTool.execute(args);
-                        }
-                        return { error: `Tool ${toolName} execution function not found` };
-                    }
-                });
-            } catch (error) {
-                console.warn(`⚠️ 转换工具 ${toolName} 失败:`, error);
-                // 创建一个简单的后备工具
-                aisdkTools[toolName] = tool({
-                    description: `Fallback tool for ${toolName}`,
-                    inputSchema: z.object({}),
-                    execute: async () => ({ error: `Tool ${toolName} conversion failed` })
-                });
-            }
-        }
+        // 📜 Git 工具 (已经是AI SDK格式)
+        tools.git_status = gitStatusTool;
+        tools.git_log = gitLogTool;
+        tools.git_diff = gitDiffTool;
 
-        return aisdkTools;
-    }
+        // 🌐 Web 工具 
+        tools.web_search = webSearchTool;
+        tools.url_fetch = urlFetchTool;
 
-    /**
-     * 将传统参数格式转换为 Zod Schema
-     * @param parameters 传统参数定义
-     * @returns Zod Schema
-     */
-    private convertParametersToZodSchema(parameters: any): z.ZodSchema {
-        // 如果参数为空或未定义，返回空对象 schema
-        if (!parameters || typeof parameters !== 'object') {
-            return z.object({});
-        }
+        // 🔧 Shell 工具 - 需要创建并提取
+        const shellTools = createShellExecutorTool(new ConfigLoader());
+        tools.shell_executor = shellTools.execute;
+        tools.multi_command = shellTools.multiCommand;
 
-        // 如果参数是空对象，返回空对象 schema
-        if (Object.keys(parameters).length === 0) {
-            return z.object({});
-        }
+        // 🏁 任务完成工具
+        tools.finish = tool({
+            description: 'Mark the current task as completed',
+            inputSchema: z.object({}),
+            execute: async () => ({
+                success: true,
+                message: 'Task marked as finished',
+                completed: true
+            })
+        });
 
-        // 如果已经是 JSON Schema 或 Zod Schema，尝试直接使用
-        // 这是一个简单的后备，对于复杂的 schema 可能需要更详细的转换
-        try {
-            // 对于简单的对象格式，创建一个通用的 record schema
-            return z.record(z.string(), z.any());
-        } catch (error) {
-            console.warn('⚠️ 参数转换失败，使用通用 schema:', error);
-            return z.record(z.string(), z.any());
-        }
+        return tools;
     }
 
     /**
      * 获取内置工具数量
      */
     private getBuiltinToolsCount(): number {
-        return Object.keys(this.getBuiltinTools()).length;
-    }
-
-    /**
-     * 获取所有内置工具
-     * @returns 内置工具对象
-     */
-    private getBuiltinTools(): Record<string, any> {
-        return {
-            // 📝 SIMPLE FILE TOOLS
-            write_file: simpleFileTools.write_file,
-            amend_file: simpleFileTools.amend_file,
-            read_file: simpleFileTools.read_file,
-
-            // 🌐 WEB ACCESS TOOLS
-            web_search: createWebSearchTool(this.config),
-            url_fetch: createUrlFetchTool(this.config),
-
-            // 🔧 SHELL EXECUTION TOOLS  
-            shell_executor: this.createConfigurableShellTool(createShellExecutorTool(new ConfigLoader()).execute),
-            multi_command: this.createConfigurableShellTool(createShellExecutorTool(new ConfigLoader()).multiCommand),
-
-            // 🔍 CODE ANALYSIS TOOLS
-            find_files: findFilesTool,
-            search_in_files: searchInFilesTool,
-            find_functions: findFunctionsTool,
-            find_imports: findImportsTool,
-            get_project_structure: getProjectStructureTool,
-            analyze_code_structure: analyzeCodeStructureTool,
-
-            // 📜 GIT QUERY TOOLS (for information only)
-            git_status: gitStatusTool,
-            git_log: gitLogTool,
-            git_diff: gitDiffTool,
-
-            // 🏁 TASK COMPLETION
-            finish: {
-                id: 'finish',
-                name: 'Finish Task',
-                description: 'Mark the current task as completed',
-                parameters: {},
-                execute: async () => ({
-                    success: true,
-                    message: 'Task marked as finished',
-                    completed: true
-                })
-            }
-        };
-    }
-
-    /**
-     * 提取自定义上下文（用于重建时）
-     * @returns 自定义上下文字符串
-     */
-    private extractCustomContext(): string | undefined {
-        return this.config.customContext;
+        return Object.keys(this.getAISdkTools()).length;
     }
 
     /**
@@ -396,7 +303,7 @@ export class SimpleAgent {
         const staticProjectContext = this.simpleContextProvider.getStaticContext();
 
         // 获取可用工具列表
-        const availableTools = Object.keys(this.getBuiltinTools());
+        const availableTools = Object.keys(this.getAISdkTools());
 
         const baseInstructions = `You are a software development assistant with advanced reasoning capabilities.
 
@@ -493,7 +400,6 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         return baseInstructions;
     }
 
-
     /**
      * 获取工具描述
      * @param toolName 工具名称
@@ -553,23 +459,6 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         return { ...this.initializationStatus };
     }
 
-    // 创建可配置的Shell工具
-    private createConfigurableShellTool(baseTool: any) {
-        return {
-            ...baseTool,
-            execute: async (params: any) => {
-                // 应用配置中的超时设置
-                const configuredParams = {
-                    ...params,
-                    timeout: params.timeout || this.config.tools.shellExecutor.defaultTimeout,
-                    maxRetries: params.maxRetries || this.config.tools.shellExecutor.maxRetries
-                };
-
-                return baseTool.execute(configuredParams);
-            }
-        };
-    }
-
     /**
      * 获取模型显示名称
      * @returns 模型的显示名称
@@ -601,7 +490,6 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
             return `Sorry, I encountered an error while processing your query: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
     }
-
 
     /**
      * 生成响应（新的核心方法，供ReActAgent调用）
@@ -662,8 +550,7 @@ You are an intelligent reasoning agent. Think carefully, plan thoughtfully, and 
         }
 
         try {
-            // 执行工具 - AI SDK工具有不同的执行模式
-            // 我们需要直接调用工具的execute函数，因为AI SDK工具包装后的格式
+            // 执行工具 - AI SDK工具直接调用execute函数
             const result = await (tool as any).execute(args, progressCallback);
 
             // 执行成功，记录用于后续分析

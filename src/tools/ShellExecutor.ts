@@ -1,15 +1,13 @@
 import { exec, type ExecOptions } from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
+import { tool } from 'ai';
 import { CommandValidator, type CommandValidationResult } from '../security/CommandValidator.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
 import * as readline from 'readline';
 
 const execAsync = util.promisify(exec);
 
-/**
- * 简单的用户确认函数
- */
 async function getUserConfirmation(message: string): Promise<boolean> {
     const rl = readline.createInterface({
         input: process.stdin,
@@ -24,15 +22,9 @@ async function getUserConfirmation(message: string): Promise<boolean> {
     });
 }
 
-/**
- * 创建 Shell 执行器工具
- * @param configLoader 配置加载器实例
- * @returns Shell 执行器工具对象
- */
 export const createShellExecutorTool = (configLoader: ConfigLoader) => {
     const validator = new CommandValidator(configLoader);
 
-    // 兼容: 如果没有批量校验函数，则用单条校验拼装
     const validateCommands = (
         commands: string[],
     ): CommandValidationResult[] =>
@@ -41,34 +33,21 @@ export const createShellExecutorTool = (configLoader: ConfigLoader) => {
             : commands.map((c) => validator.validateCommand(c));
 
     return {
-        /** 单条命令执行器 */
-        execute: {
-            id: 'shell_executor',
-            name: 'Shell Executor',
+        execute: tool({
             description: `Execute shell commands directly. This is the PRIMARY tool for most operations.
-
 Use this for:
 - Git operations: git status, git add, git commit, git diff
 - File operations: find, grep, ls, cat, mkdir
 - Code analysis: tsc --noEmit, npm run lint, npm test
 - Package management: npm install, pnpm add
 - Any system command that helps with development
-
 IMPORTANT: Always explain what command you're running and why.`,
-            parameters: z.object({
+            inputSchema: z.object({
                 command: z.string().describe('The shell command to execute'),
-                description: z
-                    .string()
-                    .describe('Brief explanation of what this command does and why'),
-                workingDirectory: z
-                    .string()
-                    .optional()
-                    .describe('Directory to execute command in (default: current)'),
+                description: z.string().describe('Brief explanation of what this command does and why'),
+                workingDirectory: z.string().optional().describe('Directory to execute command in (default: current)'),
                 timeout: z.number().default(30000).describe('Timeout in milliseconds'),
-                captureError: z
-                    .boolean()
-                    .default(true)
-                    .describe('Whether to capture and return stderr'),
+                captureError: z.boolean().default(true).describe('Whether to capture and return stderr'),
             }),
             execute: async ({
                 command,
@@ -76,18 +55,11 @@ IMPORTANT: Always explain what command you're running and why.`,
                 workingDirectory,
                 timeout,
                 captureError,
-            }: {
-                command: string;
-                description: string;
-                workingDirectory?: string;
-                timeout: number;
-                captureError: boolean;
             }) => {
                 try {
                     // 1) 安全验证
                     const validationResult: CommandValidationResult =
                         validator.validateCommand(command);
-
                     if (!validationResult.allowed) {
                         return {
                             success: false as const,
@@ -154,52 +126,29 @@ IMPORTANT: Always explain what command you're running and why.`,
                     };
                 }
             },
-        },
+        }),
 
-        /** 多条命令顺序执行 */
-        multiCommand: {
-            id: 'multi_command',
-            name: 'Multi Command Executor',
+        multiCommand: tool({
             description: `Execute multiple shell commands in sequence. Use this for complex workflows.
-
 Examples:
 - Build and test: ["npm run build", "npm test"]
 - Git workflow: ["git add .", "git commit -m 'message'", "git push"]
 - Setup project: ["mkdir src", "npm init -y", "npm install typescript"]`,
-            parameters: z.object({
-                commands: z
-                    .array(
-                        z.object({
-                            command: z.string().describe('Shell command to execute'),
-                            description: z.string().describe('What this command does'),
-                            continueOnError: z
-                                .boolean()
-                                .default(false)
-                                .describe('Whether to continue if this command fails'),
-                        }),
-                    )
-                    .describe('Array of commands to execute in sequence'),
-                workingDirectory: z
-                    .string()
-                    .optional()
-                    .describe('Directory to execute commands in'),
-                stopOnFirstError: z
-                    .boolean()
-                    .default(true)
-                    .describe('Whether to stop execution on first error'),
+            inputSchema: z.object({
+                commands: z.array(
+                    z.object({
+                        command: z.string().describe('Shell command to execute'),
+                        description: z.string().describe('What this command does'),
+                        continueOnError: z.boolean().default(false).describe('Whether to continue if this command fails'),
+                    }),
+                ).describe('Array of commands to execute in sequence'),
+                workingDirectory: z.string().optional().describe('Directory to execute commands in'),
+                stopOnFirstError: z.boolean().default(true).describe('Whether to stop execution on first error'),
             }),
             execute: async ({
                 commands,
                 workingDirectory,
                 stopOnFirstError,
-            }: {
-                commands: Array<{
-                    command: string;
-                    description: string;
-                    continueOnError: boolean;
-                }>;
-                workingDirectory?: string;
-                stopOnFirstError: boolean;
             }) => {
                 const results: Array<{
                     command: string;
@@ -240,6 +189,7 @@ Examples:
                 const commandsList = commands
                     .map((cmd, idx) => `${idx + 1}. ${cmd.command} (${cmd.description})`)
                     .join('\n');
+
                 const confirmed = await getUserConfirmation(
                     `Execute ${commands.length} shell commands in sequence?\n\nCommands to execute:\n${commandsList}`
                 );
@@ -313,9 +263,6 @@ Examples:
                     cancelled: false,
                 };
             },
-        },
+        }),
     } as const;
 };
-
-// 注意：shellExecutorTool 和 multiCommandTool 已被移除
-// 请使用 createShellExecutorTool(configLoader) 代替

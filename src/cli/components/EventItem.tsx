@@ -1,8 +1,8 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { TextGeneratedEvent, UIEvent, UIEventType } from '../../events/index.js';
+import { UIEvent, UIEventType, TextGeneratedEvent, TaskCompletedEvent } from '../../events/index.js';
 import { useTheme } from '../themes/index.js';
-import { StatusIndicator } from './StatusIndicator.js';
+import { IndicatorType, StatusIndicator } from './StatusIndicator.js';
 
 interface EventItemProps {
   event: UIEvent;
@@ -42,13 +42,23 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
           timestamp: event.timestamp,
         };
 
+      case UIEventType.TaskComplete:
+        const taskCompleteEvent = event as TaskCompletedEvent;
+        const summaryPrefix = taskCompleteEvent.success ? 'Task Completed:' : 'Task Failed:';
+        return {
+          indicatorType: taskCompleteEvent.success ? 'system' : ('error' as const),
+          mainContent: `${summaryPrefix}\n${taskCompleteEvent.summary}`,
+          details: taskCompleteEvent.error ? `Error: ${taskCompleteEvent.error}` : null,
+          timestamp: event.timestamp,
+        };
+
       case UIEventType.ThoughtGenerated:
         const thoughtEvent = event as any;
-        const thoughtContent = thoughtEvent.thought.substring(0, 100) + (thoughtEvent.thought.length > 100 ? '...' : '');
+        const thoughtContent = detailMode ? thoughtEvent.thought : `${thoughtEvent.thought.substring(0, 100)}...`;
         return {
           indicatorType: 'assistant' as const,
           mainContent: `Thinking: ${thoughtContent}`,
-          details: thoughtEvent.context,
+          details: detailMode ? null : `Context: ${thoughtEvent.context}`,
           timestamp: event.timestamp,
         };
 
@@ -56,8 +66,8 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         const toolStartEvent = event as any;
         return {
           indicatorType: 'tool' as const,
-          mainContent: `Running ${toolStartEvent.toolName}(${JSON.stringify(toolStartEvent.args, null, 2)})`,
-          details: null,
+          mainContent: `Running ${toolStartEvent.toolName}`,
+          details: detailMode ? JSON.stringify(toolStartEvent.args, null, 2) : null,
           timestamp: event.timestamp,
           isActive: true,
         };
@@ -67,11 +77,10 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         const success = toolCompleteEvent.success;
         const resultText = success ? 'completed' : 'failed';
         const mainText = `Tool ${toolCompleteEvent.toolName} ${resultText}`;
-
         return {
           indicatorType: success ? ('tool' as const) : ('error' as const),
           mainContent: mainText,
-          details: success ? JSON.stringify(toolCompleteEvent.result, null, 2) : toolCompleteEvent.error,
+          details: detailMode ? (success ? JSON.stringify(toolCompleteEvent.result, null, 2) : toolCompleteEvent.error) : null,
           timestamp: event.timestamp,
         };
 
@@ -80,15 +89,16 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         return {
           indicatorType: sysEvent.level === 'error' ? ('error' as const) : ('system' as const),
           mainContent: sysEvent.message,
-          details: JSON.stringify(sysEvent.context, null, 2),
+          details: detailMode && sysEvent.context ? JSON.stringify(sysEvent.context, null, 2) : null,
           timestamp: event.timestamp,
         };
 
       default:
+        // Gracefully handle any other event types
         return {
           indicatorType: 'system' as const,
-          mainContent: `${event.type}`,
-          details: null,
+          mainContent: `Event: ${event.type}`,
+          details: detailMode ? JSON.stringify(event, null, 2) : null,
           timestamp: event.timestamp,
         };
     }
@@ -100,18 +110,17 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
     <Box flexDirection='column' marginBottom={1}>
       <Box>
         <Box marginRight={1}>
-          <StatusIndicator type={indicatorType} isActive={isActive} />
+          <StatusIndicator type={indicatorType as IndicatorType} isActive={isActive} />
         </Box>
         <Box marginRight={2}>
           <Text color={currentTheme.colors.text.muted}>[{formatTime(timestamp)}]</Text>
         </Box>
-        <Box flexGrow={1}>
+        <Box flexGrow={1} flexDirection='column'>
           <Text color={currentTheme.colors.text.primary}>{mainContent}</Text>
         </Box>
       </Box>
-
       {details && (
-        <Box marginLeft={2} marginTop={1}>
+        <Box marginLeft={4} marginTop={0}>
           <Text color={currentTheme.colors.text.secondary}>{details}</Text>
         </Box>
       )}

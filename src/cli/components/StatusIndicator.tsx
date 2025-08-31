@@ -2,7 +2,7 @@ import React from 'react';
 import { Text } from 'ink';
 import { useTheme } from '../themes/index.js';
 
-type IndicatorType = 'user' | 'assistant' | 'tool' | 'error' | 'system';
+export type IndicatorType = 'user' | 'assistant' | 'tool' | 'error' | 'system';
 
 interface StatusIndicatorProps {
   type: IndicatorType;

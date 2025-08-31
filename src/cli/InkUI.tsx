@@ -1,21 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { render, Text, Box, useInput } from 'ink';
-import { SessionService, TaskExecutionResult } from '../services/SessionService.js';
+import { SessionService } from '../services/SessionService.js';
 import { ThemeName, ThemeProvider, useTheme } from './themes/index.js';
 import { TaskContainer } from './components/TaskContainer.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
 import { ThemeSelector } from './components/ThemeSelector.js';
 import { DynamicInput } from './components/DynamicInput.js';
-import { SystemInfoEvent, UIEventType, ToolConfirmationResponseEvent } from '../events/index.js';
+import { useSessionEvents } from './hooks/useSessionEvents.js'; // <-- IMPORT THE NEW HOOK
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
-
-interface PendingConfirmation {
-  confirmationId: string;
-  toolName: string;
-  args: any;
-  description: string;
-}
 
 interface CodeAssistantAppProps {
   sessionService: SessionService;
@@ -25,10 +18,11 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   const { currentTheme, setTheme, availableThemes, themeName } = useTheme();
   const [appState, setAppState] = useState<AppState>('welcome');
   const [input, setInput] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [detailMode, setDetailMode] = useState<boolean>(false);
   const [ctrlCCount, setCtrlCCount] = useState<number>(0);
+
+  // Use the new hook as the single source of truth for event-driven state
+  const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation } = useSessionEvents(sessionService);
 
   const mask = (val?: string) => (val ? `${val.slice(0, 6)}…${val.slice(-4)}` : 'not set');
 
@@ -37,7 +31,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       const timer = setTimeout(() => setCtrlCCount(0), 2000);
       return () => clearTimeout(timer);
     }
-    return;
   }, [ctrlCCount]);
 
   useInput((inputChar: string, key: any) => {
@@ -54,27 +47,19 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       }
       return;
     }
-
     if (key.escape) {
-      if (isProcessing) {
-        sessionService.interrupt();
-        setIsProcessing(false);
-      }
+      if (isProcessing) sessionService.interrupt();
       return;
     }
-
     if (key.ctrl && inputChar === 'r') {
       setDetailMode((prev) => !prev);
       return;
     }
-
     if (appState === 'welcome') {
       setAppState('theme-selection');
       return;
     }
-
-    if (appState !== 'ready') return;
-
+    if (appState !== 'ready' || pendingConfirmation) return;
     if (key.ctrl && inputChar === 't') {
       const currentIndex = availableThemes.indexOf(themeName);
       const nextIndex = (currentIndex + 1) % availableThemes.length;
@@ -82,84 +67,16 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
     }
   });
 
-  useEffect(() => {
-    const eventEmitter = sessionService.events;
-    const subscription = eventEmitter.onAll((event) => {
-      if (event.type === UIEventType.TaskStart) setIsProcessing(true);
-      if (event.type === UIEventType.TaskComplete) setIsProcessing(false);
-      if (event.type === 'tool_confirmation_request') {
-        const confirmEvent = event as any;
-        setPendingConfirmation({
-          confirmationId: confirmEvent.confirmationId,
-          toolName: confirmEvent.toolName,
-          args: confirmEvent.args,
-          description: confirmEvent.description,
-        });
-      }
-      if (event.type === 'tool_confirmation_response') {
-        setPendingConfirmation(null);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [sessionService]);
-
   const handleWelcomeDismiss = useCallback(() => setAppState('theme-selection'), []);
   const handleThemeSelected = useCallback(() => setAppState('ready'), []);
-
-  const handleConfirmation = useCallback(
-    (confirmationId: string, approved: boolean) => {
-      if (pendingConfirmation?.confirmationId === confirmationId) {
-        sessionService.events.emit({
-          type: 'tool_confirmation_response',
-          confirmationId,
-          approved,
-        } as Omit<ToolConfirmationResponseEvent, 'id' | 'timestamp' | 'sessionId'>);
-        setPendingConfirmation(null);
-      }
-    },
-    [pendingConfirmation, sessionService],
-  );
-
-  const handleSpecialCommands = useCallback(
-    (inputCmd: string): boolean => {
-      // Logic for special commands like /help, /status etc. remains the same
-      const command = inputCmd.toLowerCase();
-      if (['/help', 'help'].includes(command)) {
-        return true;
-      }
-      if (['/status', 'status'].includes(command)) {
-        return true;
-      }
-      if (['/session', 'session'].includes(command)) {
-        return true;
-      }
-      if (command.startsWith('/theme')) {
-        return true;
-      }
-      if (['/clear', 'clear'].includes(command)) {
-        sessionService.clearSession();
-        return true;
-      }
-      if (['/exit', 'exit', 'quit'].includes(command)) {
-        sessionService.interrupt();
-        process.exit(0);
-      }
-      return false;
-    },
-    [sessionService, availableThemes, themeName, setTheme],
-  );
 
   const handleSubmit = useCallback(
     async (userInput: string) => {
       if (!userInput.trim() || isProcessing || pendingConfirmation) return;
-      if (handleSpecialCommands(userInput)) {
-        setInput('');
-        return;
-      }
       setInput('');
       await sessionService.processTask(userInput);
     },
-    [sessionService, isProcessing, handleSpecialCommands, pendingConfirmation],
+    [sessionService, isProcessing, pendingConfirmation],
   );
 
   if (appState === 'welcome') return <WelcomeScreen onDismiss={handleWelcomeDismiss} />;
@@ -179,7 +96,8 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         <Text color={currentTheme.colors.text.muted}>API Base URL: {process.env.API_BASE_URL || process.env.OPENAI_BASE_URL || 'not set'}</Text>
       </Box>
 
-      <TaskContainer sessionService={sessionService} detailMode={detailMode} />
+      {/* Pass state down as props */}
+      <TaskContainer events={events} isProcessing={isProcessing} currentActivity={currentActivity} detailMode={detailMode} />
 
       <Box marginTop={2} borderTop borderColor={currentTheme.colors.ui.border} paddingTop={1}>
         <DynamicInput value={input} onChange={setInput} onSubmit={handleSubmit} isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} />
@@ -201,15 +119,12 @@ export const startInkUI = async (sessionService: SessionService) => {
   console.log = silentConsole;
   console.info = silentConsole;
   console.warn = silentConsole;
-
   const exitFn = () => {
     Object.assign(console, originalConsole);
     sessionService.interrupt();
     process.exit(0);
   };
-
   process.on('SIGINT', exitFn);
   process.on('SIGTERM', exitFn);
-
   render(<CodeAssistantApp sessionService={sessionService} />, { patchConsole: false });
 };

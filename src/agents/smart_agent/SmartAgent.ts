@@ -212,7 +212,7 @@ Assistant:
     {
       "tool": "shell_executor",
       "args": {
-        "pattern": "ls -al"
+        "command": "ls -al"
       }
     }
   ],

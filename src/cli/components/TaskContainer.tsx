@@ -1,61 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../themes/index.js';
-import { UIEvent, UIEventType } from '../../events/index.js';
-import { SessionService } from '../../services/SessionService.js';
+import { UIEvent } from '../../events/index.js';
 import { EventStream } from './EventStream.js';
 import { ProgressIndicator } from './ProgressIndicator.js';
 
 interface TaskContainerProps {
-  children?: React.ReactNode;
-  sessionService: SessionService;
+  events: UIEvent[];
+  isProcessing: boolean;
+  currentActivity: string;
   detailMode: boolean;
+  children?: React.ReactNode;
 }
 
-export const TaskContainer: React.FC<TaskContainerProps> = ({ children, sessionService, detailMode }) => {
+export const TaskContainer: React.FC<TaskContainerProps> = ({ events, isProcessing, currentActivity, detailMode, children }) => {
   const { currentTheme } = useTheme();
-  const [events, setEvents] = useState<UIEvent[]>([]);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [currentActivity, setCurrentActivity] = useState<string>('');
-
-  useEffect(() => {
-    const eventEmitter = sessionService.events;
-    let eventBuffer: UIEvent[] = [];
-    let batchTimeout: NodeJS.Timeout | null = null;
-
-    const flushEvents = () => {
-      if (eventBuffer.length > 0) {
-        setEvents((prev) => [...prev, ...eventBuffer]);
-        eventBuffer = [];
-      }
-      batchTimeout = null;
-    };
-
-    const subscription = eventEmitter.onAll((event: UIEvent) => {
-      eventBuffer.push(event);
-      if (batchTimeout) {
-        clearTimeout(batchTimeout);
-      }
-      batchTimeout = setTimeout(flushEvents, 16);
-
-      if (event.type === UIEventType.TaskStart) {
-        setIsProcessing(true);
-        setCurrentActivity('Processing...');
-      }
-      if (event.type === UIEventType.TaskComplete) {
-        setIsProcessing(false);
-        setCurrentActivity('');
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-      if (batchTimeout) {
-        clearTimeout(batchTimeout);
-      }
-      flushEvents();
-    };
-  }, [sessionService]);
 
   return (
     <Box flexDirection='column'>

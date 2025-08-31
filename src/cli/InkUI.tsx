@@ -78,7 +78,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
       )}
 
       <Box marginTop={1} paddingTop={1}>
-        <DynamicInput onSubmit={handleSubmit} placeholder='Ask me anything or type /help for help...' isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} />
+        <DynamicInput onSubmit={handleSubmit} isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} />
       </Box>
     </Box>
   );

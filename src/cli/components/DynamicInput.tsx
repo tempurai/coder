@@ -12,7 +12,6 @@ interface ConfirmationData {
 
 interface DynamicInputProps {
   onSubmit: (value: string) => void;
-  placeholder: string;
   isProcessing: boolean;
   confirmationData?: ConfirmationData | null;
   onConfirm?: (confirmationId: string, approved: boolean) => void;
@@ -20,7 +19,7 @@ interface DynamicInputProps {
 
 type ConfirmationChoice = 'yes' | 'no';
 
-export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, placeholder, isProcessing, confirmationData, onConfirm }) => {
+export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessing, confirmationData, onConfirm }) => {
   const { currentTheme } = useTheme();
 
   const [input, setInput] = useState('');
@@ -119,7 +118,7 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, placeholde
           {!isProcessing ? (
             <Box flexGrow={1} marginLeft={1}>
               <Text color={currentTheme.colors.text.primary}>
-                <TextInput value={input} onChange={setInput} onSubmit={handleInternalSubmit} placeholder={placeholder} showCursor={true} />
+                <TextInput value={input} onChange={setInput} onSubmit={handleInternalSubmit} showCursor={true} />
               </Text>
             </Box>
           ) : (

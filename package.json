@@ -67,5 +67,20 @@
     "socket.io": "^4.8.1",
     "undici": "^7.15.0",
     "zod": "^3.25.76"
+  },
+  "prettier": {
+    "useTabs": false,
+    "tabWidth": 2,
+    "overrides": [
+      {
+        "files": [
+          "*.ts",
+          "*.tsx"
+        ],
+        "options": {
+          "tabWidth": 4
+        }
+      }
+    ]
   }
 }

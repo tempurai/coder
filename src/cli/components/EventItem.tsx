@@ -44,7 +44,7 @@ export const EventItem: React.FC<EventItemProps> = React.memo(({ event, index, d
 
       case UIEventType.TaskComplete:
         const taskCompleteEvent = event as TaskCompletedEvent;
-        const summaryPrefix = taskCompleteEvent.success ? '✅ Task Completed:' : '❌ Task Failed:';
+        const summaryPrefix = taskCompleteEvent.success ? 'Task Completed' : 'Task Failed';
         return {
           indicatorType: taskCompleteEvent.success ? ('system' as const) : ('error' as const),
           mainContent: `${summaryPrefix}\n${taskCompleteEvent.summary}`,

@@ -10,41 +10,36 @@ import { z, ZodSchema } from "zod";
 import { TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
 
 export const PlanningResponseSchema = z.object({
-    analysis: z.string().describe("Analysis of the task complexity and requirements"),
-    approach: z.string().describe("Overall approach to solve this task"),
-    todos: z.array(z.object({
-        title: z.string().describe("Title of the todo item"),
-        description: z.string().describe("Detailed description of the todo item"),
-        priority: z.enum(['high', 'medium', 'low']).describe("Priority level of the todo item"),
-        estimatedEffort: z.number().min(1).max(10).describe("Estimated effort to complete the todo item"),
-        context: z.any().optional().describe("Any additional context or information relevant to the todo item")
-    })),
-    needsPlanning: z.boolean().describe("Whether this task requires structured planning with todos")
+  analysis: z.string().describe("Analysis of the task complexity and requirements"),
+  approach: z.string().describe("Overall approach to solve this task"),
+  todos: z.array(z.object({
+    title: z.string().describe("Title of the todo item"),
+    description: z.string().describe("Detailed description of the todo item"),
+    priority: z.enum(['high', 'medium', 'low']).describe("Priority level of the todo item"),
+    estimatedEffort: z.number().min(1).max(10).describe("Estimated effort to complete the todo item"),
+    context: z.any().optional().describe("Any additional context or information relevant to the todo item")
+  })),
+  needsPlanning: z.boolean().describe("Whether this task requires structured planning with todos")
 });
 
 export type PlanningResponse = z.infer<typeof PlanningResponseSchema>;
 
 export const PLANNING_PROMPT = `
 You are the task planner for Tempurai Code. Your job is to analyze the user's request and create an execution plan.  
-
 # Your Role
 - Analyze the complexity and requirements of the task.  
 - Define a clear solution strategy.  
 - Break down the task into concrete business-oriented goals.  
 - Decide whether structured planning is required.  
-
 # Todo Granularity Guidelines
 A **good todo item** should describe a clear business-level goal, not an implementation detail.  
-
 **Good examples**:
 - "Analyze the JWT implementation logic in src/auth.ts"
 - "Add a rate-limiting middleware to the API routes"
 - "Fix TypeScript type errors in the login component"
 - "Create a utility function for user permission validation"
-
 **Bad examples**:
 - "Run a shell command" (too vague and low-level): 'ls -la', 'cat file.txt'
-
 # Response Format
 You must respond in this JSON format:
 \`\`\`json
@@ -63,23 +58,20 @@ You must respond in this JSON format:
   "needsPlanning": true/false
 }
 \`\`\`
-
 # Deciding if Planning is Needed
 - **needsPlanning = true**: The task involves multiple steps, touches multiple files, or requires complex refactoring.  
 - **needsPlanning = false**: The task is simple (e.g., a quick query, a single file edit, or a small check).  
-
-Analyze the user’s task and output the planning JSON.
+Analyze the user's task and output the planning JSON.
 `;
 
-
 export const SmartAgentResponseSchema = z.object({
-    reasoning: z.string().describe("Description of the reasoning behind the chosen actions"),
-    actions: z.array(z.object({
-        tool: z.string().describe("Name of the tool to be invoked"),
-        args: z.record(z.any()).default({})
-    })).describe("Array of tools to execute in sequence"),
-    finished: z.boolean().default(false),
-    result: z.string().optional().describe("Final result summary when finished=true")
+  reasoning: z.string().describe("Description of the reasoning behind the chosen actions"),
+  actions: z.array(z.object({
+    tool: z.string().describe("Name of the tool to be invoked"),
+    args: z.record(z.any()).default({})
+  })).describe("Array of tools to execute in sequence"),
+  finished: z.boolean().default(false),
+  result: z.string().optional().describe("Final result summary when finished=true")
 });
 
 export type SmartAgentResponse = z.infer<typeof SmartAgentResponseSchema>;
@@ -93,6 +85,16 @@ You are a professional, capable coding assistant that excels at:
 - Writing, modifying, and debugging code with precision.
 - Following established project conventions and best practices.
 - Managing multi-step tasks through intelligent planning.
+
+# Context Awareness
+You may receive previous conversation history in your messages. Use this context to:
+- Understand ongoing tasks and user preferences from past interactions
+- Maintain consistency with previous decisions and established patterns
+- Reference earlier discussions and build upon previous work
+- Avoid repeating work that has already been completed
+- Continue multi-session tasks seamlessly
+
+When you see previous messages in the conversation history, treat them as continuous context for understanding the current request and user's working style.
 
 # Core Mandates
 - **Conventions First**: Rigorously analyze existing code style, naming patterns, and architectural decisions before making any changes. Read surrounding code, configuration files, and documentation to understand established patterns.
@@ -178,7 +180,6 @@ Always respond with valid JSON containing your reasoning and actions array:
 **Important**: Set "finished": true and provide "result" ONLY when the entire user request has been completely fulfilled and all todos are marked as 'completed'. The "result" field should contain a concise summary of what was accomplished.
 
 # Example Interactions
-
 **Example 1: Project Analysis**
 User: "What is this project about?"
 Assistant:
@@ -338,324 +339,331 @@ Assistant:
 
 Remember: You are a capable, intelligent assistant focused on helping users achieve their software engineering goals efficiently and safely. Your adherence to structured planning via \`todo_manager\` and shell-first approach for exploration is paramount.`;
 
-
 export type SmartAgentExecutionResult = {
-    state: 'finished' | 'waiting_for_user' | 'error' | 'interrupted';
-    error?: string;
+  state: 'finished' | 'waiting_for_user' | 'error' | 'interrupted';
+  error?: string;
 };
 
 export interface SmartAgentIteration extends SmartAgentResponse {
-    iteration: number;
-    observation: string;
-    toolResults: Array<{
-        tool: string;
-        args: any;
-        result?: any;
-        error?: string;
-        duration?: number;
-    }>;
-    timestamp: Date;
+  iteration: number;
+  observation: string;
+  toolResults: Array<{
+    tool: string;
+    args: any;
+    result?: any;
+    error?: string;
+    duration?: number;
+  }>;
+  timestamp: Date;
 }
 
 export interface TaskResult {
-    success: boolean;
-    taskDescription: string;
-    summary: string;
-    iterations: number;
-    duration: number;
-    error?: string;
-    finalResult?: string;
+  success: boolean;
+  taskDescription: string;
+  summary: string;
+  iterations: number;
+  duration: number;
+  error?: string;
+  finalResult?: string;
 }
-
 
 @injectable()
 export class SmartAgent {
-    private maxIterations: number;
-    private conversationHistory: Messages = [];
-    private todoManager: TodoManager;
-    private orchestrator: AgentOrchestrator;
+  private maxIterations: number;
+  private iterationHistory: Messages = [];
+  private todoManager: TodoManager;
+  private orchestrator: AgentOrchestrator;
 
-    constructor(
-        @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
-        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
-        @inject(TYPES.InterruptService) private interruptService: InterruptService,
-        maxIterations: number = 50
-    ) {
-        this.maxIterations = maxIterations;
-        this.todoManager = new TodoManager(eventEmitter);
-        this.orchestrator = new AgentOrchestrator(toolAgent, eventEmitter);
+  constructor(
+    @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
+    @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
+    @inject(TYPES.InterruptService) private interruptService: InterruptService,
+    maxIterations: number = 50
+  ) {
+    this.maxIterations = maxIterations;
+    this.todoManager = new TodoManager(eventEmitter);
+    this.orchestrator = new AgentOrchestrator(toolAgent, eventEmitter);
+  }
+
+  async runTask(initialQuery: string, sessionHistory: Messages = []): Promise<TaskResult> {
+    const startTime = Date.now();
+    const iterations: SmartAgentIteration[] = [];
+    this.iterationHistory = [];
+
+    console.log(`Starting intelligent task execution: ${initialQuery}`);
+
+    try {
+      const executionResult = await this.executeMainLoop(initialQuery, sessionHistory, iterations);
+      const duration = Date.now() - startTime;
+      return this.buildTaskResult(initialQuery, iterations, executionResult, duration);
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return {
+        success: false,
+        taskDescription: initialQuery,
+        summary: `Task failed: ${errorMessage}`,
+        iterations: iterations.length,
+        duration,
+        error: errorMessage
+      };
     }
+  }
 
-    async runTask(initialQuery: string): Promise<TaskResult> {
-        const startTime = Date.now();
-        const iterations: SmartAgentIteration[] = [];
-        this.conversationHistory = [];
+  private async executeMainLoop(
+    initialQuery: string,
+    sessionHistory: Messages,
+    iterations: SmartAgentIteration[]
+  ): Promise<SmartAgentExecutionResult> {
+    let iteration = 0;
+    let currentObservation = `Task: ${initialQuery}`;
+    let finished = false;
 
-        console.log(`Starting intelligent task execution: ${initialQuery}`);
+    while (!finished && iteration < this.maxIterations) {
+      if (this.interruptService.isInterrupted()) {
+        console.log('Task execution interrupted by user');
+        return { state: 'interrupted' };
+      }
 
-        try {
-            const executionResult = await this.executeMainLoop(initialQuery, iterations);
-            const duration = Date.now() - startTime;
+      iteration++;
+      console.log(`Smart Agent Iteration ${iteration}/${this.maxIterations}`);
 
-            return this.buildTaskResult(initialQuery, iterations, executionResult, duration);
-        } catch (error) {
-            const duration = Date.now() - startTime;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            return {
-                success: false,
-                taskDescription: initialQuery,
-                summary: `Task failed: ${errorMessage}`,
-                iterations: iterations.length,
-                duration,
-                error: errorMessage
-            };
+      const iterationResult = await this.executeSingleIteration(
+        iteration,
+        currentObservation,
+        sessionHistory
+      );
+
+      // Check for loops every 5 iterations
+      if (iteration % 5 === 0) {
+        const loopDetection = await this.orchestrator.detectLoop(this.iterationHistory);
+        if (loopDetection.isLoop) {
+          console.log(`Loop detected: ${loopDetection.description}`);
+          // Create error iteration
+          const errorIteration: SmartAgentIteration = {
+            ...iterationResult,
+            finished: true,
+            toolResults: [{ tool: 'error', args: {}, error: loopDetection.description || 'Repetitive behavior detected' }]
+          };
+          iterations.push(errorIteration);
+          break;
         }
-    }
+      }
 
-    private async executeMainLoop(
-        initialQuery: string,
-        iterations: SmartAgentIteration[]
-    ): Promise<SmartAgentExecutionResult> {
-        let iteration = 0;
-        let currentObservation = `Task: ${initialQuery}`;
-        let finished = false;
+      iterations.push(iterationResult);
+      finished = iterationResult.finished;
 
-        while (!finished && iteration < this.maxIterations) {
-            if (this.interruptService.isInterrupted()) {
-                console.log('Task execution interrupted by user');
-                return { state: 'interrupted' };
-            }
-
-            iteration++;
-            console.log(`Smart Agent Iteration ${iteration}/${this.maxIterations}`);
-
-            const iterationResult = await this.executeSingleIteration(iteration, currentObservation);
-
-            // Check for loops every 5 iterations
-            if (iteration % 5 === 0) {
-                const loopDetection = await this.orchestrator.detectLoop(this.conversationHistory);
-                if (loopDetection.isLoop) {
-                    console.log(`Loop detected: ${loopDetection.description}`);
-                    // Create error iteration
-                    const errorIteration: SmartAgentIteration = {
-                        ...iterationResult,
-                        finished: true,
-                        toolResults: [{ tool: 'error', args: {}, error: loopDetection.description || 'Repetitive behavior detected' }]
-                    };
-                    iterations.push(errorIteration);
-                    break;
-                }
-            }
-
-            iterations.push(iterationResult);
-            finished = iterationResult.finished;
-
-            // If task is finished, send final result to UI
-            if (finished && iterationResult.result) {
-                this.eventEmitter.emit({
-                    type: 'text_generated',
-                    text: iterationResult.result,
-                } as TextGeneratedEvent);
-                break;
-            }
-
-            // Update observation for next iteration
-            const actionResults = iterationResult.toolResults
-                .map(tr => `${tr.tool}: ${tr.result ? JSON.stringify(tr.result) : tr.error}`)
-                .join('; ');
-            currentObservation = `Previous actions: ${actionResults}`;
-
-            if (!finished) {
-                const shouldContinue = await this.orchestrator.shouldContinue(this.conversationHistory, currentObservation);
-                if (!shouldContinue) {
-                    return { state: 'waiting_for_user' };
-                }
-            }
-
-            // Check for too many consecutive errors
-            const recentErrors = iterations.slice(-3).filter(it => it.toolResults.some(tr => tr.error)).length;
-            if (recentErrors >= 2) {
-                console.error('Too many consecutive errors, terminating');
-                return { state: 'error', error: 'Too many consecutive errors' };
-            }
-        }
-
-        return { state: 'finished' };
-    }
-
-    private async executeSingleIteration(iteration: number, observation: string): Promise<SmartAgentIteration> {
-        try {
-            if (this.interruptService.isInterrupted()) {
-                return {
-                    iteration,
-                    observation,
-                    reasoning: 'Task interrupted by user',
-                    actions: [{ tool: 'interrupt', args: {} }],
-                    finished: true,
-                    toolResults: [{ tool: 'interrupt', args: {}, result: 'Task interrupted' }],
-                    timestamp: new Date()
-                };
-            }
-
-            const messages: Messages = [
-                { role: 'system', content: SMART_AGENT_PROMPT },
-                ...this.conversationHistory,
-                { role: 'user', content: `Current observation: ${observation}` }
-            ];
-
-            const response = await this.toolAgent.generateObject<SmartAgentResponse>({
-                messages,
-                schema: SmartAgentResponseSchema as ZodSchema<SmartAgentResponse>
-            });
-
-            this.eventEmitter.emit({
-                type: 'thought_generated',
-                iteration,
-                thought: response.reasoning,
-                context: observation,
-            } as ThoughtGeneratedEvent);
-
-            // Update conversation history
-            this.conversationHistory.push(
-                { role: 'user', content: `Observation: ${observation}` },
-                { role: 'assistant', content: JSON.stringify(response, null, 2) }
-            );
-
-            // Execute all actions and collect results
-            const toolResults: SmartAgentIteration['toolResults'] = [];
-
-            if (!response.finished) {
-                for (const action of response.actions) {
-                    const toolResult = await this.executeToolSafely(iteration, action);
-                    toolResults.push({
-                        tool: action.tool,
-                        args: action.args,
-                        result: toolResult.result,
-                        error: toolResult.error,
-                        duration: toolResult.duration
-                    });
-                }
-            }
-
-            return {
-                ...response,
-                iteration,
-                observation,
-                toolResults,
-                timestamp: new Date()
-            };
-
-        } catch (iterationError) {
-            const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
-            console.error(`Iteration ${iteration} failed: ${errorMessage}`);
-
-            return {
-                iteration,
-                observation,
-                reasoning: 'Iteration error occurred',
-                actions: [{ tool: 'error', args: {} }],
-                finished: true,
-                toolResults: [{ tool: 'error', args: {}, error: errorMessage }],
-                timestamp: new Date()
-            };
-        }
-    }
-
-    private async executeToolSafely(iteration: number, action: { tool: string, args: any }): Promise<{
-        result?: any,
-        error?: string,
-        duration?: number
-    }> {
-        if (this.interruptService.isInterrupted()) {
-            return { error: 'Tool execution interrupted by user' };
-        }
-
+      // If task is finished, send final result to UI
+      if (finished && iterationResult.result) {
         this.eventEmitter.emit({
-            type: 'tool_execution_started',
-            iteration,
-            toolName: action.tool,
-            args: action.args,
-        } as ToolExecutionStartedEvent);
+          type: 'text_generated',
+          text: iterationResult.result,
+        } as TextGeneratedEvent);
+        break;
+      }
 
-        try {
-            const toolStartTime = Date.now();
-            const toolResult = await this.toolAgent.executeTool(action.tool, action.args);
-            const toolDuration = Date.now() - toolStartTime;
+      // Update observation for next iteration
+      const actionResults = iterationResult.toolResults
+        .map(tr => `${tr.tool}: ${tr.result ? JSON.stringify(tr.result) : tr.error}`)
+        .join('; ');
+      currentObservation = `Previous actions: ${actionResults}`;
 
-            this.eventEmitter.emit({
-                type: 'tool_execution_completed',
-                iteration,
-                toolName: action.tool,
-                success: true,
-                result: toolResult,
-                duration: toolDuration,
-            } as ToolExecutionCompletedEvent);
-
-            return { result: toolResult, duration: toolDuration };
-        } catch (toolError) {
-            const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
-
-            this.eventEmitter.emit({
-                type: 'tool_execution_completed',
-                iteration,
-                toolName: action.tool,
-                success: false,
-                error: errorMessage,
-                duration: 0,
-            } as ToolExecutionCompletedEvent);
-
-            return { error: errorMessage };
+      if (!finished) {
+        const shouldContinue = await this.orchestrator.shouldContinue(this.iterationHistory, currentObservation);
+        if (!shouldContinue) {
+          return { state: 'waiting_for_user' };
         }
+      }
+
+      // Check for too many consecutive errors
+      const recentErrors = iterations.slice(-3).filter(it => it.toolResults.some(tr => tr.error)).length;
+      if (recentErrors >= 2) {
+        console.error('Too many consecutive errors, terminating');
+        return { state: 'error', error: 'Too many consecutive errors' };
+      }
     }
 
-    private buildTaskResult(
-        initialQuery: string,
-        iterations: SmartAgentIteration[],
-        executionResult: SmartAgentExecutionResult,
-        duration: number
-    ): TaskResult {
-        const success = executionResult.state === 'finished' && !executionResult.error &&
-            iterations.some(it => it.finished && !it.toolResults.some(tr => tr.error));
+    return { state: 'finished' };
+  }
 
-        let summary: string;
-        let finalResult: string | undefined;
-
-        if (success && iterations.length > 0) {
-            const lastIteration = iterations[iterations.length - 1];
-            finalResult = lastIteration.result;
-            summary = finalResult || 'Task completed successfully';
-        } else {
-            switch (executionResult.state) {
-                case 'interrupted':
-                    summary = 'Task interrupted by user.';
-                    break;
-                case 'waiting_for_user':
-                    summary = 'Paused: waiting for user input/confirmation.';
-                    break;
-                case 'error':
-                    summary = executionResult.error || 'Task failed due to errors';
-                    break;
-                default:
-                    summary = iterations.length >= this.maxIterations ? 'Maximum iterations reached' : 'Task failed';
-            }
-        }
-
+  private async executeSingleIteration(
+    iteration: number,
+    observation: string,
+    sessionHistory: Messages
+  ): Promise<SmartAgentIteration> {
+    try {
+      if (this.interruptService.isInterrupted()) {
         return {
-            success,
-            taskDescription: initialQuery,
-            summary,
-            iterations: iterations.length,
-            duration,
-            error: success ? undefined : (executionResult.error || summary),
-            finalResult
+          iteration,
+          observation,
+          reasoning: 'Task interrupted by user',
+          actions: [{ tool: 'interrupt', args: {} }],
+          finished: true,
+          toolResults: [{ tool: 'interrupt', args: {}, result: 'Task interrupted' }],
+          timestamp: new Date()
         };
+      }
+
+      const messages: Messages = [
+        { role: 'system', content: SMART_AGENT_PROMPT },
+        ...sessionHistory,
+        ...this.iterationHistory,
+        { role: 'user', content: `Current observation: ${observation}` }
+      ];
+
+      const response = await this.toolAgent.generateObject<SmartAgentResponse>({
+        messages,
+        schema: SmartAgentResponseSchema as ZodSchema<SmartAgentResponse>
+      });
+
+      this.eventEmitter.emit({
+        type: 'thought_generated',
+        iteration,
+        thought: response.reasoning,
+        context: observation,
+      } as ThoughtGeneratedEvent);
+
+      // Update iteration history
+      this.iterationHistory.push(
+        { role: 'user', content: `Observation: ${observation}` },
+        { role: 'assistant', content: JSON.stringify(response, null, 2) }
+      );
+
+      // Execute all actions and collect results
+      const toolResults: SmartAgentIteration['toolResults'] = [];
+      if (!response.finished) {
+        for (const action of response.actions) {
+          const toolResult = await this.executeToolSafely(iteration, action);
+          toolResults.push({
+            tool: action.tool,
+            args: action.args,
+            result: toolResult.result,
+            error: toolResult.error,
+            duration: toolResult.duration
+          });
+        }
+      }
+
+      return {
+        ...response,
+        iteration,
+        observation,
+        toolResults,
+        timestamp: new Date()
+      };
+
+    } catch (iterationError) {
+      const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
+      console.error(`Iteration ${iteration} failed: ${errorMessage}`);
+
+      return {
+        iteration,
+        observation,
+        reasoning: 'Iteration error occurred',
+        actions: [{ tool: 'error', args: {} }],
+        finished: true,
+        toolResults: [{ tool: 'error', args: {}, error: errorMessage }],
+        timestamp: new Date()
+      };
+    }
+  }
+
+  private async executeToolSafely(iteration: number, action: { tool: string, args: any }): Promise<{
+    result?: any,
+    error?: string,
+    duration?: number
+  }> {
+    if (this.interruptService.isInterrupted()) {
+      return { error: 'Tool execution interrupted by user' };
     }
 
-    public initializeTools(): void {
-        const todoTool = this.todoManager.createTool();
-        this.toolAgent.registerTool('todo_manager', todoTool);
+    this.eventEmitter.emit({
+      type: 'tool_execution_started',
+      iteration,
+      toolName: action.tool,
+      args: action.args,
+    } as ToolExecutionStartedEvent);
 
-        const subAgentTool = createSubAgentTool(this.toolAgent, this.eventEmitter);
-        this.toolAgent.registerTool('start_subagent', subAgentTool);
+    try {
+      const toolStartTime = Date.now();
+      const toolResult = await this.toolAgent.executeTool(action.tool, action.args);
+      const toolDuration = Date.now() - toolStartTime;
+
+      this.eventEmitter.emit({
+        type: 'tool_execution_completed',
+        iteration,
+        toolName: action.tool,
+        success: true,
+        result: toolResult,
+        duration: toolDuration,
+      } as ToolExecutionCompletedEvent);
+
+      return { result: toolResult, duration: toolDuration };
+
+    } catch (toolError) {
+      const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
+
+      this.eventEmitter.emit({
+        type: 'tool_execution_completed',
+        iteration,
+        toolName: action.tool,
+        success: false,
+        error: errorMessage,
+        duration: 0,
+      } as ToolExecutionCompletedEvent);
+
+      return { error: errorMessage };
     }
+  }
+
+  private buildTaskResult(
+    initialQuery: string,
+    iterations: SmartAgentIteration[],
+    executionResult: SmartAgentExecutionResult,
+    duration: number
+  ): TaskResult {
+    const success = executionResult.state === 'finished' && !executionResult.error &&
+      iterations.some(it => it.finished && !it.toolResults.some(tr => tr.error));
+
+    let summary: string;
+    let finalResult: string | undefined;
+
+    if (success && iterations.length > 0) {
+      const lastIteration = iterations[iterations.length - 1];
+      finalResult = lastIteration.result;
+      summary = finalResult || 'Task completed successfully';
+    } else {
+      switch (executionResult.state) {
+        case 'interrupted':
+          summary = 'Task interrupted by user.';
+          break;
+        case 'waiting_for_user':
+          summary = 'Paused: waiting for user input/confirmation.';
+          break;
+        case 'error':
+          summary = executionResult.error || 'Task failed due to errors';
+          break;
+        default:
+          summary = iterations.length >= this.maxIterations ? 'Maximum iterations reached' : 'Task failed';
+      }
+    }
+
+    return {
+      success,
+      taskDescription: initialQuery,
+      summary,
+      iterations: iterations.length,
+      duration,
+      error: success ? undefined : (executionResult.error || summary),
+      finalResult
+    };
+  }
+
+  public initializeTools(): void {
+    const todoTool = this.todoManager.createTool();
+    this.toolAgent.registerTool('todo_manager', todoTool);
+
+    const subAgentTool = createSubAgentTool(this.toolAgent, this.eventEmitter);
+    this.toolAgent.registerTool('start_subagent', subAgentTool);
+  }
 }

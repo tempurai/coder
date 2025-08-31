@@ -5,7 +5,7 @@ import { injectable, inject } from 'inversify';
 import { TYPES } from '../di/types.js';
 import { ISnapshotManagerFactory } from '../di/interfaces.js';
 import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent, TextGeneratedEvent } from '../events/index.js';
-import { ToolAgent } from '../agents/tool_agent/ToolAgent.js';
+import { ToolAgent, Messages } from '../agents/tool_agent/ToolAgent.js';
 import { InterruptService } from './InterruptService.js';
 
 export interface TaskExecutionResult {
@@ -19,29 +19,8 @@ export interface TaskExecutionResult {
     finalResult?: string;
 }
 
-export interface ProcessedInput {
-    originalInput: string;
-    extractedFilePaths: string[];
-    hasFileReferences: boolean;
-    timestamp: Date;
-    inputLength: number;
-    wordCount: number;
-}
-
-export interface SessionHistoryItem {
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: Date;
-    metadata?: {
-        filePaths?: string[];
-        duration?: number;
-        tokenCount?: number;
-    };
-}
-
 export interface SessionStats {
     totalInteractions: number;
-    totalTokensUsed: number;
     averageResponseTime: number;
     uniqueFilesAccessed: number;
     watchedFilesCount: number;
@@ -55,10 +34,9 @@ export interface SessionStats {
 
 @injectable()
 export class SessionService {
-    private sessionHistory: SessionHistoryItem[] = [];
+    private conversationHistory: Messages = [];
     private sessionStartTime: Date;
     private uniqueFilesAccessed: Set<string> = new Set();
-    private totalTokensUsed: number = 0;
     private totalResponseTime: number = 0;
     private interactionCount: number = 0;
     private messageQueue: string[] = [];
@@ -85,7 +63,6 @@ export class SessionService {
     }
 
     async processTask(query: string): Promise<TaskExecutionResult> {
-        // Handle concurrent task requests
         if (this.isTaskRunning) {
             this.queueMessage(query);
             return {
@@ -100,8 +77,12 @@ export class SessionService {
 
         this.isTaskRunning = true;
         this.interruptService.startTask();
+
         const startTime = Date.now();
         console.log('\n🚀 开始处理任务...');
+
+        // 添加用户输入到会话历史
+        this.conversationHistory.push({ role: 'user', content: query });
 
         this.eventEmitter.emit({
             type: 'task_started',
@@ -112,7 +93,6 @@ export class SessionService {
         try {
             const snapshotManager = await this.createSnapshotManager(process.cwd());
             console.log('📸 创建任务开始前的快照...');
-
             const snapshotResult = await snapshotManager.createSnapshot(
                 `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
             );
@@ -121,7 +101,6 @@ export class SessionService {
                 console.error('❌ 快照创建失败:', snapshotResult.error);
                 const errorMessage = 'Failed to create safety snapshot: ' + snapshotResult.error;
 
-                // Send error message to UI
                 this.eventEmitter.emit({
                     type: 'text_generated',
                     text: errorMessage,
@@ -149,7 +128,14 @@ export class SessionService {
             smartAgent.initializeTools();
 
             console.log('🔄 开始SmartAgent推理循环...');
-            const taskResult = await smartAgent.runTask(query);
+            // 传递会话历史给SmartAgent
+            const taskResult = await smartAgent.runTask(query, [...this.conversationHistory]);
+
+            // 添加助手响应到会话历史
+            this.conversationHistory.push({
+                role: 'assistant',
+                content: taskResult.finalResult || taskResult.summary
+            });
 
             const finalResult: TaskExecutionResult = {
                 success: taskResult.success,
@@ -164,12 +150,6 @@ export class SessionService {
 
             this.interactionCount++;
             this.totalResponseTime += finalResult.duration;
-
-            this.addToHistory('user', query);
-            this.addToHistory('assistant', finalResult.summary, {
-                duration: finalResult.duration,
-                tokenCount: this.estimateTokenCount(finalResult.summary)
-            });
 
             const duration = Date.now() - startTime;
             console.log(`\n✅ 任务处理完成: ${finalResult.success ? '成功' : '失败'} (${duration}ms)`);
@@ -190,7 +170,6 @@ export class SessionService {
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
             console.error(`💥 ${errorMessage}`);
 
-            // Send error message to UI
             this.eventEmitter.emit({
                 type: 'text_generated',
                 text: errorMessage,
@@ -215,6 +194,7 @@ export class SessionService {
         try {
             const snapshotManager = await this.createSnapshotManager(process.cwd());
             const restoreResult = await snapshotManager.restoreSnapshot(snapshotId);
+
             if (restoreResult.success) {
                 console.log(`✅ 快照恢复成功`);
                 return { success: true };
@@ -240,7 +220,6 @@ export class SessionService {
 
         return {
             totalInteractions: this.interactionCount,
-            totalTokensUsed: this.totalTokensUsed,
             averageResponseTime: this.interactionCount > 0
                 ? Math.round(this.totalResponseTime / this.interactionCount)
                 : 0,
@@ -266,37 +245,11 @@ export class SessionService {
     }
 
     clearSession(): void {
-        this.sessionHistory = [];
+        this.conversationHistory = [];
         this.uniqueFilesAccessed.clear();
-        this.totalTokensUsed = 0;
         this.totalResponseTime = 0;
         this.interactionCount = 0;
         this.sessionStartTime = new Date();
-    }
-
-    private addToHistory(
-        role: 'user' | 'assistant',
-        content: string,
-        metadata?: {
-            filePaths?: string[];
-            duration?: number;
-            tokenCount?: number;
-        }
-    ): void {
-        this.sessionHistory.push({
-            role,
-            content,
-            timestamp: new Date(),
-            metadata
-        });
-
-        if (this.sessionHistory.length > 100) {
-            this.sessionHistory = this.sessionHistory.slice(-100);
-        }
-    }
-
-    private estimateTokenCount(text: string): number {
-        return Math.ceil(text.length / 4);
     }
 
     interrupt(): void {
@@ -314,7 +267,6 @@ export class SessionService {
     private queueMessage(query: string): void {
         this.messageQueue.push(query);
 
-        // Notify UI about queued message
         this.eventEmitter.emit({
             type: 'text_generated',
             text: `Task queued: ${this.messageQueue.length} task(s) waiting. Current task: "${query.substring(0, 100)}${query.length > 100 ? '...' : ''}"`,
@@ -325,12 +277,11 @@ export class SessionService {
         if (this.messageQueue.length > 0) {
             const nextQuery = this.messageQueue.shift()!;
 
-            // Process the next queued message asynchronously
             setTimeout(() => {
                 this.processTask(nextQuery).catch(error => {
                     console.error('Error processing queued task:', error);
                 });
-            }, 100); // Small delay to prevent immediate recursion
+            }, 100);
         }
     }
 

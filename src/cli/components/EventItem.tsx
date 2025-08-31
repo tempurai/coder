@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { UIEvent, UIEventType, TextGeneratedEvent, TaskCompletedEvent } from '../../events/index.js';
 import { useTheme } from '../themes/index.js';
-import { IndicatorType, StatusIndicator } from './StatusIndicator.js';
+import { StatusIndicator } from './StatusIndicator.js';
 
 interface EventItemProps {
   event: UIEvent;
@@ -10,7 +10,7 @@ interface EventItemProps {
   detailMode: boolean;
 }
 
-export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }) => {
+export const EventItem: React.FC<EventItemProps> = React.memo(({ event, index, detailMode }) => {
   const { currentTheme } = useTheme();
 
   const formatTime = (timestamp: Date) => {
@@ -44,9 +44,9 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
 
       case UIEventType.TaskComplete:
         const taskCompleteEvent = event as TaskCompletedEvent;
-        const summaryPrefix = taskCompleteEvent.success ? 'Task Completed:' : 'Task Failed:';
+        const summaryPrefix = taskCompleteEvent.success ? '✅ Task Completed:' : '❌ Task Failed:';
         return {
-          indicatorType: taskCompleteEvent.success ? 'system' : ('error' as const),
+          indicatorType: taskCompleteEvent.success ? ('system' as const) : ('error' as const),
           mainContent: `${summaryPrefix}\n${taskCompleteEvent.summary}`,
           details: taskCompleteEvent.error ? `Error: ${taskCompleteEvent.error}` : null,
           timestamp: event.timestamp,
@@ -58,7 +58,7 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         return {
           indicatorType: 'assistant' as const,
           mainContent: `Thinking: ${thoughtContent}`,
-          details: detailMode ? null : `Context: ${thoughtEvent.context}`,
+          details: `${thoughtEvent.context}`,
           timestamp: event.timestamp,
         };
 
@@ -67,7 +67,7 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         return {
           indicatorType: 'tool' as const,
           mainContent: `Running ${toolStartEvent.toolName}`,
-          details: detailMode ? JSON.stringify(toolStartEvent.args, null, 2) : null,
+          details: JSON.stringify(toolStartEvent.args, null, 2),
           timestamp: event.timestamp,
           isActive: true,
         };
@@ -80,7 +80,7 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         return {
           indicatorType: success ? ('tool' as const) : ('error' as const),
           mainContent: mainText,
-          details: detailMode ? (success ? JSON.stringify(toolCompleteEvent.result, null, 2) : toolCompleteEvent.error) : null,
+          details: success ? JSON.stringify(toolCompleteEvent.result, null, 2) : toolCompleteEvent.error,
           timestamp: event.timestamp,
         };
 
@@ -89,16 +89,15 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         return {
           indicatorType: sysEvent.level === 'error' ? ('error' as const) : ('system' as const),
           mainContent: sysEvent.message,
-          details: detailMode && sysEvent.context ? JSON.stringify(sysEvent.context, null, 2) : null,
+          details: JSON.stringify(sysEvent.context, null, 2),
           timestamp: event.timestamp,
         };
 
       default:
-        // Gracefully handle any other event types
         return {
           indicatorType: 'system' as const,
           mainContent: `Event: ${event.type}`,
-          details: detailMode ? JSON.stringify(event, null, 2) : null,
+          details: JSON.stringify(event, null, 2),
           timestamp: event.timestamp,
         };
     }
@@ -110,7 +109,7 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
     <Box flexDirection='column' marginBottom={1}>
       <Box>
         <Box marginRight={1}>
-          <StatusIndicator type={indicatorType as IndicatorType} isActive={isActive} />
+          <StatusIndicator type={indicatorType} isActive={isActive} />
         </Box>
         <Box marginRight={2}>
           <Text color={currentTheme.colors.text.muted}>[{formatTime(timestamp)}]</Text>
@@ -126,4 +125,4 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
       )}
     </Box>
   );
-};
+});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { useTheme } from '../themes/index.js';
@@ -11,9 +11,8 @@ interface ConfirmationData {
 }
 
 interface DynamicInputProps {
-  value: string;
-  onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  placeholder: string;
   isProcessing: boolean;
   confirmationData?: ConfirmationData | null;
   onConfirm?: (confirmationId: string, approved: boolean) => void;
@@ -21,13 +20,23 @@ interface DynamicInputProps {
 
 type ConfirmationChoice = 'yes' | 'no';
 
-export const DynamicInput: React.FC<DynamicInputProps> = ({ value, onChange, onSubmit, isProcessing, confirmationData, onConfirm }) => {
+export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, placeholder, isProcessing, confirmationData, onConfirm }) => {
   const { currentTheme } = useTheme();
+
+  const [input, setInput] = useState('');
   const [selectedChoice, setSelectedChoice] = useState<ConfirmationChoice>('yes');
+
   const isConfirmationMode = !!confirmationData;
 
+  const handleInternalSubmit = useCallback(() => {
+    if (input.trim()) {
+      onSubmit(input);
+      setInput(''); // Clear input after submission
+    }
+  }, [input, onSubmit]);
+
   useInput(
-    (input, key) => {
+    (char, key) => {
       if (key.leftArrow) setSelectedChoice('yes');
       else if (key.rightArrow) setSelectedChoice('no');
       else if (key.return) {
@@ -38,9 +47,9 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ value, onChange, onS
         if (confirmationData && onConfirm) {
           onConfirm(confirmationData.confirmationId, false);
         }
-      } else if (input.toLowerCase() === 'y') {
+      } else if (char.toLowerCase() === 'y') {
         if (confirmationData && onConfirm) onConfirm(confirmationData.confirmationId, true);
-      } else if (input.toLowerCase() === 'n') {
+      } else if (char.toLowerCase() === 'n') {
         if (confirmationData && onConfirm) onConfirm(confirmationData.confirmationId, false);
       }
     },
@@ -48,6 +57,7 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ value, onChange, onS
   );
 
   if (isConfirmationMode && confirmationData) {
+    // Confirmation mode UI remains the same
     return (
       <Box flexDirection='column'>
         <Box flexDirection='column' marginY={1} paddingX={2} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.warning}>
@@ -109,7 +119,7 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ value, onChange, onS
           {!isProcessing ? (
             <Box flexGrow={1} marginLeft={1}>
               <Text color={currentTheme.colors.text.primary}>
-                <TextInput value={value} onChange={onChange} onSubmit={onSubmit} showCursor={true} />
+                <TextInput value={input} onChange={setInput} onSubmit={handleInternalSubmit} placeholder={placeholder} showCursor={true} />
               </Text>
             </Box>
           ) : (

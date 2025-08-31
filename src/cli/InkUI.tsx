@@ -151,7 +151,12 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => (
 export const startInkUI = async (sessionService: SessionService) => {
   console.log('Starting InkUI Interface...');
 
-  const originalConsole = { log: console.log, error: console.error, warn: console.warn, info: console.info };
+  const originalConsole = {
+    log: console.log,
+    error: console.error,
+    warn: console.warn,
+    info: console.info,
+  };
   const silentConsole = () => {};
 
   console.log = silentConsole;
@@ -167,5 +172,5 @@ export const startInkUI = async (sessionService: SessionService) => {
   process.on('SIGINT', exitFn);
   process.on('SIGTERM', exitFn);
 
-  render(<CodeAssistantApp sessionService={sessionService} />);
+  render(<CodeAssistantApp sessionService={sessionService} />, { patchConsole: false });
 };

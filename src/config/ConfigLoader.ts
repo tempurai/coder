@@ -7,13 +7,6 @@ import deepmergeFactory from '@fastify/deepmerge';
 import { ConfigInitializer } from './ConfigInitializer.js';
 import { ModelProvider, ModelConfig } from '../models/index.js';
 
-type DeepPartial<T> = {
-  [P in keyof T]?: T[P] extends Record<string, unknown>
-  ? DeepPartial<T[P]>
-  : T[P] extends (infer U)[]
-  ? U[]
-  : T[P];
-};
 
 interface ShellExecutorSecurityConfig {
   allowlist: string[];

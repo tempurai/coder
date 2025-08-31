@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { UIEvent, UIEventType } from '../../events/index.js';
+import { TextGeneratedEvent, UIEvent, UIEventType } from '../../events/index.js';
 import { useTheme } from '../themes/index.js';
 import { StatusIndicator } from './StatusIndicator.js';
 
@@ -33,13 +33,22 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
           timestamp: event.timestamp,
         };
 
+      case UIEventType.TextGenerated:
+        const textEvent = event as TextGeneratedEvent;
+        return {
+          indicatorType: 'system' as const,
+          mainContent: textEvent.text,
+          details: null,
+          timestamp: event.timestamp,
+        };
+
       case UIEventType.ThoughtGenerated:
         const thoughtEvent = event as any;
-        const thoughtContent = detailMode ? thoughtEvent.thought : thoughtEvent.thought.substring(0, 100) + (thoughtEvent.thought.length > 100 ? '...' : '');
+        const thoughtContent = thoughtEvent.thought.substring(0, 100) + (thoughtEvent.thought.length > 100 ? '...' : '');
         return {
           indicatorType: 'assistant' as const,
           mainContent: `Thinking: ${thoughtContent}`,
-          details: detailMode ? null : `Context: ${thoughtEvent.context}`,
+          details: thoughtEvent.context,
           timestamp: event.timestamp,
         };
 
@@ -47,8 +56,8 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         const toolStartEvent = event as any;
         return {
           indicatorType: 'tool' as const,
-          mainContent: `Running ${toolStartEvent.toolName}`,
-          details: detailMode ? JSON.stringify(toolStartEvent.args, null, 2) : null,
+          mainContent: `Running ${toolStartEvent.toolName}(${JSON.stringify(toolStartEvent.args, null, 2)})`,
+          details: null,
           timestamp: event.timestamp,
           isActive: true,
         };
@@ -62,7 +71,7 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         return {
           indicatorType: success ? ('tool' as const) : ('error' as const),
           mainContent: mainText,
-          details: detailMode ? (success ? JSON.stringify(toolCompleteEvent.result, null, 2) : toolCompleteEvent.error) : null,
+          details: success ? JSON.stringify(toolCompleteEvent.result, null, 2) : toolCompleteEvent.error,
           timestamp: event.timestamp,
         };
 
@@ -71,7 +80,7 @@ export const EventItem: React.FC<EventItemProps> = ({ event, index, detailMode }
         return {
           indicatorType: sysEvent.level === 'error' ? ('error' as const) : ('system' as const),
           mainContent: sysEvent.message,
-          details: detailMode && sysEvent.context ? JSON.stringify(sysEvent.context, null, 2) : null,
+          details: JSON.stringify(sysEvent.context, null, 2),
           timestamp: event.timestamp,
         };
 

@@ -131,6 +131,7 @@ export const UIEventType = {
   SnapshotCreated: 'snapshot_created' as const,
   ToolConfirmationRequest: 'tool_confirmation_request' as const,
   ToolConfirmationResponse: 'tool_confirmation_response' as const,
+  TextGenerated: 'text_generated' as const,
 } as const;
 
 export interface EventListener<T extends UIEvent = UIEvent> {

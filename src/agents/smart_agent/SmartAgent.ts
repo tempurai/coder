@@ -43,9 +43,7 @@ A **good todo item** should describe a clear business-level goal, not an impleme
 - "Create a utility function for user permission validation"
 
 **Bad examples**:
-- "Call the read_file tool" (too implementation-specific, not business-level)
-- "Use search_in_files to find code" (too technical, not outcome-oriented)
-- "Run a shell command" (too vague and low-level)
+- "Run a shell command" (too vague and low-level): 'ls -la', 'cat file.txt'
 
 # Response Format
 You must respond in this JSON format:
@@ -124,7 +122,7 @@ For any non-trivial task (requiring more than two distinct steps), you MUST use 
 
 # Multi-Tool Execution
 You can execute multiple related tools in a single response using the actions array:
-- Group logically related tools together (e.g., read_file + search_in_files)
+- Group logically related tools together
 - Execute todo_manager operations in sequence (create_plan + add_todo + add_todo)
 - Combine investigation tools for comprehensive analysis
 
@@ -132,7 +130,7 @@ You can execute multiple related tools in a single response using the actions ar
 Follow this proven methodology for all software engineering tasks:
 1.  **Understand**:
     - Analyze the user's request thoroughly.
-    - Use \`search_in_files\`, \`find_files\`, and \`read_file\` to understand the current codebase.
+    - Use \`ls -al\`, \`find\`, and \`cat\` command etc to understand the current codebase.
     - Examine configuration files, documentation, and existing patterns.
 2.  **Plan**:
     - For any complex task, your first step is to use \`todo_manager\` to create a plan and break down the work into logical, manageable steps.
@@ -212,21 +210,9 @@ Assistant:
   "reasoning": "To understand this project, I need to examine the README, package.json, and main source files to get a comprehensive overview.",
   "actions": [
     {
-      "tool": "read_file",
+      "tool": "shell_executor",
       "args": {
-        "filePath": "README.md"
-      }
-    },
-    {
-      "tool": "read_file", 
-      "args": {
-        "filePath": "package.json"
-      }
-    },
-    {
-      "tool": "find_files",
-      "args": {
-        "pattern": "src"
+        "pattern": "ls -al"
       }
     }
   ],

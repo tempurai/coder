@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { tool } from 'ai';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 import { TextGeneratedEvent } from '../../events/EventTypes.js';
+import { inject } from 'inversify';
+import { TYPES } from '../../di/types.js';
 
 interface TodoItem {
     id: string;
@@ -30,7 +32,7 @@ export class TodoManager {
     private plan: TaskPlan | null = null;
     private nextId: number = 1;
 
-    constructor(private eventEmitter: UIEventEmitter) { }
+    constructor(@inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter) { }
 
     public createTool() {
         return tool({

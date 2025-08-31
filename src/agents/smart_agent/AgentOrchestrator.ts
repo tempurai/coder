@@ -1,6 +1,8 @@
 import { ToolAgent, Messages } from '../tool_agent/ToolAgent.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 import { z } from "zod";
+import { inject } from 'inversify';
+import { TYPES } from '../../di/types.js';
 
 export const ContinuationDecisionSchema = z.object({
     shouldContinue: z.boolean(),
@@ -42,8 +44,8 @@ Respond with JSON: {"isLoop": boolean, "confidence": 0-100, "description": "opti
 
 export class AgentOrchestrator {
     constructor(
-        private toolAgent: ToolAgent,
-        private eventEmitter: UIEventEmitter
+        @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
+        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
     ) { }
 
     async detectLoop(conversationHistory: Messages): Promise<LoopDetectionResult> {

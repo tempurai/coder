@@ -135,10 +135,6 @@ export class ConfigLoader {
       errors.push('MaxTokens must be between 1 and 128000');
     }
 
-    if (!this.config.apiKey && !process.env.OPENAI_API_KEY) {
-      errors.push('API key must be provided either in config or OPENAI_API_KEY environment variable');
-    }
-
     return {
       isValid: errors.length === 0,
       errors

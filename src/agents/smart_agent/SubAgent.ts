@@ -2,6 +2,8 @@ import { ToolAgent, Messages } from '../tool_agent/ToolAgent.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 import { z } from "zod";
 import { SystemInfoEvent } from '../../events/EventTypes.js';
+import { inject } from 'inversify';
+import { TYPES } from '../../di/types.js';
 
 // Simplified schema and prompt
 export const SubAgentResponseSchema = z.object({
@@ -96,8 +98,8 @@ export class SubAgent {
     private readonly DEFAULT_TIMEOUT = 300000;
 
     constructor(
-        private toolAgent: ToolAgent,
-        private eventEmitter: UIEventEmitter
+        @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
+        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
     ) { }
 
     async executeTask(task: SubAgentTask): Promise<SubAgentResult> {

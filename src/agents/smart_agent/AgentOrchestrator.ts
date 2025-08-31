@@ -21,24 +21,29 @@ export const LoopDetectionSchema = z.object({
 export type LoopDetectionResult = z.infer<typeof LoopDetectionSchema>;
 
 const CONTINUATION_PROMPT = `Analyze the assistant's last response to determine who should speak next.
-
 **Decision Rules (apply in order):**
 1. **Model Continues:** If the last response explicitly states a next action the assistant intends to take (e.g., "Next, I will...", "Now I'll process...", "Moving on to..."), OR if the response seems incomplete (cut off mid-thought), then the **model** should continue.
-
 2. **Question to User:** If the last response ends with a direct question to the user, then the **user** should speak next.
-
 3. **Default:** If the response completed a thought/task and doesn't meet criteria 1 or 2, then the **user** should speak next.
-
 Respond with JSON: {"shouldContinue": boolean, "reason": "explanation", "confidence": 0-100}`;
 
 const LOOP_DETECTION_PROMPT = `Check if the assistant is stuck in a repetitive loop by analyzing the last few assistant responses.
 
-Look for:
-- Repeating the same tools with same parameters
-- Making no meaningful progress after 3+ similar actions
-- Repeatedly encountering the same errors without adaptation
+**IMPORTANT: Be less strict about loops during planning phases. Look for:**
+- Repeating the same tools with identical parameters AND getting identical results with no progress
+- Making the same exact errors repeatedly without adaptation
+- Stuck in the same reasoning pattern for 3+ iterations with no advancement
 
-Only flag obvious, unproductive loops. Some repetition is normal when working systematically.
+**NOT loops:**
+- Using todo_manager multiple times during initial planning (this is normal workflow)
+- Reading multiple related files during investigation
+- Trying different approaches to solve a problem
+- Systematic execution of a plan with clear progress
+
+**Only flag as loops when:**
+1. Same tool + same parameters + same results repeated 3+ times
+2. Clear evidence of no progress toward the goal
+3. Identical reasoning patterns with no new insights
 
 Respond with JSON: {"isLoop": boolean, "confidence": 0-100, "description": "optional explanation"}`;
 
@@ -50,7 +55,7 @@ export class AgentOrchestrator {
 
     async detectLoop(conversationHistory: Messages): Promise<LoopDetectionResult> {
         // Only check for loops if we have enough history
-        if (conversationHistory.length < 6) {
+        if (conversationHistory.length < 8) {
             return { isLoop: false, confidence: 0 };
         }
 

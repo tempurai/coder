@@ -12,14 +12,67 @@ import { ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStarte
 export const PlanningResponseSchema = z.object({
     analysis: z.string().describe("Analysis of the task complexity and requirements"),
     approach: z.string().describe("Overall approach to solve this task"),
-    actions: z.array(z.object({
-        tool: z.string().describe("Name of the tool to be invoked"),
-        args: z.record(z.any()).default({})
-    })).describe("Initial actions to take, must include todo_manager to create plan"),
+    todos: z.array(z.object({
+        title: z.string().describe("Title of the todo item"),
+        description: z.string().describe("Detailed description of the todo item"),
+        priority: z.enum(['high', 'medium', 'low']).describe("Priority level of the todo item"),
+        estimatedEffort: z.number().min(1).max(10).describe("Estimated effort to complete the todo item"),
+        context: z.any().optional().describe("Any additional context or information relevant to the todo item")
+    })),
     needsPlanning: z.boolean().describe("Whether this task requires structured planning with todos")
 });
 
 export type PlanningResponse = z.infer<typeof PlanningResponseSchema>;
+
+export const PLANNING_PROMPT = `
+You are the task planner for Tempurai Code. Your job is to analyze the user's request and create an execution plan.  
+
+# Your Role
+- Analyze the complexity and requirements of the task.  
+- Define a clear solution strategy.  
+- Break down the task into concrete business-oriented goals.  
+- Decide whether structured planning is required.  
+
+# Todo Granularity Guidelines
+A **good todo item** should describe a clear business-level goal, not an implementation detail.  
+
+**Good examples**:
+- "Analyze the JWT implementation logic in src/auth.ts"
+- "Add a rate-limiting middleware to the API routes"
+- "Fix TypeScript type errors in the login component"
+- "Create a utility function for user permission validation"
+
+**Bad examples**:
+- "Call the read_file tool" (too implementation-specific, not business-level)
+- "Use search_in_files to find code" (too technical, not outcome-oriented)
+- "Run a shell command" (too vague and low-level)
+
+# Response Format
+You must respond in this JSON format:
+\`\`\`json
+{
+  "analysis": "Analysis of the task and its complexity",
+  "approach": "Proposed solution strategy",
+  "todos": [
+    {
+      "title": "Concise task title",
+      "description": "Detailed description of the business goal to achieve",
+      "priority": "high|medium|low",
+      "estimatedEffort": 1-10,
+      "context": "Any additional context or information relevant to the todo item"
+    }
+  ],
+  "needsPlanning": true/false
+}
+\`\`\`
+
+# Deciding if Planning is Needed
+- **needsPlanning = true**: The task involves multiple steps, touches multiple files, or requires complex refactoring.  
+- **needsPlanning = false**: The task is simple (e.g., a quick query, a single file edit, or a small check).  
+
+Analyze the user’s task and output the planning JSON.
+`;
+
 
 export const SmartAgentResponseSchema = z.object({
     reasoning: z.string().describe("Description of the reasoning behind the chosen actions"),
@@ -254,38 +307,24 @@ export class SmartAgent {
 
     private async initializeTaskPlanning(query: string): Promise<void> {
         console.log('Initializing task planning phase...');
-
         const planningMessages = [
-            { role: 'system' as const, content: MAIN_AGENT_PROMPT },
-            {
-                role: 'user' as const,
-                content: `Task: ${query}
-
-Analyze this task and create initial actions. You must respond with structured JSON containing your analysis and actions array.
-
-CRITICAL: If this task requires any investigation, analysis, or multiple steps, your actions array must include todo_manager calls to create a structured plan. For simple queries like "what is this project about", you should create actions to read relevant files and understand the project structure.
-
-Respond in the exact JSON format specified in the prompt.`
-            }
+            { role: 'system' as const, content: PLANNING_PROMPT },
+            { role: 'user' as const, content: query }
         ];
 
         try {
-            const response = await this.toolAgent.generateObject<PlanningResponse>({
+            const planningResponse = await this.toolAgent.generateObject<PlanningResponse>({
                 messages: planningMessages,
                 schema: PlanningResponseSchema as ZodSchema<PlanningResponse>,
                 allowTools: false
             });
 
-            // Execute the initial planning actions
-            for (const action of response.actions) {
-                await this.toolAgent.executeTool(action.tool, action.args);
-            }
+            this.todoManager.createPlan(planningResponse.analysis);
+            planningResponse.todos.forEach(todo => {
+                this.todoManager.addTodo({ ...todo, dependencies: [] });
+            });
 
-            this.conversationHistory.push(
-                { role: 'user', content: planningMessages[1].content },
-                { role: 'assistant', content: JSON.stringify(response, null, 2) }
-            );
-            console.log('Initial planning completed with actions executed');
+            console.log(`Planning completed: ${planningResponse}`);
         } catch (error) {
             console.warn('Initial planning failed, proceeding with direct execution:', error);
         }

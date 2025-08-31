@@ -110,7 +110,7 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
         });
     }
 
-    private createPlan(summary: string) {
+    public createPlan(summary: string) {
         this.plan = {
             id: `plan-${Date.now()}`,
             summary,
@@ -132,7 +132,7 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
         };
     }
 
-    private addTodo(todoData: {
+    public addTodo(todoData: {
         title: string;
         description: string;
         priority: 'high' | 'medium' | 'low';
@@ -157,7 +157,7 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
             this.plan.totalEstimatedTime += todo.estimatedEffort;
         }
 
-        console.log(`➕ Added todo: ${todo.title} (${todo.priority} priority)`);
+        console.log(`Added todo: ${todo.title} (${todo.priority} priority)`);
         this.eventEmitter.emit({
             type: 'text_generated',
             text: `Todo "${todo.title}" added`

@@ -11,12 +11,7 @@ const execAsync = util.promisify(exec);
 export const createShellExecutorTools = (context: ToolContext) => {
     const validator = new CommandValidator(context.configLoader);
 
-    const validateCommands = (
-        commands: string[],
-    ): any[] =>
-        (validator as any).validateCommands
-            ? (validator as any).validateCommands(commands)
-            : commands.map((c) => validator.validateCommand(c));
+    const validateCommands = (commands: string[]): any[] => ((validator as any).validateCommands ? (validator as any).validateCommands(commands) : commands.map((c) => validator.validateCommand(c)));
 
     const execute = tool({
         description: `Execute shell commands directly. This is the PRIMARY tool for most operations.
@@ -34,23 +29,14 @@ IMPORTANT: Always explain what command you're running and why.`,
             timeout: z.number().default(30000).describe('Timeout in milliseconds'),
             captureError: z.boolean().default(true).describe('Whether to capture and return stderr'),
         }),
-        execute: async ({
-            command,
-            description,
-            workingDirectory,
-            timeout,
-            captureError,
-        }) => {
+        execute: async ({ command, description, workingDirectory, timeout, captureError }) => {
             try {
                 const validationResult = validator.validateCommand(command);
                 if (!validationResult.allowed) {
                     if (validationResult.requiresConfirmation) {
-                        const confirmed = await context.hitlManager.requestConfirmation(
-                            'shell_executor',
-                            { command, description, workingDirectory },
-                            `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`,
-                            { showRememberOption: true }
-                        );
+                        const confirmed = await context.hitlManager.requestConfirmation('shell_executor', { command, description, workingDirectory }, `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`, {
+                            showRememberOption: true,
+                        });
 
                         if (!confirmed) {
                             return {
@@ -79,12 +65,9 @@ IMPORTANT: Always explain what command you're running and why.`,
                         };
                     }
                 } else if (validationResult.requiresConfirmation) {
-                    const confirmed = await context.hitlManager.requestConfirmation(
-                        'shell_executor',
-                        { command, description, workingDirectory },
-                        `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`,
-                        { showRememberOption: true }
-                    );
+                    const confirmed = await context.hitlManager.requestConfirmation('shell_executor', { command, description, workingDirectory }, `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`, {
+                        showRememberOption: true,
+                    });
 
                     if (!confirmed) {
                         return {
@@ -103,7 +86,7 @@ IMPORTANT: Always explain what command you're running and why.`,
                 context.eventEmitter.emit({
                     type: 'tool_output',
                     toolName: 'shell_executor',
-                    content: `Executing: ${command}\nPurpose: ${description}`
+                    content: `Executing: ${command}\nPurpose: ${description}`,
                 } as ToolOutputEvent);
 
                 const options: ExecOptions = { timeout };
@@ -115,17 +98,14 @@ IMPORTANT: Always explain what command you're running and why.`,
                 stdout = stdout.toString();
                 stderr = stderr.toString();
 
-                const outputContent = [
-                    `Command: ${command}`,
-                    workingDirectory ? `Directory: ${workingDirectory}` : '',
-                    stdout ? `Output:\n${stdout.trim()}` : '',
-                    (stderr && captureError) ? `Errors:\n${stderr.trim()}` : ''
-                ].filter(Boolean).join('\n');
+                const outputContent = [`Command: ${command}`, workingDirectory ? `Directory: ${workingDirectory}` : '', stdout ? `Output:\n${stdout.trim()}` : '', stderr && captureError ? `Errors:\n${stderr.trim()}` : '']
+                    .filter(Boolean)
+                    .join('\n');
 
                 context.eventEmitter.emit({
                     type: 'tool_output',
                     toolName: 'shell_executor',
-                    content: outputContent
+                    content: outputContent,
                 } as ToolOutputEvent);
 
                 return {
@@ -144,13 +124,15 @@ IMPORTANT: Always explain what command you're running and why.`,
                     `Command failed: ${command}`,
                     `Error: ${error?.message ?? String(error)}`,
                     error?.stdout ? `Stdout: ${error.stdout.toString().trim()}` : '',
-                    error?.stderr ? `Stderr: ${error.stderr.toString().trim()}` : ''
-                ].filter(Boolean).join('\n');
+                    error?.stderr ? `Stderr: ${error.stderr.toString().trim()}` : '',
+                ]
+                    .filter(Boolean)
+                    .join('\n');
 
                 context.eventEmitter.emit({
                     type: 'tool_output',
                     toolName: 'shell_executor',
-                    content: errorContent
+                    content: errorContent,
                 } as ToolOutputEvent);
 
                 return {
@@ -175,33 +157,24 @@ Examples:
 - Git workflow: ["git add .", "git commit -m 'message'", "git push"]
 - Setup project: ["mkdir src", "npm init -y", "npm install typescript"]`,
         inputSchema: z.object({
-            commands: z.array(
-                z.object({
-                    command: z.string().describe('Shell command to execute'),
-                    description: z.string().describe('What this command does'),
-                    continueOnError: z.boolean().default(false).describe('Whether to continue if this command fails'),
-                }),
-            ).describe('Array of commands to execute in sequence'),
+            commands: z
+                .array(
+                    z.object({
+                        command: z.string().describe('Shell command to execute'),
+                        description: z.string().describe('What this command does'),
+                        continueOnError: z.boolean().default(false).describe('Whether to continue if this command fails'),
+                    }),
+                )
+                .describe('Array of commands to execute in sequence'),
             workingDirectory: z.string().optional().describe('Directory to execute commands in'),
             stopOnFirstError: z.boolean().default(true).describe('Whether to stop execution on first error'),
         }),
-        execute: async ({
-            commands,
-            workingDirectory,
-            stopOnFirstError,
-        }) => {
+        execute: async ({ commands, workingDirectory, stopOnFirstError }) => {
             const validationResults = validateCommands(commands.map((c) => c.command));
-            const blockedCommands = validationResults
-                .map((res, idx) => ({ res, idx, original: commands[idx] }))
-                .filter((item) => !item.res.allowed && !item.res.requiresConfirmation);
+            const blockedCommands = validationResults.map((res, idx) => ({ res, idx, original: commands[idx] })).filter((item) => !item.res.allowed && !item.res.requiresConfirmation);
 
             if (blockedCommands.length > 0) {
-                const blockedList = blockedCommands
-                    .map((item) =>
-                        `- ${item.original.command}: ${item.res.reason}${item.res.suggestion ? ` (Suggestion: ${item.res.suggestion})` : ''
-                        }`,
-                    )
-                    .join('\n');
+                const blockedList = blockedCommands.map((item) => `- ${item.original.command}: ${item.res.reason}${item.res.suggestion ? ` (Suggestion: ${item.res.suggestion})` : ''}`).join('\n');
                 return {
                     success: false as const,
                     results: [],
@@ -212,16 +185,14 @@ Examples:
                 };
             }
 
-            const commandsList = commands.slice(0, 3).map(cmd => cmd.command).join(', ');
+            const commandsList = commands
+                .slice(0, 3)
+                .map((cmd) => cmd.command)
+                .join(', ');
             const moreCount = commands.length - 3;
             const confirmDescription = `Execute ${commands.length} commands: ${commandsList}${moreCount > 0 ? ` and ${moreCount} more` : ''}`;
 
-            const confirmed = await context.hitlManager.requestConfirmation(
-                'multi_command',
-                { commands, workingDirectory, stopOnFirstError },
-                confirmDescription,
-                { showRememberOption: false }
-            );
+            const confirmed = await context.hitlManager.requestConfirmation('multi_command', { commands, workingDirectory, stopOnFirstError }, confirmDescription, { showRememberOption: false });
 
             if (!confirmed) {
                 return {
@@ -248,7 +219,7 @@ Examples:
             context.eventEmitter.emit({
                 type: 'tool_output',
                 toolName: 'multi_command',
-                content: `Executing ${commands.length} commands in sequence${workingDirectory ? ` in ${workingDirectory}` : ''}`
+                content: `Executing ${commands.length} commands in sequence${workingDirectory ? ` in ${workingDirectory}` : ''}`,
             } as ToolOutputEvent);
 
             for (let i = 0; i < commands.length; i++) {
@@ -257,7 +228,7 @@ Examples:
                 context.eventEmitter.emit({
                     type: 'tool_output',
                     toolName: 'multi_command',
-                    content: `[${i + 1}/${commands.length}] ${command}\n${description}`
+                    content: `[${i + 1}/${commands.length}] ${command}\n${description}`,
                 } as ToolOutputEvent);
 
                 try {
@@ -284,7 +255,7 @@ Examples:
                         context.eventEmitter.emit({
                             type: 'tool_output',
                             toolName: 'multi_command',
-                            content: `[${i + 1}/${commands.length}] Output:\n${stdout.trim()}`
+                            content: `[${i + 1}/${commands.length}] Output:\n${stdout.trim()}`,
                         } as ToolOutputEvent);
                     }
 
@@ -292,7 +263,7 @@ Examples:
                         context.eventEmitter.emit({
                             type: 'tool_output',
                             toolName: 'multi_command',
-                            content: `[${i + 1}/${commands.length}] Stderr: ${stderr.trim()}`
+                            content: `[${i + 1}/${commands.length}] Stderr: ${stderr.trim()}`,
                         } as ToolOutputEvent);
                     }
                 } catch (error: any) {
@@ -313,14 +284,14 @@ Examples:
                     context.eventEmitter.emit({
                         type: 'tool_output',
                         toolName: 'multi_command',
-                        content: `[${i + 1}/${commands.length}] Failed: ${error?.message ?? error}`
+                        content: `[${i + 1}/${commands.length}] Failed: ${error?.message ?? error}`,
                     } as ToolOutputEvent);
 
                     if (stopOnFirstError && !continueOnError) {
                         context.eventEmitter.emit({
                             type: 'tool_output',
                             toolName: 'multi_command',
-                            content: 'Stopping execution due to error'
+                            content: 'Stopping execution due to error',
                         } as ToolOutputEvent);
                         break;
                     }
@@ -336,14 +307,13 @@ Examples:
             context.eventEmitter.emit({
                 type: 'tool_output',
                 toolName: 'multi_command',
-                content: summaryContent
+                content: summaryContent,
             } as ToolOutputEvent);
 
             return {
                 success: successCount === totalCount,
                 results,
-                summary: `Executed ${totalCount} commands, ${successCount} successful, ${totalCount - successCount
-                    } failed`,
+                summary: `Executed ${totalCount} commands, ${successCount} successful, ${totalCount - successCount} failed`,
                 workingDirectory: workingDirectory || process.cwd(),
                 cancelled: false,
             };

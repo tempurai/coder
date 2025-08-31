@@ -41,7 +41,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   const mask = (val?: string) => (val ? `${val.slice(0, 6)}…${val.slice(-4)}` : 'not set');
 
-  // Reset Ctrl+C counter after timeout
+  // 重置 Ctrl+C 计数器
   useEffect(() => {
     if (ctrlCCount > 0) {
       const timer = setTimeout(() => setCtrlCCount(0), 2000);
@@ -51,23 +51,21 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   }, [ctrlCCount]);
 
   useInput((input: string, key: any) => {
-    // Handle Ctrl+C
+    // 修复 Ctrl+C 处理，确保调用 interrupt
     if (key.ctrl && input === 'c') {
       if (input.length > 0) {
-        // First Ctrl+C: clear input
         setInput('');
         setCtrlCCount(0);
       } else {
         setCtrlCCount((prev) => prev + 1);
         if (ctrlCCount >= 1) {
-          // Second Ctrl+C: force exit
+          sessionService.interrupt();
           process.exit(0);
         }
       }
       return;
     }
 
-    // Handle ESC - interrupt execution
     if (key.escape) {
       if (isProcessing) {
         sessionService.interrupt();
@@ -85,7 +83,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       return;
     }
 
-    // Handle Ctrl+R - toggle detail mode
     if (key.ctrl && input === 'r') {
       setDetailMode((prev) => !prev);
       const modeEvent: SystemInfoEvent = {
@@ -99,15 +96,12 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       return;
     }
 
-    // Welcome screen handling
     if (appState === 'welcome') {
       setAppState('theme-selection');
       return;
     }
-
     if (appState !== 'ready') return;
 
-    // Handle Ctrl+T - theme toggle
     if (key.ctrl && input === 't') {
       const currentIndex = availableThemes.indexOf(themeName);
       const nextIndex = (currentIndex + 1) % availableThemes.length;
@@ -137,23 +131,40 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
     [pendingConfirmation, sessionService],
   );
 
+  // 批处理事件更新避免频繁刷新
   useEffect(() => {
     if (appState !== 'ready') return;
 
     const eventEmitter = sessionService.events;
+    let eventBuffer: UIEvent[] = [];
+    let batchTimeout: NodeJS.Timeout | null = null;
+
+    const flushEvents = () => {
+      if (eventBuffer.length > 0) {
+        setEvents((prev) => [...prev, ...eventBuffer]);
+        eventBuffer = [];
+      }
+      batchTimeout = null;
+    };
+
     const subscription = eventEmitter.onAll((event: UIEvent) => {
-      setEvents((prevEvents) => [...prevEvents, event]);
+      // 将事件添加到缓冲区
+      eventBuffer.push(event);
+
+      // 批处理更新，避免频繁刷新
+      if (batchTimeout) {
+        clearTimeout(batchTimeout);
+      }
+      batchTimeout = setTimeout(flushEvents, 16); // ~60fps
 
       if (event.type === UIEventType.TaskStart) {
         setIsProcessing(true);
         setCurrentActivity('Processing...');
       }
-
       if (event.type === UIEventType.TaskComplete) {
         setIsProcessing(false);
         setCurrentActivity('');
       }
-
       if (event.type === 'tool_confirmation_request') {
         const confirmEvent = event as ToolConfirmationRequestEvent;
         setPendingConfirmation({
@@ -163,7 +174,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
           description: confirmEvent.description,
         });
       }
-
       if (event.type === 'tool_confirmation_response') {
         const responseEvent = event as ToolConfirmationResponseEvent;
         if (pendingConfirmation?.confirmationId === responseEvent.confirmationId) {
@@ -172,13 +182,18 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (batchTimeout) {
+        clearTimeout(batchTimeout);
+      }
+      flushEvents(); // 确保未处理的事件被刷新
+    };
   }, [sessionService, appState, pendingConfirmation]);
 
   const handleSpecialCommands = useCallback(
     (input: string): boolean => {
       const command = input.toLowerCase();
-
       if (['/help', 'help'].includes(command)) {
         const helpEvent: SystemInfoEvent = {
           id: generateId(),
@@ -191,7 +206,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         setEvents((prev) => [...prev, helpEvent]);
         return true;
       }
-
       if (['/status', 'status'].includes(command)) {
         (async () => {
           const stats = await sessionService.getSessionStats();
@@ -206,7 +220,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         })();
         return true;
       }
-
       if (['/session', 'session'].includes(command)) {
         (async () => {
           const stats = await sessionService.getSessionStats();
@@ -222,7 +235,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         })();
         return true;
       }
-
       if (command.startsWith('/theme')) {
         const parts = command.split(' ');
         if (parts.length > 1) {
@@ -259,7 +271,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         }
         return true;
       }
-
       if (['/clear', 'clear'].includes(command)) {
         setEvents([]);
         sessionService.clearSession();
@@ -273,11 +284,10 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         setEvents([clearEvent]);
         return true;
       }
-
       if (['/exit', 'exit', 'quit'].includes(command)) {
+        sessionService.interrupt();
         process.exit(0);
       }
-
       return false;
     },
     [sessionService, generateId, availableThemes, setTheme, themeName],
@@ -303,7 +313,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         timestamp: new Date(),
         input: userInput.trim(),
       };
-
       setEvents((prev) => [...prev, userInputEvent]);
 
       try {
@@ -346,21 +355,17 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         <Text color={currentTheme.colors.text.muted}>API Key: {mask(process.env.API_KEY || process.env.OPENAI_API_KEY)}</Text>
         <Text color={currentTheme.colors.text.muted}>API Base URL: {process.env.API_BASE_URL || process.env.OPENAI_BASE_URL || 'not set'}</Text>
       </Box>
-
       {pendingConfirmation && (
         <ConfirmationPanel confirmationId={pendingConfirmation.confirmationId} toolName={pendingConfirmation.toolName} args={pendingConfirmation.args} description={pendingConfirmation.description} onConfirm={handleConfirmation} />
       )}
-
       <TaskContainer events={events}>
         {isProcessing && (
           <Box marginY={1}>
             <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
           </Box>
         )}
-
         <EventStream events={events} detailMode={detailMode} />
       </TaskContainer>
-
       <Box marginTop={2} borderTop borderColor={currentTheme.colors.ui.border} paddingTop={1}>
         <DynamicInput value={input} onChange={setInput} onSubmit={handleSubmit} placeholder='Ask me anything or type /help for help...' isProcessing={isProcessing || !!pendingConfirmation} />
       </Box>
@@ -378,5 +383,14 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => {
 
 export const startInkUI = async (sessionService: SessionService) => {
   console.log('Starting InkUI Interface...');
-  render(<CodeAssistantApp sessionService={sessionService} />);
+
+  const exitFn = () => {
+    sessionService.interrupt();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', exitFn);
+  process.on('SIGTERM', exitFn);
+
+  render(<CodeAssistantApp sessionService={sessionService} />, { patchConsole: false });
 };

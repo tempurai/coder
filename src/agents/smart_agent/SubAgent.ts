@@ -4,6 +4,7 @@ import { z } from "zod";
 import { SystemInfoEvent } from '../../events/EventTypes.js';
 import { inject } from 'inversify';
 import { TYPES } from '../../di/types.js';
+import { tool } from 'ai';
 
 // Simplified schema and prompt
 export const SubAgentResponseSchema = z.object({
@@ -162,13 +163,9 @@ export class SubAgent {
             { role: 'system', content: SUB_AGENT_PROMPT },
             {
                 role: 'user',
-                content: `# Current Task Specification
-**Task Type**: ${task.type}
-**Description**: ${task.description}
-**Available Tools**: ${toolsList}
-**Context**: ${JSON.stringify(task.context, null, 2)}
-
-Complete this task by accomplishing the objective described above. When finished, set "completed": true and include your final results in the "output" field.`
+                content: `Task: ${task.description}
+Context: ${JSON.stringify(task.context, null, 2)}
+Complete this task efficiently.`
             }
         ];
 
@@ -190,7 +187,6 @@ Complete this task by accomplishing the objective described above. When finished
                 const response = await this.toolAgent.generateObject<SubAgentResponse>({
                     messages: conversationHistory,
                     schema: SubAgentResponseSchema as z.ZodSchema<SubAgentResponse>,
-                    allowTools: false
                 });
 
                 conversationHistory.push({
@@ -255,4 +251,62 @@ Complete this task by accomplishing the objective described above. When finished
             setTimeout(() => reject(new Error(`SubAgent task timed out after ${timeoutMs}ms`)), timeoutMs);
         });
     }
+}
+
+export const createSubAgentTool = (toolAgent: ToolAgent, eventEmitter: UIEventEmitter) => {
+    const startSubAgent = async (args: any): Promise<any> => {
+        console.log('Starting sub-agent for specialized task');
+        const subAgent = new SubAgent(toolAgent, eventEmitter);
+        return await subAgent.executeTask(args);
+    }
+
+    return tool({
+        description: `Start a specialized sub-agent for focused, autonomous task execution. Use this for:
+- Complex, isolated tasks that can be completed independently
+- Tasks requiring deep focus without user interaction
+- Specialized operations that benefit from dedicated execution context
+- When you need to delegate a specific subtask while continuing with the main workflow
+
+The sub-agent will work autonomously until task completion or failure.`,
+        inputSchema: z.object({
+            taskType: z.string().describe('Type of task (e.g., "file_analysis", "code_refactor", "testing")'),
+            description: z.string().describe('Clear description of what the sub-agent should accomplish'),
+            context: z.any().optional().describe('Any relevant context or data needed for the task'),
+            maxTurns: z.number().default(15).optional().describe('Maximum number of iterations for the sub-agent'),
+            timeoutMs: z.number().default(300000).optional().describe('Timeout in milliseconds (default: 5 minutes)')
+        }),
+        execute: async (args) => {
+            const taskId = `subagent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const task = {
+                id: taskId,
+                type: args.taskType,
+                description: args.description,
+                context: args.context || {},
+                maxTurns: args.maxTurns,
+                timeoutMs: args.timeoutMs
+            };
+
+            try {
+                const result = await startSubAgent(task);
+                return {
+                    success: result.success,
+                    taskId: result.taskId,
+                    output: result.output,
+                    iterations: result.iterations,
+                    duration: result.duration,
+                    terminateReason: result.terminateReason,
+                    error: result.error,
+                    message: result.success
+                        ? `Sub-agent completed task "${args.taskType}" successfully in ${result.iterations} iterations`
+                        : `Sub-agent failed: ${result.error}`
+                };
+            } catch (error) {
+                return {
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    message: `Sub-agent execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+                };
+            }
+        }
+    });
 }

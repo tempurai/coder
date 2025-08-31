@@ -118,7 +118,6 @@ export class AgentOrchestrator {
                 allowTools: false
             });
 
-            console.log(`Continuation: ${decision.shouldContinue ? 'Continue' : 'Wait'} - ${decision.reason}`);
             return decision.shouldContinue;
         } catch (error) {
             console.warn('Continuation check failed:', error);

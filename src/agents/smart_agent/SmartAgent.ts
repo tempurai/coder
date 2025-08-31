@@ -4,7 +4,7 @@ import { ToolAgent, Messages } from '../tool_agent/ToolAgent.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 import { AgentOrchestrator } from './AgentOrchestrator.js';
 import { TodoManager } from './TodoManager.js';
-import { SubAgent } from './SubAgent.js';
+import { createSubAgentTool, SubAgent } from './SubAgent.js';
 import { InterruptService } from '../../services/InterruptService.js';
 import { z, ZodSchema } from "zod";
 import { ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
@@ -116,6 +116,11 @@ For any non-trivial task (requiring more than two distinct steps), you MUST use 
 3.  **Execute Step-by-Step**: Use \`todo_manager\` with \`action: 'get_next'\` to retrieve the next actionable task.
 4.  **Update Status**: Before starting a task, mark it as \`in_progress\`. Upon completion, mark it as \`completed\`.
 5.  **Adapt**: If new requirements arise, add them as new todos.
+
+# Tool Usage Priority
+- Shell Commands First: For common operations like listing files (ls), checking status (git status), finding files (find), prefer shell_executor over specialized tools
+- Shell for Exploration: Use shell commands to explore project structure, check file existence, run builds/tests
+- Shell for Testing and Validation: Use shell commands to run tests, check code quality, and validate changes
 
 # Multi-Tool Execution
 You can execute multiple related tools in a single response using the actions array:
@@ -275,7 +280,6 @@ export class SmartAgent {
         this.maxIterations = maxIterations;
         this.todoManager = new TodoManager(eventEmitter);
         this.orchestrator = new AgentOrchestrator(toolAgent, eventEmitter);
-        console.log('SmartAgent initialized with enhanced planning capabilities');
     }
 
     async runTask(initialQuery: string): Promise<TaskResult> {
@@ -511,11 +515,7 @@ export class SmartAgent {
         }
     }
 
-    private async startSubAgent(args: any): Promise<any> {
-        console.log('Starting sub-agent for specialized task');
-        const subAgent = new SubAgent(this.toolAgent, this.eventEmitter);
-        return await subAgent.executeTask(args);
-    }
+
 
     private generateFinalResult(
         initialQuery: string,
@@ -577,6 +577,8 @@ export class SmartAgent {
     public initializeTools(): void {
         const todoTool = this.todoManager.createTool();
         this.toolAgent.registerTool('todo_manager', todoTool);
-        console.log('TodoManager tool initialized for SmartAgent');
+
+        const subAgentTool = createSubAgentTool(this.toolAgent, this.eventEmitter);
+        this.toolAgent.registerTool('start_subagent', subAgentTool);
     }
 }

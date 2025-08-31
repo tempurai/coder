@@ -1,15 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { render, Text, Box, useInput } from 'ink';
-import { UIEvent, UIEventType, SystemInfoEvent, UserInputEvent, ToolConfirmationRequestEvent, ToolConfirmationResponseEvent } from '../events/index.js';
 import { SessionService, TaskExecutionResult } from '../services/SessionService.js';
 import { ThemeName, ThemeProvider, useTheme } from './themes/index.js';
 import { TaskContainer } from './components/TaskContainer.js';
-import { EventStream } from './components/EventStream.js';
-import { ProgressIndicator } from './components/ProgressIndicator.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
 import { ThemeSelector } from './components/ThemeSelector.js';
 import { DynamicInput } from './components/DynamicInput.js';
-import { ConfirmationPanel } from './components/ConfirmationPanel.js';
+import { SystemInfoEvent, UIEventType } from '../events/index.js';
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
 
@@ -27,14 +24,11 @@ interface CodeAssistantAppProps {
 const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService }) => {
   const { currentTheme, setTheme, availableThemes, themeName } = useTheme();
   const [appState, setAppState] = useState<AppState>('welcome');
-  const [events, setEvents] = useState<UIEvent[]>([]);
   const [input, setInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [currentActivity, setCurrentActivity] = useState<string>('');
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [detailMode, setDetailMode] = useState<boolean>(false);
   const [ctrlCCount, setCtrlCCount] = useState<number>(0);
-  const [isInitialized, setIsInitialized] = useState(false);
 
   const generateId = useCallback((): string => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -42,7 +36,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   const mask = (val?: string) => (val ? `${val.slice(0, 6)}…${val.slice(-4)}` : 'not set');
 
-  // 重置 Ctrl+C 计数器
+  // Reset Ctrl+C count after timeout
   useEffect(() => {
     if (ctrlCCount > 0) {
       const timer = setTimeout(() => setCtrlCCount(0), 2000);
@@ -51,8 +45,9 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
     return;
   }, [ctrlCCount]);
 
+  // Global input handling (shortcuts and navigation)
   useInput((input: string, key: any) => {
-    // 修复 Ctrl+C 处理，确保调用 interrupt
+    // Handle Ctrl+C
     if (key.ctrl && input === 'c') {
       if (input.length > 0) {
         setInput('');
@@ -67,11 +62,11 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       return;
     }
 
+    // Handle ESC - interrupt processing
     if (key.escape) {
       if (isProcessing) {
         sessionService.interrupt();
         setIsProcessing(false);
-        setCurrentActivity('');
         const interruptEvent: SystemInfoEvent = {
           id: generateId(),
           type: UIEventType.SystemInfo,
@@ -79,11 +74,12 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
           level: 'info',
           message: 'Execution interrupted by user',
         };
-        setEvents((prev) => [...prev, interruptEvent]);
+        // Emit through TaskContainer's event system
       }
       return;
     }
 
+    // Handle Ctrl+R - toggle detail mode
     if (key.ctrl && input === 'r') {
       setDetailMode((prev) => !prev);
       const modeEvent: SystemInfoEvent = {
@@ -93,22 +89,54 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         level: 'info',
         message: `Detail mode ${!detailMode ? 'enabled' : 'disabled'}`,
       };
-      setEvents((prev) => [...prev, modeEvent]);
+      // Emit through TaskContainer's event system
       return;
     }
 
+    // Handle welcome screen dismissal
     if (appState === 'welcome') {
       setAppState('theme-selection');
       return;
     }
+
+    // Skip input handling for non-ready states or when processing
     if (appState !== 'ready') return;
 
+    // Handle Ctrl+T - cycle themes
     if (key.ctrl && input === 't') {
       const currentIndex = availableThemes.indexOf(themeName);
       const nextIndex = (currentIndex + 1) % availableThemes.length;
       setTheme(availableThemes[nextIndex]);
     }
   });
+
+  // Monitor processing state from session service
+  useEffect(() => {
+    const eventEmitter = sessionService.events;
+
+    const subscription = eventEmitter.onAll((event) => {
+      if (event.type === UIEventType.TaskStart) {
+        setIsProcessing(true);
+      }
+      if (event.type === UIEventType.TaskComplete) {
+        setIsProcessing(false);
+      }
+      if (event.type === 'tool_confirmation_request') {
+        const confirmEvent = event as any;
+        setPendingConfirmation({
+          confirmationId: confirmEvent.confirmationId,
+          toolName: confirmEvent.toolName,
+          args: confirmEvent.args,
+          description: confirmEvent.description,
+        });
+      }
+      if (event.type === 'tool_confirmation_response') {
+        setPendingConfirmation(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [sessionService]);
 
   const handleWelcomeDismiss = useCallback(() => {
     setAppState('theme-selection');
@@ -120,6 +148,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   const handleConfirmation = useCallback(
     (confirmationId: string, approved: boolean) => {
+      // Send confirmation response to session service
       if (pendingConfirmation?.confirmationId === confirmationId) {
         sessionService.events.emit({
           type: 'tool_confirmation_response',
@@ -132,72 +161,10 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
     [pendingConfirmation, sessionService],
   );
 
-  // 批处理事件更新避免频繁刷新
-  useEffect(() => {
-    if (appState !== 'ready' || isInitialized) return;
-
-    const eventEmitter = sessionService.events;
-    let eventBuffer: UIEvent[] = [];
-    let batchTimeout: NodeJS.Timeout | null = null;
-
-    const flushEvents = () => {
-      if (eventBuffer.length > 0) {
-        setEvents((prev) => [...prev, ...eventBuffer]);
-        eventBuffer = [];
-      }
-      batchTimeout = null;
-    };
-
-    const subscription = eventEmitter.onAll((event: UIEvent) => {
-      // 防止重复事件
-      eventBuffer.push(event);
-
-      if (batchTimeout) {
-        clearTimeout(batchTimeout);
-      }
-      batchTimeout = setTimeout(flushEvents, 16);
-
-      // 处理特定事件类型
-      if (event.type === UIEventType.TaskStart) {
-        setIsProcessing(true);
-        setCurrentActivity('Processing...');
-      }
-
-      if (event.type === UIEventType.TaskComplete) {
-        setIsProcessing(false);
-        setCurrentActivity('');
-      }
-      if (event.type === 'tool_confirmation_request') {
-        const confirmEvent = event as ToolConfirmationRequestEvent;
-        setPendingConfirmation({
-          confirmationId: confirmEvent.confirmationId,
-          toolName: confirmEvent.toolName,
-          args: confirmEvent.args,
-          description: confirmEvent.description,
-        });
-      }
-      if (event.type === 'tool_confirmation_response') {
-        const responseEvent = event as ToolConfirmationResponseEvent;
-        if (pendingConfirmation?.confirmationId === responseEvent.confirmationId) {
-          setPendingConfirmation(null);
-        }
-      }
-    });
-
-    setIsInitialized(true);
-
-    return () => {
-      subscription.unsubscribe();
-      if (batchTimeout) {
-        clearTimeout(batchTimeout);
-      }
-      flushEvents();
-    };
-  }, [sessionService, appState, isInitialized]);
-
   const handleSpecialCommands = useCallback(
     (input: string): boolean => {
       const command = input.toLowerCase();
+
       if (['/help', 'help'].includes(command)) {
         const helpEvent: SystemInfoEvent = {
           id: generateId(),
@@ -207,9 +174,10 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
           message:
             'Available Commands:\n/help - Show help\n/status - Show status\n/session - Show session stats\n/clear - Clear history\n/theme [name] - Change theme\n/exit - Exit application\n\nKeyboard shortcuts:\nESC - Interrupt execution\nCtrl+C - Clear input (twice to exit)\nCtrl+R - Toggle detail mode\nCtrl+T - Change theme',
         };
-        setEvents((prev) => [...prev, helpEvent]);
+        // Event will be handled by TaskContainer
         return true;
       }
+
       if (['/status', 'status'].includes(command)) {
         (async () => {
           const stats = await sessionService.getSessionStats();
@@ -220,10 +188,11 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
             level: 'info',
             message: `Current Status:\nInteractions: ${stats.totalInteractions}\nAverage Response: ${stats.averageResponseTime}ms\nFiles Accessed: ${stats.uniqueFilesAccessed}\nSession Duration: ${stats.sessionDuration}s`,
           };
-          setEvents((prev) => [...prev, statusEvent]);
+          // Event will be handled by TaskContainer
         })();
         return true;
       }
+
       if (['/session', 'session'].includes(command)) {
         (async () => {
           const stats = await sessionService.getSessionStats();
@@ -235,10 +204,11 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
             level: 'info',
             message: `Session Statistics:\nTotal Interactions: ${stats.totalInteractions}\nTokens Used: ${stats.totalTokensUsed}\nWatched Files: ${fileWatcherStats.watchedFileCount}\nFile Changes: ${fileWatcherStats.recentChangesCount}`,
           };
-          setEvents((prev) => [...prev, sessionEvent]);
+          // Event will be handled by TaskContainer
         })();
         return true;
       }
+
       if (command.startsWith('/theme')) {
         const parts = command.split(' ');
         if (parts.length > 1) {
@@ -252,7 +222,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
               level: 'info',
               message: `Theme changed to: ${themeName}`,
             };
-            setEvents((prev) => [...prev, themeEvent]);
+            // Event will be handled by TaskContainer
           } else {
             const errorEvent: SystemInfoEvent = {
               id: generateId(),
@@ -261,7 +231,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
               level: 'error',
               message: `Unknown theme: ${themeName}. Available: ${availableThemes.join(', ')}`,
             };
-            setEvents((prev) => [...prev, errorEvent]);
+            // Event will be handled by TaskContainer
           }
         } else {
           const themeListEvent: SystemInfoEvent = {
@@ -271,12 +241,12 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
             level: 'info',
             message: `Current theme: ${themeName}\nAvailable themes: ${availableThemes.join(', ')}`,
           };
-          setEvents((prev) => [...prev, themeListEvent]);
+          // Event will be handled by TaskContainer
         }
         return true;
       }
+
       if (['/clear', 'clear'].includes(command)) {
-        setEvents([]);
         sessionService.clearSession();
         const clearEvent: SystemInfoEvent = {
           id: generateId(),
@@ -285,13 +255,15 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
           level: 'info',
           message: 'History and session state cleared',
         };
-        setEvents([clearEvent]);
+        // Event will be handled by TaskContainer
         return true;
       }
+
       if (['/exit', 'exit', 'quit'].includes(command)) {
         sessionService.interrupt();
         process.exit(0);
       }
+
       return false;
     },
     [sessionService, generateId, availableThemes, setTheme, themeName],
@@ -311,16 +283,9 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       setIsProcessing(true);
       setInput('');
 
-      const userInputEvent: UserInputEvent = {
-        id: generateId(),
-        type: UIEventType.UserInput,
-        timestamp: new Date(),
-        input: userInput.trim(),
-      };
-      setEvents((prev) => [...prev, userInputEvent]);
-
       try {
         const result: TaskExecutionResult = await sessionService.processTask(userInput);
+        // Task result will be handled through the event system
       } catch (error) {
         console.error('Task processing error:', error);
         const errorEvent: SystemInfoEvent = {
@@ -330,7 +295,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
           level: 'error',
           message: `Task failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         };
-        setEvents((prev) => [...prev, errorEvent]);
+        // Event will be handled by TaskContainer
       } finally {
         setIsProcessing(false);
       }
@@ -348,6 +313,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   return (
     <Box flexDirection='column'>
+      {/* Welcome Header */}
       <Box flexDirection='column' marginY={1} paddingX={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
         <Text color={currentTheme.colors.info}>Welcome to Tempurai Code Assistant</Text>
         <Text> </Text>
@@ -359,19 +325,21 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
         <Text color={currentTheme.colors.text.muted}>API Key: {mask(process.env.API_KEY || process.env.OPENAI_API_KEY)}</Text>
         <Text color={currentTheme.colors.text.muted}>API Base URL: {process.env.API_BASE_URL || process.env.OPENAI_BASE_URL || 'not set'}</Text>
       </Box>
-      {pendingConfirmation && (
-        <ConfirmationPanel confirmationId={pendingConfirmation.confirmationId} toolName={pendingConfirmation.toolName} args={pendingConfirmation.args} description={pendingConfirmation.description} onConfirm={handleConfirmation} />
-      )}
-      <TaskContainer events={events}>
-        {isProcessing && (
-          <Box marginY={1}>
-            <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
-          </Box>
-        )}
-        <EventStream events={events} detailMode={detailMode} />
-      </TaskContainer>
+
+      {/* Task Container - handles events and confirmation state */}
+      <TaskContainer sessionService={sessionService} detailMode={detailMode} onConfirm={handleConfirmation} />
+
+      {/* Input Area */}
       <Box marginTop={2} borderTop borderColor={currentTheme.colors.ui.border} paddingTop={1}>
-        <DynamicInput value={input} onChange={setInput} onSubmit={handleSubmit} placeholder='Ask me anything or type /help for help...' isProcessing={isProcessing || !!pendingConfirmation} />
+        <DynamicInput
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          placeholder='Ask me anything or type /help for help...'
+          isProcessing={isProcessing}
+          confirmationData={pendingConfirmation}
+          onConfirm={handleConfirmation}
+        />
       </Box>
     </Box>
   );
@@ -388,7 +356,22 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => {
 export const startInkUI = async (sessionService: SessionService) => {
   console.log('Starting InkUI Interface...');
 
+  // Silence console output during UI operation
+  const originalConsole = {
+    log: console.log,
+    error: console.error,
+    warn: console.warn,
+    info: console.info,
+  };
+
+  const silentConsole = () => {};
+  console.log = silentConsole;
+  console.info = silentConsole;
+  console.warn = silentConsole;
+
   const exitFn = () => {
+    // Restore console
+    Object.assign(console, originalConsole);
     sessionService.interrupt();
     process.exit(0);
   };

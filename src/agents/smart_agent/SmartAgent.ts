@@ -346,9 +346,7 @@ export class SmartAgent {
 
         try {
             const toolStartTime = Date.now();
-            const toolResult = action.tool === 'start_subagent'
-                ? await this.startSubAgent(action.args)
-                : await this.toolAgent.executeTool(action.tool, action.args);
+            const toolResult = await this.toolAgent.executeTool(action.tool, action.args);
 
             const toolDuration = Date.now() - toolStartTime;
 

@@ -4,27 +4,13 @@ import { z } from 'zod';
 import { tool } from 'ai';
 import { CommandValidator, type CommandValidationResult } from '../security/CommandValidator.js';
 import { ToolContext } from './base.js';
-import * as readline from 'readline';
 import { ToolOutputEvent } from '../events/EventTypes.js';
 
 const execAsync = util.promisify(exec);
 
-async function getUserConfirmation(message: string): Promise<boolean> {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-
-    return new Promise((resolve) => {
-        rl.question(`${message} (y/N): `, (answer) => {
-            rl.close();
-            resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
-        });
-    });
-}
-
 export const createShellExecutorTools = (context: ToolContext) => {
     const validator = new CommandValidator(context.config as any);
+
     const validateCommands = (
         commands: string[],
     ): CommandValidationResult[] =>
@@ -72,15 +58,12 @@ IMPORTANT: Always explain what command you're running and why.`,
                     };
                 }
 
-                // User confirmation for risky commands
-                const highRiskSet = new Set(['sudo', 'rm', 'dd', 'chmod', 'chown']);
-                const riskLevel: 'high' | 'medium' =
-                    validationResult.command && highRiskSet.has(validationResult.command)
-                        ? 'high'
-                        : 'medium';
-
-                const confirmed = await getUserConfirmation(
-                    `Execute command: ${command}\nPurpose: ${description}`
+                // HITL confirmation
+                const confirmDescription = `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`;
+                const confirmed = await context.hitlManager.requestConfirmation(
+                    'shell_executor',
+                    { command, description, workingDirectory },
+                    confirmDescription
                 );
 
                 if (!confirmed) {
@@ -106,7 +89,6 @@ IMPORTANT: Always explain what command you're running and why.`,
 
                 let { stdout, stderr } = await execAsync(command, options);
 
-                // convert stdout to str
                 stdout = stdout.toString();
                 stderr = stderr.toString();
 
@@ -181,17 +163,6 @@ Examples:
             workingDirectory,
             stopOnFirstError,
         }) => {
-            const results: Array<{
-                command: string;
-                description: string;
-                success: boolean;
-                stdout: string;
-                stderr: string;
-                cancelled: boolean;
-                error?: string;
-                exitCode?: number;
-            }> = [];
-
             // Bulk security validation
             const validationResults = validateCommands(commands.map((c) => c.command));
             const blockedCommands = validationResults
@@ -216,13 +187,15 @@ Examples:
                 };
             }
 
-            // One-time user confirmation
-            const commandsList = commands
-                .map((cmd, idx) => `${idx + 1}. ${cmd.command} (${cmd.description})`)
-                .join('\n');
+            // HITL confirmation
+            const commandsList = commands.slice(0, 3).map(cmd => cmd.command).join(', ');
+            const moreCount = commands.length - 3;
+            const confirmDescription = `Execute ${commands.length} commands: ${commandsList}${moreCount > 0 ? ` and ${moreCount} more` : ''}`;
 
-            const confirmed = await getUserConfirmation(
-                `Execute ${commands.length} shell commands in sequence?\n\nCommands to execute:\n${commandsList}`
+            const confirmed = await context.hitlManager.requestConfirmation(
+                'multi_command',
+                { commands, workingDirectory, stopOnFirstError },
+                confirmDescription
             );
 
             if (!confirmed) {
@@ -234,6 +207,17 @@ Examples:
                     cancelled: true,
                 };
             }
+
+            const results: Array<{
+                command: string;
+                description: string;
+                success: boolean;
+                stdout: string;
+                stderr: string;
+                cancelled: boolean;
+                error?: string;
+                exitCode?: number;
+            }> = [];
 
             context.eventEmitter.emit({
                 type: 'tool_output',

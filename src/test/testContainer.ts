@@ -5,7 +5,7 @@ import { TEST_CONFIG } from './config.js';
 import { mockAISDK } from './MockAISDK.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
 import { SimpleAgent } from '../agents/tool_agent/ToolAgent.js';
-import { SessionService } from '../session/SessionService.js';
+import { SessionService } from '../services/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/index.js';
 import type { LanguageModel } from 'ai';

@@ -4,7 +4,6 @@ export interface BaseEvent {
   sessionId?: string;
 }
 
-// Task level events
 export interface TaskStartedEvent extends BaseEvent {
   type: 'task_started';
   description: string;
@@ -56,7 +55,6 @@ export interface ToolOutputEvent extends BaseEvent {
   iteration?: number;
 }
 
-// System and user events
 export interface SystemInfoEvent extends BaseEvent {
   type: 'system_info';
   level: 'info' | 'warning' | 'error';
@@ -70,7 +68,6 @@ export interface UserInputEvent extends BaseEvent {
   command?: string;
 }
 
-// Session management events
 export interface SessionStatsEvent extends BaseEvent {
   type: 'session_stats';
   stats: {
@@ -82,7 +79,6 @@ export interface SessionStatsEvent extends BaseEvent {
   };
 }
 
-// Snapshot events
 export interface SnapshotCreatedEvent extends BaseEvent {
   type: 'snapshot_created';
   snapshotId: string;
@@ -90,7 +86,21 @@ export interface SnapshotCreatedEvent extends BaseEvent {
   filesCount: number;
 }
 
-// Union type of all events
+// HITL Events
+export interface ToolConfirmationRequestEvent extends BaseEvent {
+  type: 'tool_confirmation_request';
+  confirmationId: string;
+  toolName: string;
+  args: any;
+  description: string;
+}
+
+export interface ToolConfirmationResponseEvent extends BaseEvent {
+  type: 'tool_confirmation_response';
+  confirmationId: string;
+  approved: boolean;
+}
+
 export type UIEvent =
   | TextGeneratedEvent
   | TaskStartedEvent
@@ -103,29 +113,25 @@ export type UIEvent =
   | SystemInfoEvent
   | UserInputEvent
   | SessionStatsEvent
-
+  | ToolConfirmationRequestEvent
+  | ToolConfirmationResponseEvent
 
 export type UIEventType = UIEvent['type'];
 
-// Constants for event types
 export const UIEventType = {
-  // Core events
   TaskStart: 'task_started' as const,
   TaskComplete: 'task_completed' as const,
   ThoughtGenerated: 'thought_generated' as const,
-
-  // Tool execution events
   ToolExecutionStarted: 'tool_execution_started' as const,
   ToolExecutionCompleted: 'tool_execution_completed' as const,
   ToolOutput: 'tool_output' as const,
-
-  // System events
   SystemInfo: 'system_info' as const,
   UserInput: 'user_input' as const,
   SessionStats: 'session_stats' as const,
   SnapshotCreated: 'snapshot_created' as const,
+  ToolConfirmationRequest: 'tool_confirmation_request' as const,
+  ToolConfirmationResponse: 'tool_confirmation_response' as const,
 } as const;
-
 
 export interface EventListener<T extends UIEvent = UIEvent> {
   (event: T): void | Promise<void>;

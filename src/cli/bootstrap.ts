@@ -7,7 +7,7 @@ import 'reflect-metadata';
 import { getContainer } from '../di/container.js';
 import { TYPES } from '../di/types.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
-import { SessionService } from '../session/SessionService.js';
+import { SessionService } from '../services/SessionService.js';
 import type { LanguageModel } from 'ai';
 import { startInkUI } from './InkUI.js';
 

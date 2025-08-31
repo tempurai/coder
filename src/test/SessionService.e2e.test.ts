@@ -1,5 +1,5 @@
 import { Container } from 'inversify';
-import { SessionService, TaskExecutionResult, ProcessedInput, SessionStats } from '../session/SessionService.js';
+import { SessionService, TaskExecutionResult, ProcessedInput, SessionStats } from '../services/SessionService.js';
 import { SimpleAgent } from '../agents/tool_agent/ToolAgent.js';
 import { createTestContainer } from './testContainer.js';
 import { mockAISDK } from './MockAISDK.js';

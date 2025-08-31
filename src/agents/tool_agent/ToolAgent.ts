@@ -1,4 +1,4 @@
-import { generateObject, generateText, Output, tool } from 'ai';
+import { generateText, Output } from 'ai';
 import { Config, ConfigLoader } from '../../config/ConfigLoader.js';
 import type { LanguageModel, ToolSet } from 'ai';
 import { injectable, inject } from 'inversify';
@@ -12,6 +12,7 @@ import { createGitStatusTool, createGitLogTool, createGitDiffTool } from '../../
 import { createSaveMemoryTool } from '../../tools/MemoryTools.js';
 import { loadMCPTools, mcpToolLoader, MCPTool } from '../../tools/McpToolLoader.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
+import { HITLManager } from '../../services/HITLManager.js';
 
 export type Messages = Array<{ role: 'system' | 'user' | 'assistant', content: string }>;
 
@@ -37,7 +38,8 @@ export class ToolAgent {
         @inject(TYPES.Config) private config: Config,
         @inject(TYPES.LanguageModel) private model: LanguageModel,
         @inject(TYPES.ConfigLoader) private configLoader: ConfigLoader,
-        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter
+        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
+        @inject(TYPES.HITLManager) private hitlManager: HITLManager
     ) {
     }
 
@@ -48,10 +50,12 @@ export class ToolAgent {
     }
 
     async generateText({ messages, tools, allowTools = true }: ToolAgentTextProps): Promise<string> {
+        const finalMessages = allowTools ? this.addToolInfo(messages) : messages;
+
         const result = await generateText({
             model: this.model,
-            messages: messages,
-            tools: allowTools ? (tools || this.tools) : {},
+            messages: finalMessages,
+            tools: {},
             maxOutputTokens: this.config.maxTokens,
             temperature: this.config.temperature,
         });
@@ -60,16 +64,40 @@ export class ToolAgent {
     }
 
     async generateObject<T>({ messages, schema, tools, allowTools = true }: ToolAgentObjectProps<T>): Promise<T> {
+        const finalMessages = allowTools ? this.addToolInfo(messages) : messages;
+
         const result = await generateText({
             model: this.model,
-            messages: messages,
-            tools: allowTools ? (tools || this.tools) : {},
+            messages: finalMessages,
+            tools: {},
             maxOutputTokens: this.config.maxTokens,
             temperature: this.config.temperature,
             experimental_output: Output.object({ schema }),
         });
 
         return result.experimental_output;
+    }
+    private addToolInfo(messages: Messages): Messages {
+        const toolInfo = this.buildToolInfo();
+        if (!toolInfo) return messages;
+
+        const systemMessage = messages[0];
+        if (systemMessage?.role === 'system') {
+            return [
+                { ...systemMessage, content: `${systemMessage.content}\n\n${toolInfo}` },
+                ...messages.slice(1)
+            ];
+        }
+
+        return [{ role: 'system', content: toolInfo }, ...messages];
+    }
+
+    private buildToolInfo(): string {
+        const toolList = Object.entries(this.tools).map(([name, tool]) =>
+            `## ${name}\n${tool.description}\nParameters: ${JSON.stringify(tool.inputSchema, null, 2)}`
+        );
+
+        return toolList.length > 0 ? `# Available Tools\n\n${toolList.join('\n\n')}` : '';
     }
 
     async executeTool(toolName: string, args: any): Promise<any> {
@@ -91,9 +119,11 @@ export class ToolAgent {
 
     private loadBuiltinTools(): void {
         const tools: ToolSet = {};
-
         let toolContext = {
-            eventEmitter: this.eventEmitter, config: this.config, configLoader: this.configLoader
+            eventEmitter: this.eventEmitter,
+            config: this.config,
+            configLoader: this.configLoader,
+            hitlManager: this.hitlManager
         };
 
         // File operations

@@ -7,12 +7,13 @@ import { SmartAgent } from '../agents/smart_agent/SmartAgent.js';
 import { AgentOrchestrator } from '../agents/smart_agent/AgentOrchestrator.js';
 import { TodoManager } from '../agents/smart_agent/TodoManager.js';
 import { SubAgent } from '../agents/smart_agent/SubAgent.js';
-import { SessionService } from '../session/SessionService.js';
+import { SessionService } from '../services/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
 import { ISnapshotManagerFactory } from './interfaces.js';
 import { TYPES } from './types.js';
 import type { LanguageModel } from 'ai';
+import { HITLManager } from '../services/HITLManager.js';
 
 export { TYPES } from './types.js';
 
@@ -55,7 +56,7 @@ export function createContainer(): Container {
   // ToolAgent - 基础工具代理，不依赖其他 Agent
   container.bind<ToolAgent>(TYPES.ToolAgent).to(ToolAgent).inSingletonScope();
 
-  // TodoManager - 独立的任务管理器
+  // :TodoManager - 独立的任务管理器
   container.bind<TodoManager>(TYPES.TodoManager).to(TodoManager).inSingletonScope();
 
   // AgentOrchestrator - 需要 ToolAgent 和 UIEventEmitter
@@ -69,6 +70,8 @@ export function createContainer(): Container {
 
   // --- Core Services ---
   container.bind<SessionService>(TYPES.SessionService).to(SessionService).inSingletonScope();
+
+  container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inSingletonScope();
 
   // --- Factories ---
   container.bind<ISnapshotManagerFactory>(TYPES.SnapshotManagerFactory)

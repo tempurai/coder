@@ -12,30 +12,34 @@ Examples of when to use this:
 - User tells you specific project commands ("remember, our test command is npm run test:ci")
 - Important project configurations or settings
 - User preferences for how they like things done
-- Critical facts about the project structure or architecture
-IMPORTANT: Always ask for user confirmation before saving to memory, as this modifies their configuration files.`,
+- Critical facts about the project structure or architecture`,
   inputSchema: z.object({
     content: z.string().describe('The important information to save to memory'),
     category: z.string().optional().describe('Optional category/section for organizing the memory (e.g., "Commands", "Preferences", "Project Info")'),
-    ask_permission: z.boolean().default(true).describe('Whether to ask for user permission before saving (default: true)')
   }),
-  execute: async ({ content, category, ask_permission }) => {
-    if (ask_permission) {
-      context.eventEmitter.emit({
-        type: 'tool_output',
-        toolName: 'save_memory',
-        content: `Requesting permission to save to long-term memory: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`
-      } as ToolOutputEvent);
-
-      // In a real implementation, this would wait for user confirmation
-      // For now, we simulate approval
-      console.log('Simulating user approval for memory save...');
-    }
-
+  execute: async ({ content, category }) => {
     try {
+      // HITL confirmation
+      const previewContent = content.substring(0, 150);
+      const categoryInfo = category ? ` (Category: ${category})` : '';
+      const confirmDescription = `Save to memory${categoryInfo}:\n${previewContent}${content.length > 150 ? '...' : ''}`;
+
+      const confirmed = await context.hitlManager.requestConfirmation(
+        'save_memory',
+        { content, category },
+        confirmDescription
+      );
+
+      if (!confirmed) {
+        return {
+          success: false,
+          error: 'Memory save cancelled by user',
+          message: 'Memory save operation was cancelled'
+        };
+      }
+
       const contextFilePath = getContextFilePath();
       const timestamp = new Date().toISOString().split('T')[0];
-
       const categoryHeader = category ? `### ${category}` : '### Saved Memories';
       const memoryEntry = `\n${categoryHeader}\n\n**Added on ${timestamp}:**\n${content}\n`;
 
@@ -89,20 +93,18 @@ IMPORTANT: Always ask for user confirmation before saving to memory, as this mod
 });
 
 function getContextFilePath(): string {
-  // Try project-specific context file first
+  // Project context path
   const projectContextPath = path.join(process.cwd(), '.tempurai', 'directives.md');
   const projectDir = path.dirname(projectContextPath);
   if (fs.existsSync(projectDir)) {
     return projectContextPath;
   }
 
-  // Fallback to global context file
+  // Global context path
   const globalContextPath = path.join(os.homedir(), '.tempurai', '.tempurai.md');
   const globalDir = path.dirname(globalContextPath);
-
   if (!fs.existsSync(globalDir)) {
     fs.mkdirSync(globalDir, { recursive: true });
   }
-
   return globalContextPath;
 }

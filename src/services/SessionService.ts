@@ -1,5 +1,5 @@
 import { SmartAgent } from '../agents/smart_agent/SmartAgent.js';
-import { FileWatcherService } from '../services/FileWatcherService.js';
+import { FileWatcherService } from './FileWatcherService.js';
 import { Config } from '../config/ConfigLoader.js';
 import { injectable, inject } from 'inversify';
 import { TYPES } from '../di/types.js';

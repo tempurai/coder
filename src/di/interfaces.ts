@@ -1,4 +1,4 @@
-import { TaskExecutionResult } from '../session/SessionService.js';
+import { TaskExecutionResult } from '../services/SessionService.js';
 import { SnapshotResult, RestoreResult, SnapshotInfo } from '../services/SnapshotManager.js';
 
 /**

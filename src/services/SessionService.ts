@@ -7,40 +7,34 @@ import { ISnapshotManagerFactory } from '../di/interfaces.js';
 import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent, TextGeneratedEvent } from '../events/index.js';
 import { ToolAgent, Messages } from '../agents/tool_agent/ToolAgent.js';
 import { InterruptService } from './InterruptService.js';
+import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
 
 export interface TaskExecutionResult {
     success: boolean;
-    taskDescription: string;
-    duration: number;
-    iterations: number;
     summary: string;
-    snapshotId?: string;
     error?: string;
-    finalResult?: string;
 }
 
 export interface SessionStats {
     totalInteractions: number;
-    averageResponseTime: number;
-    uniqueFilesAccessed: number;
-    watchedFilesCount: number;
     sessionDuration: number;
     snapshotStats: {
         totalSnapshots: number;
         latestSnapshot?: string;
-        shadowRepoExists: boolean;
     };
 }
 
 @injectable()
 export class SessionService {
-    private conversationHistory: Messages = [];
+    private compressedContext: string = '';
+    private recentHistory: Messages = [];
     private sessionStartTime: Date;
-    private uniqueFilesAccessed: Set<string> = new Set();
-    private totalResponseTime: number = 0;
     private interactionCount: number = 0;
     private messageQueue: string[] = [];
     private isTaskRunning: boolean = false;
+    private readonly maxTokens = 30000;
+    private readonly preserveRecentCount = 8;
+    private compressedAgent: CompressedAgent;
 
     constructor(
         @inject(TYPES.ToolAgent) private _agent: ToolAgent,
@@ -51,7 +45,8 @@ export class SessionService {
         @inject(TYPES.InterruptService) private interruptService: InterruptService
     ) {
         this.sessionStartTime = new Date();
-        console.log('✅ 会话管理服务已初始化（新版ReAct模式）');
+        this.compressedAgent = new CompressedAgent(_agent);
+        console.log('✅ 会话管理服务已初始化');
     }
 
     get agent(): ToolAgent {
@@ -67,9 +62,6 @@ export class SessionService {
             this.queueMessage(query);
             return {
                 success: false,
-                taskDescription: query,
-                duration: 0,
-                iterations: 0,
                 summary: 'Task queued - another task is currently running',
                 error: 'Another task is already in progress'
             };
@@ -78,11 +70,13 @@ export class SessionService {
         this.isTaskRunning = true;
         this.interruptService.startTask();
 
-        const startTime = Date.now();
         console.log('\n🚀 开始处理任务...');
 
-        // 添加用户输入到会话历史
-        this.conversationHistory.push({ role: 'user', content: query });
+        // 添加用户输入到最近历史
+        this.recentHistory.push({ role: 'user', content: query });
+
+        // 检查是否需要压缩
+        await this.compressContextIfNeeded();
 
         this.eventEmitter.emit({
             type: 'task_started',
@@ -108,9 +102,6 @@ export class SessionService {
 
                 return {
                     success: false,
-                    taskDescription: query,
-                    duration: Date.now() - startTime,
-                    iterations: 0,
                     summary: errorMessage,
                     error: snapshotResult.error
                 };
@@ -128,37 +119,32 @@ export class SessionService {
             smartAgent.initializeTools();
 
             console.log('🔄 开始SmartAgent推理循环...');
-            // 传递会话历史给SmartAgent
-            const taskResult = await smartAgent.runTask(query, [...this.conversationHistory]);
 
-            // 添加助手响应到会话历史
-            this.conversationHistory.push({
+            // 构建完整的上下文历史
+            const fullHistory = this.buildFullHistory();
+            const taskResult = await smartAgent.runTask(query, fullHistory);
+
+            // 添加助手响应到最近历史
+            this.recentHistory.push({
                 role: 'assistant',
                 content: taskResult.finalResult || taskResult.summary
             });
 
             const finalResult: TaskExecutionResult = {
                 success: taskResult.success,
-                taskDescription: query,
-                duration: taskResult.duration,
-                iterations: taskResult.iterations,
                 summary: taskResult.summary,
-                snapshotId: snapshotResult.snapshotId,
-                error: taskResult.error,
-                finalResult: taskResult.finalResult
+                error: taskResult.error
             };
 
             this.interactionCount++;
-            this.totalResponseTime += finalResult.duration;
 
-            const duration = Date.now() - startTime;
-            console.log(`\n✅ 任务处理完成: ${finalResult.success ? '成功' : '失败'} (${duration}ms)`);
+            console.log(`\n✅ 任务处理完成: ${finalResult.success ? '成功' : '失败'}`);
 
             this.eventEmitter.emit({
                 type: 'task_completed',
                 success: finalResult.success,
-                duration: finalResult.duration,
-                iterations: finalResult.iterations,
+                duration: taskResult.duration,
+                iterations: taskResult.iterations,
                 summary: finalResult.summary,
                 error: finalResult.error,
             } as TaskCompletedEvent);
@@ -166,7 +152,6 @@ export class SessionService {
             return finalResult;
 
         } catch (error) {
-            const duration = Date.now() - startTime;
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
             console.error(`💥 ${errorMessage}`);
 
@@ -177,9 +162,6 @@ export class SessionService {
 
             return {
                 success: false,
-                taskDescription: query,
-                duration,
-                iterations: 0,
                 summary: '任务执行时发生严重错误',
                 error: errorMessage
             };
@@ -187,6 +169,44 @@ export class SessionService {
             this.isTaskRunning = false;
             this.processNextQueuedMessage();
         }
+    }
+
+    private async compressContextIfNeeded(): Promise<void> {
+        const totalTokens = this.compressedAgent.calculateTokens(this.recentHistory);
+
+        if (totalTokens <= this.maxTokens || this.recentHistory.length <= this.preserveRecentCount) {
+            return;
+        }
+
+        // 分离需要压缩的历史和保留的最近历史
+        const toCompress = this.recentHistory.slice(0, -this.preserveRecentCount);
+        const toKeep = this.recentHistory.slice(-this.preserveRecentCount);
+
+        // 使用CompressedAgent进行压缩
+        this.compressedContext = await this.compressedAgent.compress(
+            this.compressedContext,
+            toCompress
+        );
+
+        // 只保留最近的历史
+        this.recentHistory = toKeep;
+    }
+
+    private buildFullHistory(): Messages {
+        const history: Messages = [];
+
+        // 如果有压缩的上下文，添加为系统消息
+        if (this.compressedContext) {
+            history.push({
+                role: 'system',
+                content: `[PREVIOUS CONTEXT]\n${this.compressedContext}`
+            });
+        }
+
+        // 添加最近的历史
+        history.push(...this.recentHistory);
+
+        return history;
     }
 
     async restoreFromSnapshot(snapshotId: string): Promise<{ success: boolean, error?: string }> {
@@ -220,16 +240,10 @@ export class SessionService {
 
         return {
             totalInteractions: this.interactionCount,
-            averageResponseTime: this.interactionCount > 0
-                ? Math.round(this.totalResponseTime / this.interactionCount)
-                : 0,
-            uniqueFilesAccessed: this.uniqueFilesAccessed.size,
-            watchedFilesCount: this.fileWatcherService.getWatchedFiles().length,
             sessionDuration: Math.round(sessionDuration / 1000),
             snapshotStats: {
                 totalSnapshots: snapshotStatus.snapshotCount,
                 latestSnapshot: snapshotStatus.latestSnapshot?.id,
-                shadowRepoExists: snapshotStatus.shadowRepoExists
             }
         };
     }
@@ -245,9 +259,8 @@ export class SessionService {
     }
 
     clearSession(): void {
-        this.conversationHistory = [];
-        this.uniqueFilesAccessed.clear();
-        this.totalResponseTime = 0;
+        this.compressedContext = '';
+        this.recentHistory = [];
         this.interactionCount = 0;
         this.sessionStartTime = new Date();
     }

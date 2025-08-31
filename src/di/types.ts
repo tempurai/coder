@@ -11,6 +11,7 @@ export const TYPES = {
   AgentOrchestrator: Symbol.for('AgentOrchestrator'),
   TodoManager: Symbol.for('TodoManager'),
   SubAgent: Symbol.for('SubAgent'),
+  CompressedAgent: Symbol.for('CompressedAgent'),
 
   // --- Core Services ---
   SessionService: Symbol.for('SessionService'),

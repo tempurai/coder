@@ -15,6 +15,7 @@ import { TYPES } from './types.js';
 import type { LanguageModel } from 'ai';
 import { HITLManager } from '../services/HITLManager.js';
 import { InterruptService } from '../services/InterruptService.js';
+import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
 
 export { TYPES } from './types.js';
 
@@ -68,6 +69,9 @@ export function createContainer(): Container {
 
   // SmartAgent - 需要 ToolAgent 和 UIEventEmitter，会内部创建其他组件
   container.bind<SmartAgent>(TYPES.SmartAgent).to(SmartAgent).inSingletonScope();
+
+  // CompressedAgent - 需要 ToolAgent 和 UIEventEmitter
+  container.bind<CompressedAgent>(TYPES.CompressedAgent).to(CompressedAgent).inSingletonScope();
 
   // --- Core Services ---
   container.bind<SessionService>(TYPES.SessionService).to(SessionService).inSingletonScope();

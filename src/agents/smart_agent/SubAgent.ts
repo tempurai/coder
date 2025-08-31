@@ -6,19 +6,18 @@ import { inject } from 'inversify';
 import { TYPES } from '../../di/types.js';
 import { tool } from 'ai';
 
-// Simplified schema and prompt
 export const SubAgentResponseSchema = z.object({
-  reasoning: z.string().describe("当前分析和计划的方法"),
+  reasoning: z.string().describe("Detailed explanation of current analysis and planned approach"),
   action: z.object({
-    tool: z.string().describe("工具名称"),
+    tool: z.string().describe("Tool name"),
     args: z.record(z.any()).default({})
   }),
-  completed: z.boolean().default(false).describe("任务是否已完成"),
-  output: z.any().optional().describe("完成时的最终结果")
+  completed: z.boolean().default(false).describe("Whether the task has been completed"),
+  output: z.any().optional().describe("Final result when completed"),
+  criticalInfo: z.string().optional().describe("Critical information that needs to be preserved")
 });
 
 export type SubAgentResponse = z.infer<typeof SubAgentResponseSchema>;
-
 
 const SUB_AGENT_PROMPT = `You are a specialized SubAgent designed to complete a specific focused task autonomously. You operate in non-interactive mode, meaning you cannot ask the user for input or clarification.
 
@@ -29,6 +28,12 @@ const SUB_AGENT_PROMPT = `You are a specialized SubAgent designed to complete a 
 - **Systematic Approach**: Break down complex tasks into logical steps
 - **Error Resilience**: Handle errors gracefully with alternative approaches
 - **Shell-First Strategy**: Prefer basic shell commands (ls, find, cat, grep) for exploration and validation
+
+# Context Information Management
+- When you complete actions that change system state, include a brief summary in criticalInfo field
+- Focus on file changes, errors, and important discoveries
+- Ignore read-only operations like ls, cat, grep results unless they reveal critical issues
+- Pay attention to any context guidance provided in the task description
 
 # Execution Guidelines
 1. **Analyze the Task**: Understand the objective, context, and available tools
@@ -62,7 +67,8 @@ Always respond with valid JSON:
     "args": { "parameter": "value" }
   },
   "completed": false,
-  "output": null
+  "output": null,
+  "criticalInfo": "Brief summary of important changes or discoveries"
 }
 
 **When to Set "completed": true:**
@@ -74,6 +80,7 @@ Always respond with valid JSON:
 **Special Actions:**
 - Use "tool": "think" for pure reasoning when no tool execution is needed
 - Use "tool": "finish" to explicitly signal task completion
+
 
 # Examples
 
@@ -96,7 +103,7 @@ Task: "Analyze the authentication system and identify security issues"
 {
   "reasoning": "Found auth files. Now I need to examine them for security issues.",
   "action": {
-    "tool": "shell_executor", 
+    "tool": "shell_executor",
     "args": {
       "command": "cat src/auth.js | head -50",
       "description": "Read authentication implementation"
@@ -120,7 +127,7 @@ Task: "Analyze the authentication system and identify security issues"
   }
 }
 
-**Example 2: File Refactoring Task**  
+**Example 2: File Refactoring Task**
 Task: "Convert callback functions to async/await"
 
 {
@@ -165,7 +172,7 @@ Task: "Convert callback functions to async/await"
 {
   "reasoning": "Tests pass. Refactoring from callbacks to async/await is complete and verified.",
   "action": {
-    "tool": "finish", 
+    "tool": "finish",
     "args": {}
   },
   "completed": true,
@@ -178,13 +185,16 @@ Task: "Convert callback functions to async/await"
 
 Remember: You are operating independently to accomplish a specific goal. Focus on delivering results efficiently and effectively while maintaining high quality standards. Use shell commands as your primary exploration and verification tool.`;
 
-
-// Interfaces
 interface SubAgentTask {
   id: string;
   type: string;
   description: string;
   context: any;
+  contextGuidance?: {
+    focusAreas: string[];
+    criticalTypes: string[];
+    expectedOutputs: string[];
+  };
   tools?: string[];
   maxTurns?: number;
   timeoutMs?: number;
@@ -195,6 +205,7 @@ interface SubAgentResult {
   taskId: string;
   output: any;
   iterations: number;
+  criticalInfo: string;
   duration: number;
   terminateReason: 'GOAL' | 'MAX_TURNS' | 'TIMEOUT' | 'ERROR';
   error?: string;
@@ -219,7 +230,6 @@ export class SubAgent {
     logs.push(`Starting SubAgent task: ${task.type}`);
     console.log(`SubAgent executing: ${task.type} - ${task.description}`);
 
-    // Emit start event
     this.eventEmitter.emit({
       type: 'system_info',
       level: 'info',
@@ -236,7 +246,6 @@ export class SubAgent {
       const duration = Date.now() - startTime;
       logs.push(`Task ${result.success ? 'completed' : 'failed'} in ${duration}ms`);
 
-      // Emit completion event
       this.eventEmitter.emit({
         type: 'system_info',
         level: result.success ? 'info' : 'warning',
@@ -255,6 +264,7 @@ export class SubAgent {
         taskId: task.id,
         output: null,
         iterations: 0,
+        criticalInfo: `Task failed: ${errorMessage}`,
         duration,
         terminateReason: 'ERROR',
         error: errorMessage,
@@ -264,8 +274,7 @@ export class SubAgent {
   }
 
   private async executeTaskLoop(task: SubAgentTask, maxTurns: number, logs: string[]) {
-    const toolsList = task.tools ? task.tools.join(', ') : 'all available tools';
-
+    const criticalInfoList: string[] = [];
     const conversationHistory: Messages = [
       { role: 'system', content: SUB_AGENT_PROMPT },
       {
@@ -273,6 +282,9 @@ export class SubAgent {
         content: `Task: ${task.description}
 Context: ${JSON.stringify(task.context, null, 2)}
 Complete this task efficiently.`
+          + (task.contextGuidance ? `
+
+Context Guidance: ${JSON.stringify(task.contextGuidance, null, 2)}` : '')
       }
     ];
 
@@ -303,6 +315,10 @@ Complete this task efficiently.`
 
         logs.push(`Turn ${turnCount}: ${response.action.tool}`);
 
+        if (response.criticalInfo) {
+          criticalInfoList.push(response.criticalInfo);
+        }
+
         if (response.completed || response.action.tool === 'finish') {
           taskCompleted = true;
           finalOutput = response.output || response.action.args;
@@ -314,19 +330,27 @@ Complete this task efficiently.`
           continue;
         }
 
-        // Check tool restrictions
         if (task.tools && !task.tools.includes(response.action.tool)) {
           currentObservation = `Error: Tool ${response.action.tool} is not available for this specialized task`;
           continue;
         }
 
-        // Execute tool
         try {
           const toolResult = await this.toolAgent.executeTool(response.action.tool, response.action.args);
           currentObservation = `Previous: ${response.action.tool}\nResult: ${JSON.stringify(toolResult, null, 2)}`;
+
+          // Auto-preserve based on command classification
+          if (this.shouldPreserveTool(response.action.tool, toolResult)) {
+            const info = this.summarizeResult(response.action.tool, toolResult);
+            criticalInfoList.push(info);
+          }
+
         } catch (toolError) {
           const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
           currentObservation = `Previous: ${response.action.tool}\nError: ${errorMessage}`;
+
+          // Always preserve errors
+          criticalInfoList.push(`ERROR ${response.action.tool}: ${errorMessage}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -345,12 +369,51 @@ Complete this task efficiently.`
       terminateReason = 'ERROR';
     }
 
+    const criticalInfo = criticalInfoList.join('\n');
+
     return {
       success: taskCompleted,
       output: finalOutput,
+      criticalInfo,
       iterations: turnCount,
       terminateReason
     };
+  }
+
+  private shouldPreserveTool(toolName: string, result: any): boolean {
+    // Always preserve write operations
+    if (['write_file', 'apply_patch'].includes(toolName)) {
+      return true;
+    }
+
+    // Always preserve errors
+    if (!result.success) {
+      return true;
+    }
+
+    // For shell commands, check if it's a write operation
+    if (toolName === 'shell_executor' || toolName === 'multi_command') {
+      return result.commandClassification && !result.commandClassification.isReadOnly;
+    }
+
+    return false;
+  }
+
+  private summarizeResult(toolName: string, result: any): string {
+    if (!result.success) {
+      return `ERROR ${toolName}: ${result.error}`;
+    }
+
+    switch (toolName) {
+      case 'write_file':
+        return `Wrote file: ${result.filePath}`;
+      case 'apply_patch':
+        return `Applied patch to: ${result.filePath}`;
+      case 'shell_executor':
+        return `Executed (${result.commandClassification?.category}): ${result.command}`;
+      default:
+        return `${toolName}: completed`;
+    }
   }
 
   private createTimeoutPromise(timeoutMs: number): Promise<never> {
@@ -364,7 +427,15 @@ export const createSubAgentTool = (toolAgent: ToolAgent, eventEmitter: UIEventEm
   const startSubAgent = async (args: any): Promise<any> => {
     console.log('Starting sub-agent for specialized task');
     const subAgent = new SubAgent(toolAgent, eventEmitter);
-    return await subAgent.executeTask(args);
+
+    return await subAgent.executeTask({
+      ...args,
+      contextGuidance: args.contextGuidance || {
+        focusAreas: ['file_changes', 'errors', 'build_results'],
+        criticalTypes: ['write_operations', 'error_messages'],
+        expectedOutputs: ['modified_files', 'error_details']
+      }
+    });
   }
 
   return tool({
@@ -373,12 +444,16 @@ export const createSubAgentTool = (toolAgent: ToolAgent, eventEmitter: UIEventEm
 - Tasks requiring deep focus without user interaction
 - Specialized operations that benefit from dedicated execution context
 - When you need to delegate a specific subtask while continuing with the main workflow
-
 The sub-agent will work autonomously until task completion or failure.`,
     inputSchema: z.object({
       taskType: z.string().describe('Type of task (e.g., "file_analysis", "code_refactor", "testing")'),
       description: z.string().describe('Clear description of what the sub-agent should accomplish'),
       context: z.any().optional().describe('Any relevant context or data needed for the task'),
+      contextGuidance: z.object({
+        focusAreas: z.array(z.string()).optional().describe('Areas to pay special attention to'),
+        criticalTypes: z.array(z.string()).optional().describe('Types of information to preserve'),
+        expectedOutputs: z.array(z.string()).optional().describe('Expected output types')
+      }).optional().describe('Guidance on what context information to preserve')
     }),
     execute: async (args) => {
       const taskId = `subagent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -387,6 +462,7 @@ The sub-agent will work autonomously until task completion or failure.`,
         type: args.taskType,
         description: args.description,
         context: args.context || {},
+        contextGuidance: args.contextGuidance
       };
 
       try {
@@ -397,6 +473,7 @@ The sub-agent will work autonomously until task completion or failure.`,
           output: result.output,
           iterations: result.iterations,
           duration: result.duration,
+          criticalInfo: result.criticalInfo,
           terminateReason: result.terminateReason,
           error: result.error,
           message: result.success

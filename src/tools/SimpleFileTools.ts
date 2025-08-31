@@ -55,48 +55,6 @@ export const createWriteFileTool = (context: ToolContext) => tool({
     }
 });
 
-export const createReadFileTool = (context: ToolContext) => tool({
-    description: 'Read the contents of a file and return as text',
-    inputSchema: z.object({
-        filePath: z.string().describe('Path to the file to read'),
-    }),
-    execute: async ({ filePath }) => {
-        try {
-            const absolutePath = path.resolve(filePath);
-            if (!fs.existsSync(absolutePath)) {
-                return {
-                    success: false,
-                    filePath,
-                    error: `File not found: ${filePath}`
-                };
-            }
-
-            const content = await fs.promises.readFile(absolutePath, 'utf-8');
-            const stats = await fs.promises.stat(absolutePath);
-
-            context.eventEmitter.emit({
-                type: 'tool_output',
-                toolName: 'read_file',
-                content: `Read file: ${filePath} (${content.length} characters)`
-            } as ToolOutputEvent);
-
-            return {
-                success: true,
-                filePath: absolutePath,
-                content: content,
-                size: content.length,
-                lastModified: stats.mtime.toISOString(),
-                message: `File '${filePath}' read successfully`
-            };
-        } catch (error) {
-            return {
-                success: false,
-                filePath,
-                error: error instanceof Error ? error.message : 'Unknown error'
-            };
-        }
-    }
-});
 
 export const createApplyPatchTool = (context: ToolContext) => tool({
     description: `Apply a unified diff patch to a file. 
@@ -298,56 +256,6 @@ export const createFindFilesTool = (context: ToolContext) => tool({
                 files: [],
                 count: 0,
                 pattern
-            };
-        }
-    },
-});
-
-export const createSearchInFilesTool = (context: ToolContext) => tool({
-    description: 'Search for keywords in TypeScript and JavaScript files',
-    inputSchema: z.object({
-        keyword: z.string().describe('Keyword to search for in files'),
-        filePattern: z.string().default('*.{ts,js,tsx,jsx}').describe('File pattern to search in')
-    }),
-    execute: async ({ keyword, filePattern }) => {
-        try {
-            const { stdout } = await execAsync(`grep -r -n "${keyword}" --include="${filePattern}" .`);
-            const matches = stdout.trim().split('\n').filter(m => m.length > 0);
-            const parsedMatches = matches.map(match => {
-                const [filePath, lineNumber, ...contentParts] = match.split(':');
-                return {
-                    file: filePath,
-                    line: parseInt(lineNumber),
-                    content: contentParts.join(':').trim()
-                };
-            });
-
-            const displayContent = parsedMatches.slice(0, 10).map(match =>
-                `${match.file}:${match.line}: ${match.content}`
-            ).join('\n') + (matches.length > 10 ? `\n... and ${matches.length - 10} more matches` : '');
-
-            context.eventEmitter.emit({
-                type: 'tool_output',
-                toolName: 'search_in_files',
-                content: `Found ${matches.length} matches for '${keyword}' in ${filePattern}:\n${displayContent}`
-            } as ToolOutputEvent);
-
-            return {
-                success: true,
-                matches: parsedMatches,
-                count: matches.length,
-                keyword,
-                filePattern,
-                message: `Found ${matches.length} matches for '${keyword}'`
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
-                matches: [],
-                count: 0,
-                keyword,
-                filePattern
             };
         }
     },

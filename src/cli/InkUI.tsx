@@ -34,6 +34,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [detailMode, setDetailMode] = useState<boolean>(false);
   const [ctrlCCount, setCtrlCCount] = useState<number>(0);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const generateId = useCallback((): string => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -133,7 +134,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   // 批处理事件更新避免频繁刷新
   useEffect(() => {
-    if (appState !== 'ready') return;
+    if (appState !== 'ready' || isInitialized) return;
 
     const eventEmitter = sessionService.events;
     let eventBuffer: UIEvent[] = [];
@@ -148,19 +149,20 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
     };
 
     const subscription = eventEmitter.onAll((event: UIEvent) => {
-      // 将事件添加到缓冲区
+      // 防止重复事件
       eventBuffer.push(event);
 
-      // 批处理更新，避免频繁刷新
       if (batchTimeout) {
         clearTimeout(batchTimeout);
       }
-      batchTimeout = setTimeout(flushEvents, 16); // ~60fps
+      batchTimeout = setTimeout(flushEvents, 16);
 
+      // 处理特定事件类型
       if (event.type === UIEventType.TaskStart) {
         setIsProcessing(true);
         setCurrentActivity('Processing...');
       }
+
       if (event.type === UIEventType.TaskComplete) {
         setIsProcessing(false);
         setCurrentActivity('');
@@ -182,14 +184,16 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       }
     });
 
+    setIsInitialized(true);
+
     return () => {
       subscription.unsubscribe();
       if (batchTimeout) {
         clearTimeout(batchTimeout);
       }
-      flushEvents(); // 确保未处理的事件被刷新
+      flushEvents();
     };
-  }, [sessionService, appState, pendingConfirmation]);
+  }, [sessionService, appState, isInitialized]);
 
   const handleSpecialCommands = useCallback(
     (input: string): boolean => {

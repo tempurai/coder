@@ -4,7 +4,7 @@ import type { LanguageModel, ToolSet } from 'ai';
 import { injectable, inject } from 'inversify';
 import { ZodSchema } from 'zod';
 import { TYPES } from '../../di/types.js';
-import { createWriteFileTool, createReadFileTool, createApplyPatchTool, createFindFilesTool, createSearchInFilesTool } from '../../tools/SimpleFileTools.js';
+import { createWriteFileTool, createApplyPatchTool, createFindFilesTool } from '../../tools/SimpleFileTools.js';
 import { createShellExecutorTools } from '../../tools/ShellExecutor.js';
 import { createWebSearchTool, createUrlFetchTool } from '../../tools/WebTools.js';
 import { createGitStatusTool, createGitLogTool, createGitDiffTool } from '../../tools/GitTools.js';
@@ -157,9 +157,7 @@ export class ToolAgent {
         // File operations
         tools.write_file = createWriteFileTool(toolContext);
         tools.apply_patch = createApplyPatchTool(toolContext);
-        tools.read_file = createReadFileTool(toolContext);
         tools.find_files = createFindFilesTool(toolContext);
-        tools.search_in_files = createSearchInFilesTool(toolContext);
 
         // Git operations
         tools.git_status = createGitStatusTool(toolContext);

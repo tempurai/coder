@@ -37,7 +37,9 @@ const SUB_AGENT_PROMPT = `You are a specialized SubAgent designed to complete a 
 6. **Complete Thoroughly**: Don't finish until the objective is fully met
 
 # Tool Usage
-- Validate tool availability before attempting to use restricted tools
+- Shell Commands First: For common operations like listing files (ls), checking status (git status), finding files (find), prefer shell_executor over specialized tools
+- Shell for Exploration: Use shell commands to explore project structure, check file existence, run builds/tests
+- Shell for Testing and Validation: Use shell commands to run tests, check code quality, and validate changes
 - Handle tool errors by trying alternative approaches or modified parameters
 - Use tool results to inform subsequent actions
 - Prefer specific, targeted tool calls over broad, unfocused ones

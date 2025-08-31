@@ -515,16 +515,26 @@ export class SmartAgent {
         }
     }
 
-
-
     private generateFinalResult(
         initialQuery: string,
         history: SmartAgentIteration[],
         loopResult: SmartAgentExecutionLoopResult,
         duration: number
     ): TaskResult {
-        const success = loopResult.state === 'finished' && !loopResult.error && history.some(h => h.finished && !h.actions.some(a => a.error));
+        const success = loopResult.state === 'finished' && !loopResult.error &&
+            history.some(h => h.finished && !h.actions.some(a => a.error));
+
         const summary = this.generateSummary(history, success, loopResult.state);
+
+        if (success && history.length > 0) {
+            const lastIteration = history[history.length - 1];
+            if (lastIteration.thought) {
+                this.eventEmitter.emit({
+                    type: 'text_generated',
+                    text: summary,
+                } as any);
+            }
+        }
 
         const result: TaskResult = {
             success,
@@ -543,11 +553,11 @@ export class SmartAgent {
                 result.error = undefined;
                 result.summary = 'Paused: waiting for user input/confirmation.';
             } else {
-                result.error = loopResult.error || (history.length >= this.maxIterations ? 'Maximum iterations reached' : 'Task failed');
+                result.error = loopResult.error ||
+                    (history.length >= this.maxIterations ? 'Maximum iterations reached' : 'Task failed');
             }
         }
 
-        console.log(`Task completed: ${success ? 'Success' : loopResult.state === 'interrupted' ? 'Interrupted' : 'Failed'} in ${history.length} iterations (${duration}ms)`);
         return result;
     }
 

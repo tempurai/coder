@@ -9,7 +9,7 @@ import { ToolOutputEvent } from '../events/EventTypes.js';
 const execAsync = util.promisify(exec);
 
 export const createShellExecutorTools = (context: ToolContext) => {
-    const validator = new CommandValidator(context.config as any);
+    const validator = new CommandValidator(context.configLoader);
 
     const validateCommands = (
         commands: string[],

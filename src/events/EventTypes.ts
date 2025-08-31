@@ -93,12 +93,18 @@ export interface ToolConfirmationRequestEvent extends BaseEvent {
   toolName: string;
   args: any;
   description: string;
+  options?: {
+    showRememberOption?: boolean;
+    defaultChoice?: 'yes' | 'no' | 'yes_and_remember';
+    timeout?: number;
+  };
 }
 
 export interface ToolConfirmationResponseEvent extends BaseEvent {
   type: 'tool_confirmation_response';
   confirmationId: string;
   approved: boolean;
+  choice?: 'yes' | 'no' | 'yes_and_remember';
 }
 
 export type UIEvent =

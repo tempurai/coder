@@ -2,7 +2,7 @@ import { exec, type ExecOptions } from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
-import { CommandValidator, type CommandValidationResult } from '../security/CommandValidator.js';
+import { CommandValidator, CommandClassification } from '../security/CommandValidator.js';
 import { ToolContext } from './base.js';
 import { ToolOutputEvent } from '../events/EventTypes.js';
 
@@ -13,7 +13,7 @@ export const createShellExecutorTools = (context: ToolContext) => {
 
     const validateCommands = (
         commands: string[],
-    ): CommandValidationResult[] =>
+    ): any[] =>
         (validator as any).validateCommands
             ? (validator as any).validateCommands(commands)
             : commands.map((c) => validator.validateCommand(c));
@@ -42,38 +42,62 @@ IMPORTANT: Always explain what command you're running and why.`,
             captureError,
         }) => {
             try {
-                const validationResult: CommandValidationResult = validator.validateCommand(command);
+                const validationResult = validator.validateCommand(command);
                 if (!validationResult.allowed) {
-                    return {
-                        success: false as const,
-                        error: `Security policy violation: ${validationResult.reason}`,
-                        stdout: '',
-                        stderr: '',
-                        command,
-                        description,
-                        cancelled: false,
-                        securityBlocked: true,
-                        suggestion: validationResult.suggestion,
-                    };
-                }
+                    if (validationResult.requiresConfirmation) {
+                        const confirmed = await context.hitlManager.requestConfirmation(
+                            'shell_executor',
+                            { command, description, workingDirectory },
+                            `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`,
+                            { showRememberOption: true }
+                        );
 
-                const confirmDescription = `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`;
-                const confirmed = await context.hitlManager.requestConfirmation(
-                    'shell_executor',
-                    { command, description, workingDirectory },
-                    confirmDescription
-                );
+                        if (!confirmed) {
+                            return {
+                                success: false as const,
+                                error: 'Command execution cancelled by user',
+                                stdout: '',
+                                stderr: '',
+                                command,
+                                description,
+                                cancelled: true,
+                                commandClassification: validator.classifyCommand(command),
+                            };
+                        }
+                    } else {
+                        return {
+                            success: false as const,
+                            error: `Security policy violation: ${validationResult.reason}`,
+                            stdout: '',
+                            stderr: '',
+                            command,
+                            description,
+                            cancelled: false,
+                            securityBlocked: true,
+                            suggestion: validationResult.suggestion,
+                            commandClassification: validator.classifyCommand(command),
+                        };
+                    }
+                } else if (validationResult.requiresConfirmation) {
+                    const confirmed = await context.hitlManager.requestConfirmation(
+                        'shell_executor',
+                        { command, description, workingDirectory },
+                        `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`,
+                        { showRememberOption: true }
+                    );
 
-                if (!confirmed) {
-                    return {
-                        success: false as const,
-                        error: 'Command execution cancelled by user',
-                        stdout: '',
-                        stderr: '',
-                        command,
-                        description,
-                        cancelled: true,
-                    };
+                    if (!confirmed) {
+                        return {
+                            success: false as const,
+                            error: 'Command execution cancelled by user',
+                            stdout: '',
+                            stderr: '',
+                            command,
+                            description,
+                            cancelled: true,
+                            commandClassification: validator.classifyCommand(command),
+                        };
+                    }
                 }
 
                 context.eventEmitter.emit({
@@ -86,6 +110,8 @@ IMPORTANT: Always explain what command you're running and why.`,
                 if (workingDirectory) options.cwd = workingDirectory;
 
                 let { stdout, stderr } = await execAsync(command, options);
+                const classification = validator.classifyCommand(command);
+
                 stdout = stdout.toString();
                 stderr = stderr.toString();
 
@@ -109,8 +135,11 @@ IMPORTANT: Always explain what command you're running and why.`,
                     command,
                     description,
                     workingDirectory: workingDirectory || process.cwd(),
+                    commandClassification: classification,
                 };
             } catch (error: any) {
+                const classification = validator.classifyCommand(command);
+
                 const errorContent = [
                     `Command failed: ${command}`,
                     `Error: ${error?.message ?? String(error)}`,
@@ -133,6 +162,7 @@ IMPORTANT: Always explain what command you're running and why.`,
                     description,
                     exitCode: error?.code,
                     cancelled: false,
+                    commandClassification: classification,
                 };
             }
         },
@@ -163,7 +193,7 @@ Examples:
             const validationResults = validateCommands(commands.map((c) => c.command));
             const blockedCommands = validationResults
                 .map((res, idx) => ({ res, idx, original: commands[idx] }))
-                .filter((item) => !item.res.allowed);
+                .filter((item) => !item.res.allowed && !item.res.requiresConfirmation);
 
             if (blockedCommands.length > 0) {
                 const blockedList = blockedCommands
@@ -189,7 +219,8 @@ Examples:
             const confirmed = await context.hitlManager.requestConfirmation(
                 'multi_command',
                 { commands, workingDirectory, stopOnFirstError },
-                confirmDescription
+                confirmDescription,
+                { showRememberOption: false }
             );
 
             if (!confirmed) {
@@ -211,6 +242,7 @@ Examples:
                 cancelled: boolean;
                 error?: string;
                 exitCode?: number;
+                commandClassification?: CommandClassification;
             }> = [];
 
             context.eventEmitter.emit({
@@ -233,6 +265,8 @@ Examples:
                     if (workingDirectory) options.cwd = workingDirectory;
 
                     let { stdout, stderr } = await execAsync(command, options);
+                    const classification = validator.classifyCommand(command);
+
                     stdout = stdout.toString();
                     stderr = stderr.toString();
 
@@ -243,6 +277,7 @@ Examples:
                         stdout: stdout?.toString()?.trim() || '',
                         stderr: stderr?.toString()?.trim() || '',
                         cancelled: false,
+                        commandClassification: classification,
                     });
 
                     if (stdout) {
@@ -261,6 +296,8 @@ Examples:
                         } as ToolOutputEvent);
                     }
                 } catch (error: any) {
+                    const classification = validator.classifyCommand(command);
+
                     results.push({
                         command,
                         description,
@@ -270,6 +307,7 @@ Examples:
                         stderr: error?.stderr?.toString()?.trim() || '',
                         exitCode: error?.code,
                         cancelled: false,
+                        commandClassification: classification,
                     });
 
                     context.eventEmitter.emit({

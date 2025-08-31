@@ -2,20 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { SessionService } from '../../services/SessionService.js';
 import { UIEvent, UIEventType, ToolConfirmationResponseEvent } from '../../events/index.js';
 
-// 定义确认请求的数据结构
 interface PendingConfirmation {
     confirmationId: string;
     toolName: string;
     args: any;
     description: string;
+    options?: {
+        showRememberOption?: boolean;
+        defaultChoice?: 'yes' | 'no' | 'yes_and_remember';
+        timeout?: number;
+    };
 }
 
-/**
- * 自定义 Hook，用于订阅 sessionService 事件并管理相关 UI 状态。
- * 这是处理事件流、处理状态和确认请求的唯一真实来源。
- * @param sessionService SessionService 的实例
- * @returns 包含 UI 状态和事件处理函数的对象
- */
 export const useSessionEvents = (sessionService: SessionService) => {
     const [events, setEvents] = useState<UIEvent[]>([]);
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -27,7 +25,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
         let eventBuffer: UIEvent[] = [];
         let batchTimeout: NodeJS.Timeout | null = null;
 
-        // 批处理并刷新事件，以避免过于频繁的渲染
         const flushEvents = () => {
             if (eventBuffer.length > 0) {
                 setEvents((prev) => [...prev, ...eventBuffer]);
@@ -37,7 +34,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
         };
 
         const handleEvent = (event: UIEvent) => {
-            // 当等待用户确认时，冻结事件流，防止UI刷新
             if (pendingConfirmation) {
                 return;
             }
@@ -46,9 +42,8 @@ export const useSessionEvents = (sessionService: SessionService) => {
             if (batchTimeout) {
                 clearTimeout(batchTimeout);
             }
-            batchTimeout = setTimeout(flushEvents, 16); // 16ms 批处理
+            batchTimeout = setTimeout(flushEvents, 16);
 
-            // 根据事件类型更新状态
             switch (event.type) {
                 case UIEventType.TaskStart:
                     setIsProcessing(true);
@@ -67,6 +62,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
                         toolName: confirmEvent.toolName,
                         args: confirmEvent.args,
                         description: confirmEvent.description,
+                        options: confirmEvent.options,
                     });
                     break;
                 case UIEventType.ToolConfirmationResponse:
@@ -77,7 +73,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
         const subscription = eventEmitter.onAll(handleEvent);
 
-        // 清理函数
         return () => {
             subscription.unsubscribe();
             if (batchTimeout) {
@@ -85,16 +80,16 @@ export const useSessionEvents = (sessionService: SessionService) => {
             }
             flushEvents();
         };
-    }, [sessionService, pendingConfirmation]); // 依赖 pendingConfirmation 以便在确认后重新开始监听
+    }, [sessionService, pendingConfirmation]);
 
-    // 处理用户确认的回调函数
     const handleConfirmation = useCallback(
-        (confirmationId: string, approved: boolean) => {
+        (confirmationId: string, choice: 'yes' | 'no' | 'yes_and_remember') => {
             if (pendingConfirmation?.confirmationId === confirmationId) {
                 sessionService.events.emit({
                     type: 'tool_confirmation_response',
                     confirmationId,
-                    approved,
+                    approved: choice === 'yes' || choice === 'yes_and_remember',
+                    choice,
                 } as Omit<ToolConfirmationResponseEvent, 'id' | 'timestamp' | 'sessionId'>);
                 setPendingConfirmation(null);
             }

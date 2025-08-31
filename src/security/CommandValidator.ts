@@ -1,24 +1,66 @@
 import { ConfigLoader, Config } from '../config/ConfigLoader.js';
 
-/**
- * 命令验证结果接口
- * 包含验证状态和相关的诊断信息
- */
 export interface CommandValidationResult {
-  /** 是否允许执行该命令 */
   allowed: boolean;
-  /** 提取的根命令 */
   command: string;
-  /** 验证失败的原因（如果有） */
   reason?: string;
-  /** 建议的替代命令（如果有） */
   suggestion?: string;
+  requiresConfirmation?: boolean;
+  operationType?: 'read' | 'write' | 'execute';
 }
 
-/**
- * 危险命令列表
- * 这些命令需要特别注意，因为它们可能对系统造成不可逆的损害
- */
+export interface CommandClassification {
+  isReadOnly: boolean;
+  category: 'read' | 'write' | 'execute' | 'system';
+  operationType: 'read' | 'write' | 'execute';
+  requiresConfirmation: boolean;
+}
+
+interface CommandPattern {
+  command: string;
+  readPatterns: string[];
+  writePatterns: string[];
+  dangerousPatterns: string[];
+  defaultType: 'read' | 'write' | 'execute';
+}
+
+const BUILT_IN_COMMAND_PATTERNS: CommandPattern[] = [
+  {
+    command: 'find',
+    readPatterns: ['-name', '-type', '-size', '-mtime', '-print', '-ls'],
+    writePatterns: ['-delete', '-exec rm', '-exec mv', '-exec cp'],
+    dangerousPatterns: ['-delete', '-exec rm'],
+    defaultType: 'read'
+  },
+  {
+    command: 'git',
+    readPatterns: ['status', 'log', 'diff', 'show', 'branch', 'remote'],
+    writePatterns: ['add', 'commit', 'push', 'pull', 'merge', 'checkout', 'reset', 'rebase'],
+    dangerousPatterns: ['reset --hard', 'clean -f', 'push --force'],
+    defaultType: 'read'
+  },
+  {
+    command: 'npm',
+    readPatterns: ['list', 'info', 'view', 'search', 'outdated'],
+    writePatterns: ['install', 'uninstall', 'update', 'publish', 'run'],
+    dangerousPatterns: ['uninstall', 'publish'],
+    defaultType: 'execute'
+  },
+  {
+    command: 'docker',
+    readPatterns: ['ps', 'images', 'logs', 'inspect', 'version'],
+    writePatterns: ['run', 'build', 'push', 'pull', 'rm', 'rmi'],
+    dangerousPatterns: ['rm', 'rmi', 'system prune'],
+    defaultType: 'execute'
+  }
+];
+
+const ALWAYS_ALLOWED_COMMANDS = new Set([
+  'cat', 'head', 'tail', 'grep', 'less', 'more', 'wc', 'sort', 'uniq',
+  'ls', 'pwd', 'whoami', 'date', 'echo', 'which', 'whereis',
+  'ps', 'top', 'df', 'du', 'free', 'uname', 'env', 'printenv'
+]);
+
 const DANGEROUS_COMMANDS = new Set([
   'rm', 'rmdir', 'del', 'deltree',
   'sudo', 'su',
@@ -31,58 +73,17 @@ const DANGEROUS_COMMANDS = new Set([
   'iptables', 'ufw', 'firewall-cmd'
 ]);
 
-/**
- * 潜在危险的参数组合
- * 某些命令配合特定参数时具有破坏性
- */
-const DANGEROUS_PATTERNS = [
-  /rm\s+.*-r.*\//, // rm -r with paths
-  /chmod\s+.*777/, // chmod 777
-  /find\s+.*-delete/, // find with -delete
-  /dd\s+.*of=\/dev/, // dd writing to devices
-  />.*\/dev\/null/, // Redirecting to /dev/null (可能隐藏错误)
-];
-
-/**
- * 命令验证器类
- * 负责根据配置的安全策略验证shell命令是否允许执行
- */
 export class CommandValidator {
   private config: Config;
 
-  /**
-   * 构造函数
-   * @param configLoader 配置加载器实例
-   */
   constructor(configLoader: ConfigLoader) {
     this.config = configLoader.getConfig();
   }
 
-  /**
-   * 刷新配置缓存
-   * 当配置文件更新后应调用此方法
-   */
   public refreshConfig(configLoader: ConfigLoader): void {
     this.config = configLoader.getConfig();
   }
 
-  /**
-   * 验证命令是否允许执行
-   * 
-   * @param commandLine 完整的命令行字符串
-   * @returns CommandValidationResult 验证结果
-   * 
-   * @example
-   * ```typescript
-   * const validator = CommandValidator.getInstance();
-   * const result = validator.validateCommand('git status');
-   * if (result.allowed) {
-   *   // 执行命令
-   * } else {
-   *   console.error(`命令被阻止: ${result.reason}`);
-   * }
-   * ```
-   */
   public validateCommand(commandLine: string): CommandValidationResult {
     if (!commandLine || typeof commandLine !== 'string') {
       return {
@@ -101,9 +102,7 @@ export class CommandValidator {
       };
     }
 
-    // 提取根命令（第一个单词，去除路径）
     const rootCommand = this.extractRootCommand(trimmedCommand);
-
     if (!rootCommand) {
       return {
         allowed: false,
@@ -112,10 +111,28 @@ export class CommandValidator {
       };
     }
 
-    // 获取安全配置
+    const classification = this.classifyCommand(commandLine);
     const securityConfig = this.config.tools.shellExecutor.security;
 
-    // 1. 检查黑名单
+    // 1. Always allowed commands
+    if (ALWAYS_ALLOWED_COMMANDS.has(rootCommand)) {
+      return {
+        allowed: true,
+        command: rootCommand,
+        operationType: 'read'
+      };
+    }
+
+    // 2. Built-in intelligent patterns
+    const builtInPattern = BUILT_IN_COMMAND_PATTERNS.find(p => p.command === rootCommand);
+    if (builtInPattern) {
+      const result = this.validateBuiltInCommand(commandLine, builtInPattern, classification);
+      if (result) {
+        return result;
+      }
+    }
+
+    // 3. Check blocklist
     if (this.isInBlocklist(rootCommand, securityConfig.blocklist)) {
       return {
         allowed: false,
@@ -125,7 +142,7 @@ export class CommandValidator {
       };
     }
 
-    // 2. 检查危险命令
+    // 4. Check dangerous commands
     if (DANGEROUS_COMMANDS.has(rootCommand) && !securityConfig.allowDangerousCommands) {
       return {
         allowed: false,
@@ -135,144 +152,188 @@ export class CommandValidator {
       };
     }
 
-    // 3. 检查危险模式
-    const dangerousPattern = this.findDangerousPattern(trimmedCommand);
-    if (dangerousPattern && !securityConfig.allowDangerousCommands) {
-      return {
-        allowed: false,
-        command: rootCommand,
-        reason: '命令包含危险模式',
-        suggestion: '请检查命令参数或在配置中启用 allowDangerousCommands'
-      };
-    }
-
-    // 4. 检查白名单
+    // 5. Check allowlist
     if (this.isInAllowlist(rootCommand, securityConfig.allowlist)) {
       return {
         allowed: true,
-        command: rootCommand
+        command: rootCommand,
+        operationType: classification.operationType
       };
     }
 
-    // 5. 检查是否允许未列出的命令
+    // 6. Requires user confirmation
     if (securityConfig.allowUnlistedCommands) {
       return {
         allowed: true,
-        command: rootCommand
+        command: rootCommand,
+        requiresConfirmation: true,
+        operationType: classification.operationType
       };
     }
 
-    // 默认拒绝
     return {
       allowed: false,
       command: rootCommand,
-      reason: `命令 '${rootCommand}' 不在允许列表中`,
-      suggestion: `请将 '${rootCommand}' 添加到配置文件的 allowlist 中，或启用 allowUnlistedCommands`
+      requiresConfirmation: true,
+      reason: `命令 '${rootCommand}' 需要用户确认`,
+      operationType: classification.operationType
     };
   }
 
-  /**
-   * 批量验证多个命令
-   * 适用于管道命令或脚本验证
-   */
-  public validateCommands(commands: string[]): CommandValidationResult[] {
-    return commands.map(cmd => this.validateCommand(cmd));
+  public classifyCommand(commandLine: string): CommandClassification {
+    const rootCommand = this.extractRootCommand(commandLine);
+
+    if (ALWAYS_ALLOWED_COMMANDS.has(rootCommand)) {
+      return {
+        isReadOnly: true,
+        category: 'read',
+        operationType: 'read',
+        requiresConfirmation: false
+      };
+    }
+
+    const pattern = BUILT_IN_COMMAND_PATTERNS.find(p => p.command === rootCommand);
+    if (pattern) {
+      const hasWritePattern = pattern.writePatterns.some(wp =>
+        commandLine.toLowerCase().includes(wp.toLowerCase())
+      );
+
+      const hasDangerousPattern = pattern.dangerousPatterns.some(dp =>
+        commandLine.toLowerCase().includes(dp.toLowerCase())
+      );
+
+      if (hasDangerousPattern) {
+        return {
+          isReadOnly: false,
+          category: 'system',
+          operationType: 'write',
+          requiresConfirmation: true
+        };
+      }
+
+      if (hasWritePattern) {
+        return {
+          isReadOnly: false,
+          category: 'write',
+          operationType: 'write',
+          requiresConfirmation: true
+        };
+      }
+
+      const hasReadPattern = pattern.readPatterns.some(rp =>
+        commandLine.toLowerCase().includes(rp.toLowerCase())
+      );
+
+      if (hasReadPattern) {
+        return {
+          isReadOnly: true,
+          category: 'read',
+          operationType: 'read',
+          requiresConfirmation: false
+        };
+      }
+
+      // Use default type from pattern
+      return {
+        isReadOnly: pattern.defaultType === 'read',
+        category: pattern.defaultType === 'read' ? 'read' : 'execute',
+        operationType: pattern.defaultType,
+        requiresConfirmation: pattern.defaultType !== 'read'
+      };
+    }
+
+    // Default classification for unknown commands
+    if (DANGEROUS_COMMANDS.has(rootCommand)) {
+      return {
+        isReadOnly: false,
+        category: 'system',
+        operationType: 'execute',
+        requiresConfirmation: true
+      };
+    }
+
+    return {
+      isReadOnly: false,
+      category: 'execute',
+      operationType: 'execute',
+      requiresConfirmation: true
+    };
   }
 
-  /**
-   * 检查配置的安全策略是否合理
-   * 返回潜在的安全问题和建议
-   */
-  public validateSecurityConfig(): { warnings: string[]; suggestions: string[] } {
-    const securityConfig = this.config.tools.shellExecutor.security;
-    const warnings: string[] = [];
-    const suggestions: string[] = [];
+  private validateBuiltInCommand(
+    commandLine: string,
+    pattern: CommandPattern,
+    classification: CommandClassification
+  ): CommandValidationResult | null {
+    const lowerCommand = commandLine.toLowerCase();
 
-    // 检查是否允许所有未列出的命令
-    if (securityConfig.allowUnlistedCommands) {
-      warnings.push('允许执行未列出的命令可能存在安全风险');
-      suggestions.push('考虑禁用 allowUnlistedCommands 并维护明确的 allowlist');
+    // Check for dangerous patterns first
+    for (const dangerousPattern of pattern.dangerousPatterns) {
+      if (lowerCommand.includes(dangerousPattern.toLowerCase())) {
+        return {
+          allowed: false,
+          command: pattern.command,
+          reason: `命令包含危险操作: ${dangerousPattern}`,
+          suggestion: `请避免使用 ${dangerousPattern} 参数`
+        };
+      }
     }
 
-    // 检查是否允许危险命令
-    if (securityConfig.allowDangerousCommands) {
-      warnings.push('允许危险命令可能对系统造成损害');
-      suggestions.push('除非必要，否则建议禁用 allowDangerousCommands');
+    // Allow read operations without confirmation
+    for (const readPattern of pattern.readPatterns) {
+      if (lowerCommand.includes(readPattern.toLowerCase())) {
+        return {
+          allowed: true,
+          command: pattern.command,
+          operationType: 'read'
+        };
+      }
     }
 
-    // 检查白名单中是否有危险命令
-    const dangerousInAllowlist = securityConfig.allowlist.filter(cmd =>
-      DANGEROUS_COMMANDS.has(cmd)
-    );
-    if (dangerousInAllowlist.length > 0) {
-      warnings.push(`白名单中包含危险命令: ${dangerousInAllowlist.join(', ')}`);
-      suggestions.push('考虑从白名单中移除危险命令，或确保有适当的监控');
+    // Write operations require confirmation
+    for (const writePattern of pattern.writePatterns) {
+      if (lowerCommand.includes(writePattern.toLowerCase())) {
+        return {
+          allowed: true,
+          command: pattern.command,
+          requiresConfirmation: true,
+          operationType: 'write'
+        };
+      }
     }
 
-    // 检查黑名单是否覆盖了白名单中的命令
-    const conflicts = securityConfig.allowlist.filter(cmd =>
-      securityConfig.blocklist.includes(cmd)
-    );
-    if (conflicts.length > 0) {
-      warnings.push(`配置冲突: 以下命令同时出现在白名单和黑名单中: ${conflicts.join(', ')}`);
-      suggestions.push('解决白名单和黑名单之间的冲突');
-    }
-
-    return { warnings, suggestions };
+    // Use default behavior
+    return {
+      allowed: true,
+      command: pattern.command,
+      requiresConfirmation: pattern.defaultType !== 'read',
+      operationType: pattern.defaultType
+    };
   }
 
-  /**
-   * 提取命令行中的根命令
-   * 处理各种格式：绝对路径、相对路径、别名等
-   */
   private extractRootCommand(commandLine: string): string {
-    // 移除前导空格并分割参数
     const parts = commandLine.trim().split(/\s+/);
     if (parts.length === 0) return '';
 
     const firstPart = parts[0];
-
-    // 处理路径格式的命令
     const pathSegments = firstPart.split(/[/\\]/);
     const commandName = pathSegments[pathSegments.length - 1];
 
-    // 移除文件扩展名（主要针对 Windows）
     return commandName.replace(/\.(exe|cmd|bat)$/i, '').toLowerCase();
   }
 
-  /**
-   * 检查命令是否在白名单中
-   */
   private isInAllowlist(command: string, allowlist: string[]): boolean {
     return allowlist.some(allowed =>
       allowed.toLowerCase() === command.toLowerCase()
     );
   }
 
-  /**
-   * 检查命令是否在黑名单中
-   */
   private isInBlocklist(command: string, blocklist: string[]): boolean {
     return blocklist.some(blocked =>
       blocked.toLowerCase() === command.toLowerCase()
     );
   }
 
-  /**
-   * 查找命令中的危险模式
-   */
-  private findDangerousPattern(commandLine: string): RegExp | null {
-    for (const pattern of DANGEROUS_PATTERNS) {
-      if (pattern.test(commandLine)) {
-        return pattern;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * 为被阻止的命令提供建议
-   */
   private getSuggestionForBlockedCommand(command: string): string | undefined {
     const suggestions: Record<string, string> = {
       'rm': '使用 trash-cli 或类似工具进行安全删除',
@@ -284,7 +345,53 @@ export class CommandValidator {
 
     return suggestions[command.toLowerCase()];
   }
+
+  public validateCommands(commands: string[]): CommandValidationResult[] {
+    return commands.map(cmd => this.validateCommand(cmd));
+  }
+
+  public validateSecurityConfig(): { warnings: string[]; suggestions: string[] } {
+    const securityConfig = this.config.tools.shellExecutor.security;
+    const warnings: string[] = [];
+    const suggestions: string[] = [];
+
+    if (securityConfig.allowUnlistedCommands) {
+      warnings.push('允许执行未列出的命令可能存在安全风险');
+      suggestions.push('考虑禁用 allowUnlistedCommands 并维护明确的 allowlist');
+    }
+
+    if (securityConfig.allowDangerousCommands) {
+      warnings.push('允许危险命令可能对系统造成损害');
+      suggestions.push('除非必要，否则建议禁用 allowDangerousCommands');
+    }
+
+    const dangerousInAllowlist = securityConfig.allowlist.filter(cmd =>
+      DANGEROUS_COMMANDS.has(cmd)
+    );
+    if (dangerousInAllowlist.length > 0) {
+      warnings.push(`白名单中包含危险命令: ${dangerousInAllowlist.join(', ')}`);
+      suggestions.push('考虑从白名单中移除危险命令，或确保有适当的监控');
+    }
+
+    const conflicts = securityConfig.allowlist.filter(cmd =>
+      securityConfig.blocklist.includes(cmd)
+    );
+    if (conflicts.length > 0) {
+      warnings.push(`配置冲突: 以下命令同时出现在白名单和黑名单中: ${conflicts.join(', ')}`);
+      suggestions.push('解决白名单和黑名单之间的冲突');
+    }
+
+    return { warnings, suggestions };
+  }
 }
 
-// 注意：validateCommand 和 validateCommands 全局函数已被移除
-// 请直接使用 CommandValidator 实例的方法
+export function classifyShellCommand(command: string): CommandClassification {
+  // This is a simplified version for backward compatibility
+  const validator = new (class {
+    classifyCommand(cmd: string) {
+      return new CommandValidator({} as any).classifyCommand(cmd);
+    }
+  })();
+
+  return validator.classifyCommand(command);
+}

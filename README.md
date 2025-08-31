@@ -1,6 +1,6 @@
 # @tempurai/coder
 
-A next-generation intelligent code assistant built with TypeScript, featuring **ReAct (Reason + Act)** methodology, shell-first approach, and an advanced CLI interface for AI-powered coding assistance.
+A next-generation intelligent code assistant built with TypeScript, featuring **Multi (Reason + Act)** methodology, shell-first approach, and an advanced CLI interface for AI-powered coding assistance.
 
 ## 📦 Installation
 
@@ -18,7 +18,7 @@ coder
 
 ## 🚀 Revolutionary Features
 
-- **🧠 ReAct Agent Architecture**: Intelligent reasoning followed by precise actions using state-of-the-art AI models
+- **🧠 Multi Agent Architecture**: Intelligent reasoning followed by precise actions using state-of-the-art AI models
 - **🖥️ Interactive CLI Interface**: Beautiful terminal-based interface with real-time updates and progress indicators
 - **⚡ Shell-First Philosophy**: Direct command execution instead of over-engineered abstractions
 - **🎯 Smart Tool Ecosystem**: Comprehensive set of tools for file operations, git management, web search, and more
@@ -32,7 +32,7 @@ coder
 
 ### **Core Agents**
 
-- **SmartAgent**: Main reasoning agent that orchestrates complex tasks using ReAct methodology
+- **SmartAgent**: Main reasoning agent that orchestrates complex tasks using Multi methodology
 - **ToolAgent**: Manages and executes all available tools (file operations, shell commands, web search, etc.)
 - **SubAgent**: Handles specialized subtasks and parallel processing
 - **AgentOrchestrator**: Coordinates multiple agents for complex workflows
@@ -150,7 +150,7 @@ Actions taken:
 - shell_executor: "npm list --depth=0"
 
 Result: This is a TypeScript project with 15 source files, 3 uncommitted changes,
-using React and Express. The project appears to be a web application with both
+using Multi and Express. The project appears to be a web application with both
 frontend and backend components.
 ```
 
@@ -207,7 +207,7 @@ with configurable limits per route and user role.
 Workflow:
 1. Project structure analysis
 2. Component architecture planning
-3. Frontend component creation (React + TypeScript)
+3. Frontend component creation (Multi + TypeScript)
 4. Form validation setup (Zod schemas)
 5. Backend API endpoints
 6. Database integration
@@ -220,10 +220,10 @@ secure API endpoints, database persistence, and full test coverage.
 
 ## 🏗️ Technical Architecture
 
-### **ReAct Agent System**
+### **Multi Agent System**
 
 ```
-🧠 SmartAgent (ReAct Core)
+🧠 SmartAgent (Multi Core)
 ├── 🤔 Reasoning Engine: Analyzes tasks and plans approach
 ├── 🎯 Action Executor: Executes planned actions via tools
 ├── 📋 Todo Manager: Breaks complex tasks into manageable steps
@@ -294,13 +294,13 @@ npm test
 ```
 src/
 ├── agents/           # AI agent implementations
-│   ├── smart_agent/  # Main ReAct agent
+│   ├── smart_agent/  # Main Multi agent
 │   ├── tool_agent/   # Tool management
 │   └── compressed_agent/ # Lightweight agent
 ├── cli/              # Terminal interface
 │   ├── components/   # UI components
 │   ├── themes/       # Color themes
-│   └── hooks/        # React hooks for terminal
+│   └── hooks/        # Multi hooks for terminal
 ├── tools/            # Tool implementations
 │   ├── ShellExecutor.ts    # Shell command execution
 │   ├── SimpleFileTools.ts # File operations

@@ -3,7 +3,10 @@ import { Container } from 'inversify';
 import { Config, ConfigLoader } from '../config/ConfigLoader.js';
 import { DefaultModelFactory } from '../models/index.js';
 import { ToolAgent } from '../agents/tool_agent/ToolAgent.js';
-import { ReActAgent } from '../agents/react_agent/ReActAgent.js';
+import { SmartAgent } from '../agents/smart_agent/SmartAgent.js';
+import { AgentOrchestrator } from '../agents/smart_agent/AgentOrchestrator.js';
+import { TodoManager } from '../agents/smart_agent/TodoManager.js';
+import { SubAgent } from '../agents/smart_agent/SubAgent.js';
 import { SessionService } from '../session/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
@@ -16,9 +19,8 @@ export { TYPES } from './types.js';
 export function createContainer(): Container {
   const container = new Container();
 
-  container.bind<ConfigLoader>(TYPES.ConfigLoader)
-    .to(ConfigLoader)
-    .inSingletonScope();
+  // --- Core Configuration ---
+  container.bind<ConfigLoader>(TYPES.ConfigLoader).to(ConfigLoader).inSingletonScope();
 
   container.bind<Config>(TYPES.Config)
     .toDynamicValue(() => {
@@ -27,9 +29,7 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  container.bind<DefaultModelFactory>(TYPES.ModelFactory)
-    .to(DefaultModelFactory)
-    .inSingletonScope();
+  container.bind<DefaultModelFactory>(TYPES.ModelFactory).to(DefaultModelFactory).inSingletonScope();
 
   container.bind<LanguageModel>(TYPES.LanguageModel)
     .toDynamicValue(async () => {
@@ -46,22 +46,31 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  container.bind<FileWatcherService>(TYPES.FileWatcherService)
-    .to(FileWatcherService)
-    .inSingletonScope();
+  // --- Supporting Services ---
+  container.bind<UIEventEmitter>(TYPES.UIEventEmitter).toDynamicValue(() => new UIEventEmitter()).inSingletonScope();
+  container.bind<FileWatcherService>(TYPES.FileWatcherService).to(FileWatcherService).inSingletonScope();
 
-  container.bind<ToolAgent>(TYPES.ToolAgent)
-    .to(ToolAgent)
-    .inSingletonScope();
+  // --- Core Agents (in dependency order) ---
 
-  container.bind<UIEventEmitter>(TYPES.UIEventEmitter)
-    .toDynamicValue(() => new UIEventEmitter())
-    .inSingletonScope();
+  // ToolAgent - 基础工具代理，不依赖其他 Agent
+  container.bind<ToolAgent>(TYPES.ToolAgent).to(ToolAgent).inSingletonScope();
 
-  container.bind<SessionService>(TYPES.SessionService)
-    .to(SessionService)
-    .inSingletonScope();
+  // TodoManager - 独立的任务管理器
+  container.bind<TodoManager>(TYPES.TodoManager).to(TodoManager).inSingletonScope();
 
+  // AgentOrchestrator - 需要 ToolAgent 和 UIEventEmitter
+  container.bind<AgentOrchestrator>(TYPES.AgentOrchestrator).to(AgentOrchestrator).inSingletonScope();
+
+  // SubAgent - 需要 ToolAgent 和 UIEventEmitter  
+  container.bind<SubAgent>(TYPES.SubAgent).to(SubAgent).inSingletonScope();
+
+  // SmartAgent - 需要 ToolAgent 和 UIEventEmitter，会内部创建其他组件
+  container.bind<SmartAgent>(TYPES.SmartAgent).to(SmartAgent).inSingletonScope();
+
+  // --- Core Services ---
+  container.bind<SessionService>(TYPES.SessionService).to(SessionService).inSingletonScope();
+
+  // --- Factories ---
   container.bind<ISnapshotManagerFactory>(TYPES.SnapshotManagerFactory)
     .toFactory(() => {
       return async (projectRoot?: string) => {
@@ -70,7 +79,7 @@ export function createContainer(): Container {
       };
     });
 
-  // 创建一个工厂来确保 ToolAgent 在被使用前已完成异步初始化
+  // 创建工厂来确保 ToolAgent 完成异步初始化
   container.bind<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent)
     .toFactory(() => {
       let initializedAgent: ToolAgent | null = null;
@@ -86,12 +95,39 @@ export function createContainer(): Container {
       };
     });
 
-  // 创建一个工厂来获取完全初始化好的 SessionService
+  // 创建工厂来确保 SmartAgent 完成异步初始化
+  container.bind<() => Promise<SmartAgent>>(TYPES.InitializedSmartAgent)
+    .toFactory(() => {
+      let initializedAgent: SmartAgent | null = null;
+      return async () => {
+        if (initializedAgent) return initializedAgent;
+
+        // 首先确保 ToolAgent 已初始化
+        const toolAgentFactory = container.get<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent);
+        await toolAgentFactory();
+
+        const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
+        console.log('✅ SmartAgent已创建，开始初始化工具...');
+        smartAgent.initializeTools();
+        console.log('✅ SmartAgent工具初始化完成');
+        initializedAgent = smartAgent;
+        return smartAgent;
+      };
+    });
+
+  // 创建工厂来获取完全初始化好的 SessionService
   container.bind<() => Promise<SessionService>>(TYPES.InitializedSessionService)
     .toFactory(() => {
       return async () => {
-        const agentFactory = container.get<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent);
-        await agentFactory(); // 确保 ToolAgent 已初始化
+        // 确保所有依赖的 Agent 都已初始化
+        const toolAgentFactory = container.get<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent);
+        const smartAgentFactory = container.get<() => Promise<SmartAgent>>(TYPES.InitializedSmartAgent);
+
+        await Promise.all([
+          toolAgentFactory(),
+          smartAgentFactory()
+        ]);
+
         const sessionService = container.get<SessionService>(TYPES.SessionService);
         console.log('✅ 会话管理服务已初始化');
         return sessionService;

@@ -1,98 +1,78 @@
-import { generateText, tool } from 'ai';
+import { generateObject, generateText, Output, tool } from 'ai';
 import { Config, ConfigLoader } from '../../config/ConfigLoader.js';
 import type { LanguageModel, ToolSet } from 'ai';
 import { injectable, inject } from 'inversify';
-import { z } from 'zod';
+import { ZodSchema } from 'zod';
 import { TYPES } from '../../di/types.js';
-import { LoopDetectionService, LoopDetectionResult } from '../../services/LoopDetectionService.js';
 
-// Agent流可以产出的事件类型
-export type AgentStreamEvent =
-    | { type: 'text-chunk'; content: string }
-    | { type: 'tool-call'; toolName: string; toolInput: Record<string, any> }
-    | { type: 'tool-result'; toolName: string; result: any; warning?: string }
-    | { type: 'error'; content: string };
-
-// 直接导入具体工具，无需中间转换层
-import { createShellExecutorTool } from '../../tools/ShellExecutor.js';
-// 文件工具
-import { writeFileTool, applyPatchTool, readFileTool, findFilesTool, searchInFilesTool } from '../../tools/SimpleFileTools.js';
-// Web工具
+import { createWriteFileTool, createReadFileTool, createApplyPatchTool, createFindFilesTool, createSearchInFilesTool } from '../../tools/SimpleFileTools.js';
+import { createShellExecutorTools } from '../../tools/ShellExecutor.js';
 import { createWebSearchTool, createUrlFetchTool } from '../../tools/WebTools.js';
-// MCP工具集
+import { createGitStatusTool, createGitLogTool, createGitDiffTool } from '../../tools/GitTools.js';
+import { createSaveMemoryTool } from '../../tools/MemoryTools.js';
 import { loadMCPTools, mcpToolLoader, MCPTool } from '../../tools/McpToolLoader.js';
-// Git工具
-import { gitStatusTool, gitLogTool, gitDiffTool } from '../../tools/GitTools.js';
-// 代码分析工具
-import { findFunctionsTool, findImportsTool, getProjectStructureTool, analyzeCodeStructureTool } from '../../tools/CodeTools.js';
-// Memory工具
-import { saveMemoryTool } from '../../tools/MemoryTools.js';
+import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 
+export type Messages = Array<{ role: 'system' | 'user' | 'assistant', content: string }>;
+
+export interface ToolAgentTextProps {
+    messages: Messages;
+    tools?: ToolSet;
+    allowTools?: boolean;
+}
+
+export interface ToolAgentObjectProps<T> {
+    messages: Messages;
+    schema: ZodSchema<T>;
+    tools?: ToolSet;
+    allowTools?: boolean;
+}
 
 @injectable()
 export class ToolAgent {
     private tools: ToolSet = {};
     private mcpTools: MCPTool[] = [];
-    private loopDetector: LoopDetectionService;
 
     constructor(
         @inject(TYPES.Config) private config: Config,
         @inject(TYPES.LanguageModel) private model: LanguageModel,
-        @inject(TYPES.ConfigLoader) private configLoader: ConfigLoader
+        @inject(TYPES.ConfigLoader) private configLoader: ConfigLoader,
+        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter
     ) {
-        this.loopDetector = new LoopDetectionService({
-            maxHistorySize: 25,
-            exactRepeatThreshold: 5,
-            alternatingPatternThreshold: 4,
-            parameterCycleThreshold: 4,
-            enableSemanticDetection: false,
-            timeWindowMs: 60000
-        });
-
-        console.log('ToolAgent initialized');
     }
 
     async initializeAsync(): Promise<void> {
-        try {
-            this.loadBuiltinTools();
-            await this.loadMcpToolsAsync();
-            console.log(`ToolAgent initialized with ${Object.keys(this.tools).length} tools`);
-        } catch (error) {
-            console.error('ToolAgent initialization failed:', error);
-            throw error;
-        }
+        this.loadBuiltinTools();
+        await this.loadMcpToolsAsync();
+        console.log(`ToolAgent initialized with ${Object.keys(this.tools).length} tools`);
     }
 
-    /**
-     * 使用自定义system prompt生成响应
-     */
-    async generateResponse(messages: Array<{ role: 'system' | 'user' | 'assistant', content: string }>): Promise<string> {
+    async generateText({ messages, tools, allowTools = true }: ToolAgentTextProps): Promise<string> {
         const result = await generateText({
             model: this.model,
             messages: messages,
-            tools: this.tools,
+            tools: allowTools ? (tools || this.tools) : {},
             maxOutputTokens: this.config.maxTokens,
-            temperature: this.config.temperature
+            temperature: this.config.temperature,
         });
 
-        return result.text || '';
+        return result.text;
     }
 
-    /**
-     * 执行工具
-     */
-    async executeTool(toolName: string, args: any): Promise<any> {
-        const loopResult = this.loopDetector.addAndCheck({
-            toolName: toolName,
-            parameters: args
+    async generateObject<T>({ messages, schema, tools, allowTools = true }: ToolAgentObjectProps<T>): Promise<T> {
+        const result = await generateText({
+            model: this.model,
+            messages: messages,
+            tools: allowTools ? (tools || this.tools) : {},
+            maxOutputTokens: this.config.maxTokens,
+            temperature: this.config.temperature,
+            experimental_output: Output.object({ schema }),
         });
 
-        if (loopResult.isLoop) {
-            const errorMessage = `Loop detected: ${loopResult.description}. Suggestion: ${loopResult.suggestion}`;
-            console.warn(`Loop detection warning: ${errorMessage}`);
-            throw new Error(errorMessage);
-        }
+        return result.experimental_output;
+    }
 
+    async executeTool(toolName: string, args: any): Promise<any> {
         const tool = this.tools[toolName];
         if (!tool) {
             throw new Error(`Tool not found: ${toolName}. Available tools: ${Object.keys(this.tools).join(', ')}`);
@@ -112,48 +92,39 @@ export class ToolAgent {
     private loadBuiltinTools(): void {
         const tools: ToolSet = {};
 
+        let toolContext = {
+            eventEmitter: this.eventEmitter, config: this.config, configLoader: this.configLoader
+        };
+
         // File operations
-        tools.write_file = writeFileTool;
-        tools.apply_patch = applyPatchTool;
-        tools.read_file = readFileTool;
-        tools.find_files = findFilesTool;
-        tools.search_in_files = searchInFilesTool;
+        tools.write_file = createWriteFileTool(toolContext);
+        tools.apply_patch = createApplyPatchTool(toolContext);
+        tools.read_file = createReadFileTool(toolContext);
+        tools.find_files = createFindFilesTool(toolContext);
+        tools.search_in_files = createSearchInFilesTool(toolContext);
 
-        // Code analysis
-        tools.find_functions = findFunctionsTool;
-        tools.find_imports = findImportsTool;
-        tools.get_project_structure = getProjectStructureTool;
-        tools.analyze_code_structure = analyzeCodeStructureTool;
+        // Git operations
+        tools.git_status = createGitStatusTool(toolContext);
+        tools.git_log = createGitLogTool(toolContext);
+        tools.git_diff = createGitDiffTool(toolContext);
 
-        // Git tools
-        tools.git_status = gitStatusTool;
-        tools.git_log = gitLogTool;
-        tools.git_diff = gitDiffTool;
+        // Web operations
+        tools.web_search = createWebSearchTool(toolContext);
+        tools.url_fetch = createUrlFetchTool(toolContext);
 
-        // Web tools
-        tools.web_search = createWebSearchTool(this.config);
-        tools.url_fetch = createUrlFetchTool(this.config);
-
-        // Shell tools
-        const shellTools = createShellExecutorTool(this.configLoader);
+        // Shell operations
+        const shellTools = createShellExecutorTools(toolContext);
         tools.shell_executor = shellTools.execute;
         tools.multi_command = shellTools.multiCommand;
 
-        // Memory tools
-        tools.save_memory = saveMemoryTool;
-
-        // Finish tool
-        tools.finish = tool({
-            description: 'Mark the current task as completed',
-            inputSchema: z.object({}),
-            execute: async () => ({
-                success: true,
-                message: 'Task marked as finished',
-                completed: true
-            })
-        });
+        // Memory operations
+        tools.save_memory = createSaveMemoryTool(toolContext);
 
         this.tools = tools;
+    }
+
+    public registerTool(name: string, tool: any): void {
+        this.tools[name] = tool;
     }
 
     private async loadMcpToolsAsync(): Promise<void> {
@@ -174,14 +145,6 @@ export class ToolAgent {
 
     getAvailableTools(): string[] {
         return Object.keys(this.tools);
-    }
-
-    clearLoopDetectionHistory(): void {
-        this.loopDetector.clearHistory();
-    }
-
-    getLoopDetectionStats() {
-        return this.loopDetector.getStats();
     }
 
     async cleanup(): Promise<void> {

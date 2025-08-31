@@ -3,7 +3,8 @@ import { convert } from 'html-to-text';
 import { URL } from 'url';
 import { z } from 'zod';
 import { tool } from 'ai';
-import { Config } from '../config/ConfigLoader.js';
+import { ToolContext } from './base.js';
+import { ToolOutputEvent } from '../events/EventTypes.js';
 
 interface WebSearchSource {
   title: string;
@@ -45,6 +46,7 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
       return true;
     }
+
     const hostname = parsedUrl.hostname.toLowerCase();
     const localHostnames = [
       'localhost',
@@ -54,9 +56,11 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
       'ip6-localhost',
       'ip6-loopback'
     ];
+
     if (localHostnames.includes(hostname)) {
       return true;
     }
+
     const privateIpPatterns = [
       /^10\./,
       /^172\.(1[6-9]|2[0-9]|3[01])\./,
@@ -72,11 +76,13 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
       /^fc00:/i,
       /^fd00:/i
     ];
+
     for (const pattern of privateIpPatterns) {
       if (pattern.test(hostname)) {
         return true;
       }
     }
+
     if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
       const parts = hostname.split('.').map(Number);
       if (parts.some(part => part > 255 || part < 0)) {
@@ -89,6 +95,7 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
         return true;
       }
     }
+
     return false;
   } catch (error) {
     return true;
@@ -100,12 +107,12 @@ const truncateContent = (content: string, maxLength: number): { content: string;
     return { content, truncated: false };
   }
   return {
-    content: content.substring(0, maxLength) + '\n\n[...内容因过长已被截断]',
+    content: content.substring(0, maxLength) + '\n\n[Content truncated due to length]',
     truncated: true
   };
 };
 
-export const createWebSearchTool = (config: Config) => tool({
+export const createWebSearchTool = (context: ToolContext) => tool({
   description: 'Search the web for current information using Tavily AI. Returns a summary and relevant sources.',
   inputSchema: z.object({
     query: z.string().describe('The search query to execute')
@@ -117,18 +124,24 @@ export const createWebSearchTool = (config: Config) => tool({
           summary: '',
           sources: [],
           success: false,
-          error: '搜索查询不能为空'
+          error: 'Search query cannot be empty'
         };
       }
 
-      if (!config.tools.tavilyApiKey) {
+      if (!context.config.tools.tavilyApiKey) {
         return {
           summary: '',
           sources: [],
           success: false,
-          error: 'Web 搜索功能已禁用。请在配置文件 ~/.tempurai/config.json 中添加 "tavilyApiKey" 字段以启用此功能。您可以在 https://tavily.com 获取免费的 API Key。'
+          error: 'Web search functionality is disabled. Please add "tavilyApiKey" field to config file ~/.tempurai/config.json to enable this functionality. You can get a free API Key at https://tavily.com.'
         };
       }
+
+      context.eventEmitter.emit({
+        type: 'tool_output',
+        toolName: 'web_search',
+        content: `Searching the web for: "${query}"`
+      } as ToolOutputEvent);
 
       const response = await request('https://api.tavily.com/search', {
         method: 'POST',
@@ -136,7 +149,7 @@ export const createWebSearchTool = (config: Config) => tool({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          api_key: config.tools.tavilyApiKey,
+          api_key: context.config.tools.tavilyApiKey,
           query: query.trim(),
           search_depth: 'basic',
           include_answer: true,
@@ -151,7 +164,7 @@ export const createWebSearchTool = (config: Config) => tool({
           summary: '',
           sources: [],
           success: false,
-          error: `Tavily API 请求失败: HTTP ${response.statusCode}`
+          error: `Tavily API request failed: HTTP ${response.statusCode}`
         };
       }
 
@@ -162,8 +175,21 @@ export const createWebSearchTool = (config: Config) => tool({
         content: result.content
       }));
 
+      const searchResults = `Web search results for "${query}":
+
+Summary: ${data.answer || 'No relevant information found'}
+
+Sources:
+${sources.map((source, i) => `${i + 1}. ${source.title} - ${source.url}`).join('\n')}`;
+
+      context.eventEmitter.emit({
+        type: 'tool_output',
+        toolName: 'web_search',
+        content: searchResults
+      } as ToolOutputEvent);
+
       return {
-        summary: data.answer || '未找到相关信息',
+        summary: data.answer || 'No relevant information found',
         sources,
         success: true
       };
@@ -172,19 +198,19 @@ export const createWebSearchTool = (config: Config) => tool({
         summary: '',
         sources: [],
         success: false,
-        error: `搜索出错: ${error instanceof Error ? error.message : '未知错误'}`
+        error: `Search error: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   }
 });
 
-export const createUrlFetchTool = (config: Config) => tool({
+export const createUrlFetchTool = (context: ToolContext) => tool({
   description: 'Fetch and extract text content from a web URL. Includes security checks to prevent access to private networks.',
   inputSchema: z.object({
     url: z.string().describe('The URL to fetch content from')
   }),
   execute: async ({ url }): Promise<UrlFetchResult> => {
-    const webToolsConfig = config.tools.webTools;
+    const webToolsConfig = context.config.tools.webTools;
     const requestTimeout = webToolsConfig.requestTimeout ?? 15000;
     const maxContentLength = webToolsConfig.maxContentLength ?? 10000;
     const userAgent = webToolsConfig.userAgent ?? 'Tempurai-Bot/1.0 (Security-Enhanced)';
@@ -195,7 +221,7 @@ export const createUrlFetchTool = (config: Config) => tool({
           content: '',
           success: false,
           truncated: false,
-          error: 'URL 参数无效'
+          error: 'Invalid URL parameter'
         };
       }
 
@@ -204,9 +230,15 @@ export const createUrlFetchTool = (config: Config) => tool({
           content: '',
           success: false,
           truncated: false,
-          error: '出于安全原因，禁止访问本地或私有网络地址。此限制可防止 Server-Side Request Forgery (SSRF) 攻击。'
+          error: 'Access to local or private network addresses is prohibited for security reasons. This restriction prevents Server-Side Request Forgery (SSRF) attacks.'
         };
       }
+
+      context.eventEmitter.emit({
+        type: 'tool_output',
+        toolName: 'url_fetch',
+        content: `Fetching content from: ${url}`
+      } as ToolOutputEvent);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
@@ -237,7 +269,7 @@ export const createUrlFetchTool = (config: Config) => tool({
             content: '',
             success: false,
             truncated: false,
-            error: `HTTP 请求失败: ${response.statusCode} - ${response.statusCode === 403 ? '访问被拒绝' : response.statusCode === 404 ? '页面未找到' : response.statusCode === 500 ? '服务器内部错误' : '请求失败'}`
+            error: `HTTP request failed: ${response.statusCode} - ${response.statusCode === 403 ? 'Access denied' : response.statusCode === 404 ? 'Page not found' : response.statusCode === 500 ? 'Internal server error' : 'Request failed'}`
           };
         }
 
@@ -247,17 +279,18 @@ export const createUrlFetchTool = (config: Config) => tool({
             content: '',
             success: false,
             truncated: false,
-            error: `响应内容过大 (${contentLength} 字节)，超过安全限制。请尝试访问较小的页面。`
+            error: `Response content too large (${contentLength} bytes), exceeds safety limit. Please try accessing a smaller page.`
           };
         }
 
         html = await response.body.text();
+
         if (html.length > maxContentLength * 3) {
           return {
             content: '',
             success: false,
             truncated: false,
-            error: `网页内容过大 (${html.length} 字符)，超过处理限制。请尝试访问较小的页面。`
+            error: `Web page content too large (${html.length} characters), exceeds processing limit. Please try accessing a smaller page.`
           };
         }
       } catch (requestError) {
@@ -267,16 +300,17 @@ export const createUrlFetchTool = (config: Config) => tool({
             content: '',
             success: false,
             truncated: false,
-            error: `请求超时 (${requestTimeout}ms)。网站响应时间过长，请稍后重试。`
+            error: `Request timeout (${requestTimeout}ms). Website response time too long, please try again later.`
           };
         }
+
         const error = requestError as Error;
         if (error.message.includes('ENOTFOUND')) {
           return {
             content: '',
             success: false,
             truncated: false,
-            error: '域名解析失败，请检查 URL 是否正确。'
+            error: 'DNS resolution failed, please check if URL is correct.'
           };
         }
         if (error.message.includes('ECONNREFUSED')) {
@@ -284,7 +318,7 @@ export const createUrlFetchTool = (config: Config) => tool({
             content: '',
             success: false,
             truncated: false,
-            error: '连接被拒绝，目标服务器可能不可用。'
+            error: 'Connection refused, target server may be unavailable.'
           };
         }
         throw requestError;
@@ -319,6 +353,18 @@ export const createUrlFetchTool = (config: Config) => tool({
 
       const { content: finalContent, truncated } = truncateContent(textContent, maxContentLength);
 
+      const fetchResults = `Content fetched from ${url}:
+${title ? `Title: ${title}` : ''}
+Content length: ${finalContent.length} characters${truncated ? ' (truncated)' : ''}
+
+${finalContent.split('\n').slice(0, 10).join('\n')}${finalContent.split('\n').length > 10 ? '\n...[content continues]' : ''}`;
+
+      context.eventEmitter.emit({
+        type: 'tool_output',
+        toolName: 'url_fetch',
+        content: fetchResults
+      } as ToolOutputEvent);
+
       return {
         content: finalContent,
         title,
@@ -330,7 +376,7 @@ export const createUrlFetchTool = (config: Config) => tool({
         content: '',
         success: false,
         truncated: false,
-        error: `获取 URL 内容失败: ${error instanceof Error ? error.message : '未知错误'}`
+        error: `Failed to fetch URL content: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   }

@@ -1,4 +1,4 @@
-import { ReActAgent } from '../agents/react_agent/ReActAgent.js';
+import { SmartAgent } from '../agents/smart_agent/SmartAgent.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { Config } from '../config/ConfigLoader.js';
 import { injectable, inject } from 'inversify';
@@ -44,7 +44,6 @@ export interface SessionStats {
     uniqueFilesAccessed: number;
     watchedFilesCount: number;
     sessionDuration: number;
-    loopDetectionStats: any; // 简化类型
     snapshotStats: {
         totalSnapshots: number;
         latestSnapshot?: string;
@@ -85,11 +84,11 @@ export class SessionService {
         console.log('\n🚀 开始处理任务...');
         console.log(`📝 任务描述: ${query.substring(0, 80)}${query.length > 80 ? '...' : ''}`);
 
-        this.eventEmitter.emit<TaskStartedEvent>({
+        this.eventEmitter.emit({
             type: 'task_started',
             description: query,
             workingDirectory: process.cwd(),
-        });
+        } as TaskStartedEvent);
 
         try {
             const snapshotManager = await this.createSnapshotManager(process.cwd());
@@ -111,18 +110,19 @@ export class SessionService {
             }
             console.log(`✅ 安全快照已创建: ${snapshotResult.snapshotId}`);
 
-            this.eventEmitter.emit<SnapshotCreatedEvent>({
+            this.eventEmitter.emit({
                 type: 'snapshot_created',
                 snapshotId: snapshotResult.snapshotId!,
                 description: snapshotResult.description!,
                 filesCount: snapshotResult.filesCount || 0,
-            });
+            } as SnapshotCreatedEvent);
 
-            // 直接创建 ReActAgent 实例，不再使用工厂
-            const reactAgent = new ReActAgent(this._agent, this.eventEmitter);
+            // 直接创建 SmartAgent 实例，不再使用工厂
+            const smartAgent = new SmartAgent(this._agent, this.eventEmitter);
+            smartAgent.initializeTools();
 
-            console.log('🔄 开始ReAct推理循环...');
-            const taskResult = await reactAgent.runTask(query);
+            console.log('🔄 开始SmartAgent推理循环...');
+            const taskResult = await smartAgent.runTask(query);
 
             const finalResult: TaskExecutionResult = {
                 success: taskResult.success,
@@ -146,14 +146,14 @@ export class SessionService {
             const duration = Date.now() - startTime;
             console.log(`\n✅ 任务处理完成: ${finalResult.success ? '成功' : '失败'} (${duration}ms)`);
 
-            this.eventEmitter.emit<TaskCompletedEvent>({
+            this.eventEmitter.emit({
                 type: 'task_completed',
                 success: finalResult.success,
                 duration: finalResult.duration,
                 iterations: finalResult.iterations,
                 summary: finalResult.summary,
                 error: finalResult.error,
-            });
+            } as TaskCompletedEvent);
 
             return finalResult;
         } catch (error) {
@@ -195,7 +195,6 @@ export class SessionService {
     }
 
     async getSessionStats(): Promise<SessionStats> {
-        const loopStats = this._agent.getLoopDetectionStats();
         const sessionDuration = Date.now() - this.sessionStartTime.getTime();
         const snapshotManager = await this.createSnapshotManager();
         const snapshotStatus = await snapshotManager.getStatus();
@@ -209,7 +208,6 @@ export class SessionService {
             uniqueFilesAccessed: this.uniqueFilesAccessed.size,
             watchedFilesCount: this.fileWatcherService.getWatchedFiles().length,
             sessionDuration: Math.round(sessionDuration / 1000),
-            loopDetectionStats: loopStats,
             snapshotStats: {
                 totalSnapshots: snapshotStatus.snapshotCount,
                 latestSnapshot: snapshotStatus.latestSnapshot?.id,
@@ -235,8 +233,6 @@ export class SessionService {
         this.totalResponseTime = 0;
         this.interactionCount = 0;
         this.sessionStartTime = new Date();
-        this._agent.clearLoopDetectionHistory();
-        console.log('✨ 会话历史和状态已清除');
     }
 
     private addToHistory(

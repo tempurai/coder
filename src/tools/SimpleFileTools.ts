@@ -4,30 +4,41 @@ import { exec } from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
+import { ToolContext } from './base.js';
+import { ToolOutputEvent } from '../events/EventTypes.js';
 
 const execAsync = util.promisify(exec);
 
-export const writeFileTool = tool({
+export const createWriteFileTool = (context: ToolContext) => tool({
     description: `Write content to a file or overwrite an existing file.
     This operation is direct and atomic. All changes should be made on a task branch.
-    The Git workflow handles versioning, backups, and rollbacks automatically.
-    IMPORTANT: Always use this tool within a Git task branch created by start_task.`,
+    The Git workflow handles versioning, backups, and rollbacks automatically.`,
     inputSchema: z.object({
         filePath: z.string().describe('Path to the file to write'),
         content: z.string().describe('Content to write to the file')
     }),
     execute: async ({ filePath, content }) => {
-        console.log(`📝 Writing to file: ${filePath}`);
         try {
             const absolutePath = path.resolve(filePath);
             const dir = path.dirname(absolutePath);
+
             if (!fs.existsSync(dir)) {
-                console.log(`📁 Creating directory: ${dir}`);
+                context.eventEmitter.emit({
+                    type: 'tool_output',
+                    toolName: 'write_file',
+                    content: `Creating directory: ${dir}`
+                } as ToolOutputEvent);
                 fs.mkdirSync(dir, { recursive: true });
             }
+
             await fs.promises.writeFile(absolutePath, content, 'utf-8');
-            console.log(`✅ File written successfully: ${filePath}`);
-            console.log(`📊 Size: ${content.length} characters`);
+
+            context.eventEmitter.emit({
+                type: 'tool_output',
+                toolName: 'write_file',
+                content: `File written: ${filePath} (${content.length} characters)`
+            } as ToolOutputEvent);
+
             return {
                 success: true,
                 filePath: absolutePath,
@@ -35,23 +46,21 @@ export const writeFileTool = tool({
                 message: `File '${filePath}' written successfully`
             };
         } catch (error) {
-            console.error(`❌ Failed to write file: ${error}`);
             return {
                 success: false,
                 filePath,
-                error: `Write failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+                error: error instanceof Error ? error.message : 'Unknown error'
             };
         }
     }
 });
 
-export const readFileTool = tool({
+export const createReadFileTool = (context: ToolContext) => tool({
     description: 'Read the contents of a file and return as text',
     inputSchema: z.object({
         filePath: z.string().describe('Path to the file to read'),
     }),
     execute: async ({ filePath }) => {
-        console.log(`📖 Reading file: ${filePath}`);
         try {
             const absolutePath = path.resolve(filePath);
             if (!fs.existsSync(absolutePath)) {
@@ -65,38 +74,40 @@ export const readFileTool = tool({
             const content = await fs.promises.readFile(absolutePath, 'utf-8');
             const stats = await fs.promises.stat(absolutePath);
 
-            console.log(`✅ File read successfully: ${filePath}`);
+            context.eventEmitter.emit({
+                type: 'tool_output',
+                toolName: 'read_file',
+                content: `Read file: ${filePath} (${content.length} characters)`
+            } as ToolOutputEvent);
+
             return {
                 success: true,
                 filePath: absolutePath,
-                content: content, // This is now guaranteed to be a string
+                content: content,
                 size: content.length,
                 lastModified: stats.mtime.toISOString(),
                 message: `File '${filePath}' read successfully`
             };
         } catch (error) {
-            console.error(`❌ Failed to read file: ${error}`);
             return {
                 success: false,
                 filePath,
-                error: `Read failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+                error: error instanceof Error ? error.message : 'Unknown error'
             };
         }
     }
 });
 
-export const applyPatchTool = tool({
+export const createApplyPatchTool = (context: ToolContext) => tool({
     description: `Apply a unified diff patch to a file. 
     The LLM should generate the patch in standard unified diff format.
     This tool will apply the patch using the system patch command or fallback to manual application.`,
     inputSchema: z.object({
         filePath: z.string().describe('Path to the file to patch'),
         patchContent: z.string().describe('Unified diff content generated by LLM'),
-        dryRun: z.boolean().default(false).describe('If true, show what would be changed without applying'),
         backup: z.boolean().default(true).describe('Create backup before applying patch')
     }),
-    execute: async ({ filePath, patchContent, dryRun, backup }) => {
-        console.log(`🔧 ${dryRun ? 'Previewing' : 'Applying'} patch to: ${filePath}`);
+    execute: async ({ filePath, patchContent, backup }) => {
         try {
             const absolutePath = path.resolve(filePath);
             if (!fs.existsSync(absolutePath)) {
@@ -107,51 +118,66 @@ export const applyPatchTool = tool({
                 };
             }
 
+            context.eventEmitter.emit({
+                type: 'tool_output',
+                toolName: 'apply_patch',
+                content: `Applying patch to: ${filePath}`
+            } as ToolOutputEvent);
+
             const tempPatchFile = path.join(path.dirname(absolutePath), `.patch_${Date.now()}.tmp`);
             await fs.promises.writeFile(tempPatchFile, patchContent, 'utf-8');
 
             try {
-                const patchCmd = dryRun
-                    ? `patch --dry-run "${absolutePath}" < "${tempPatchFile}"`
-                    : `patch "${absolutePath}" < "${tempPatchFile}"`;
+                const patchCmd = `patch "${absolutePath}" < "${tempPatchFile}"`;
 
-                if (!dryRun && backup) {
+                if (backup) {
                     const backupPath = `${absolutePath}.backup.${Date.now()}`;
                     await fs.promises.copyFile(absolutePath, backupPath);
-                    console.log(`💾 Backup created: ${backupPath}`);
+                    context.eventEmitter.emit({
+                        type: 'tool_output',
+                        toolName: 'apply_patch',
+                        content: `Backup created: ${backupPath}`
+                    } as ToolOutputEvent);
                 }
 
                 const { stdout, stderr } = await execAsync(patchCmd);
                 await fs.promises.unlink(tempPatchFile);
-                console.log(`✅ Patch ${dryRun ? 'preview' : 'applied'} successfully`);
+
+                context.eventEmitter.emit({
+                    type: 'tool_output',
+                    toolName: 'apply_patch',
+                    content: `Patch applied successfully\n${stdout}`
+                } as ToolOutputEvent);
 
                 return {
                     success: true,
                     filePath: absolutePath,
                     stdout: stdout.trim(),
                     stderr: stderr.trim(),
-                    message: `Patch ${dryRun ? 'preview completed' : 'applied successfully'}`,
-                    dryRun
+                    message: `Patch applied successfully'`,
                 };
             } catch (patchError) {
-                console.log('⚠️ System patch failed, attempting manual application...');
-                const result = await applyPatchManually(absolutePath, patchContent, dryRun, backup);
-                await fs.promises.unlink(tempPatchFile);
+                context.eventEmitter.emit({
+                    type: 'tool_output',
+                    toolName: 'apply_patch',
+                    content: 'System patch failed, attempting manual application...'
+                } as ToolOutputEvent);
 
+                const result = await applyPatchManually(absolutePath, patchContent, backup, context);
+                await fs.promises.unlink(tempPatchFile);
                 return result;
             }
         } catch (error) {
-            console.error(`❌ Failed to apply patch: ${error}`);
             return {
                 success: false,
                 filePath,
-                error: `Patch failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+                error: error instanceof Error ? error.message : 'Unknown error'
             };
         }
     }
 });
 
-async function applyPatchManually(filePath: string, patchContent: string, dryRun: boolean, backup: boolean) {
+async function applyPatchManually(filePath: string, patchContent: string, backup: boolean, context: ToolContext) {
     function detectNewline(text: string): '\n' | '\r\n' {
         const idx = text.indexOf('\r\n');
         return idx !== -1 ? '\r\n' : '\n';
@@ -196,23 +222,6 @@ async function applyPatchManually(filePath: string, patchContent: string, dryRun
         }
     }
 
-    if (dryRun) {
-        let preview = `Preview of changes for ${filePath}:\n`;
-        for (const hunk of hunks) {
-            preview += `\nAt line ${hunk.oldStart + 1}:\n`;
-            for (const change of hunk.changes) {
-                preview += `${change.type === 'add' ? '+' : change.type === 'delete' ? '-' : ' '}${change.content}\n`;
-            }
-        }
-        return {
-            success: true,
-            filePath,
-            preview,
-            message: 'Patch preview completed (manual parser)',
-            dryRun: true,
-        };
-    }
-
     let modifiedLines = [...originalLines];
     let lineOffset = 0;
 
@@ -241,10 +250,15 @@ async function applyPatchManually(filePath: string, patchContent: string, dryRun
     if (backup) {
         const backupPath = `${filePath}.backup.${Date.now()}`;
         await fs.promises.copyFile(filePath, backupPath);
-        console.log(`💾 Backup created: ${backupPath}`);
     }
 
     await fs.promises.writeFile(filePath, modifiedLines.join(eol), 'utf-8');
+
+    context.eventEmitter.emit({
+        type: 'tool_output',
+        toolName: 'apply_patch',
+        content: `Patch applied successfully (manual parser) - ${hunks.length} changes applied`
+    } as ToolOutputEvent);
 
     return {
         success: true,
@@ -254,17 +268,22 @@ async function applyPatchManually(filePath: string, patchContent: string, dryRun
     };
 }
 
-export const findFilesTool = tool({
+export const createFindFilesTool = (context: ToolContext) => tool({
     description: 'Search for files by pattern in the current directory',
     inputSchema: z.object({
         pattern: z.string().describe('File name pattern to search for'),
     }),
     execute: async ({ pattern }) => {
-        console.log(`🔍 Finding files matching: ${pattern}`);
         try {
             const { stdout } = await execAsync(`find . -name "*${pattern}*" -type f`);
             const files = stdout.trim().split('\n').filter(f => f.length > 0);
-            console.log(`✅ Found ${files.length} files`);
+
+            context.eventEmitter.emit({
+                type: 'tool_output',
+                toolName: 'find_files',
+                content: `Found ${files.length} files matching '${pattern}':\n${files.join('\n')}`
+            } as ToolOutputEvent);
+
             return {
                 success: true,
                 files,
@@ -273,7 +292,6 @@ export const findFilesTool = tool({
                 message: `Found ${files.length} files matching '${pattern}'`
             };
         } catch (error) {
-            console.error(`❌ Failed to find files: ${error}`);
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
@@ -285,14 +303,13 @@ export const findFilesTool = tool({
     },
 });
 
-export const searchInFilesTool = tool({
+export const createSearchInFilesTool = (context: ToolContext) => tool({
     description: 'Search for keywords in TypeScript and JavaScript files',
     inputSchema: z.object({
         keyword: z.string().describe('Keyword to search for in files'),
         filePattern: z.string().default('*.{ts,js,tsx,jsx}').describe('File pattern to search in')
     }),
     execute: async ({ keyword, filePattern }) => {
-        console.log(`🔍 Searching for '${keyword}' in ${filePattern} files`);
         try {
             const { stdout } = await execAsync(`grep -r -n "${keyword}" --include="${filePattern}" .`);
             const matches = stdout.trim().split('\n').filter(m => m.length > 0);
@@ -306,7 +323,16 @@ export const searchInFilesTool = tool({
                 };
             });
 
-            console.log(`✅ Found ${matches.length} matches`);
+            const displayContent = parsedMatches.slice(0, 10).map(match =>
+                `${match.file}:${match.line}: ${match.content}`
+            ).join('\n') + (matches.length > 10 ? `\n... and ${matches.length - 10} more matches` : '');
+
+            context.eventEmitter.emit({
+                type: 'tool_output',
+                toolName: 'search_in_files',
+                content: `Found ${matches.length} matches for '${keyword}' in ${filePattern}:\n${displayContent}`
+            } as ToolOutputEvent);
+
             return {
                 success: true,
                 matches: parsedMatches,
@@ -316,7 +342,6 @@ export const searchInFilesTool = tool({
                 message: `Found ${matches.length} matches for '${keyword}'`
             };
         } catch (error) {
-            console.error(`❌ Search failed: ${error}`);
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error',

@@ -1,14 +1,10 @@
-/**
- * Comprehensive event system for Tempurai UI
- * Provides fine-grained events for real-time UI updates
- */
-
 export interface BaseEvent {
   id: string;
   timestamp: Date;
   sessionId?: string;
 }
 
+// Task level events
 export interface TaskStartedEvent extends BaseEvent {
   type: 'task_started';
   description: string;
@@ -24,18 +20,9 @@ export interface TaskCompletedEvent extends BaseEvent {
   error?: string;
 }
 
-export interface SnapshotCreatedEvent extends BaseEvent {
-  type: 'snapshot_created';
-  snapshotId: string;
-  description: string;
-  filesCount: number;
-}
-
-export interface ReActIterationStartedEvent extends BaseEvent {
-  type: 'react_iteration_started';
-  iteration: number;
-  maxIterations: number;
-  observation: string;
+export interface TextGeneratedEvent extends BaseEvent {
+  type: 'text_generated';
+  text: string;
 }
 
 export interface ThoughtGeneratedEvent extends BaseEvent {
@@ -45,56 +32,31 @@ export interface ThoughtGeneratedEvent extends BaseEvent {
   context: string;
 }
 
-export interface PlanUpdatedEvent extends BaseEvent {
-  type: 'plan_updated';
-  iteration: number;
-  plan: string;
-  status: string;
-}
-
-export interface ActionSelectedEvent extends BaseEvent {
-  type: 'action_selected';
-  iteration: number;
-  tool: string;
-  args: any;
-  reasoning: string;
-}
-
-export interface ToolCallStartedEvent extends BaseEvent {
-  type: 'tool_call_started';
-  iteration: number;
+export interface ToolExecutionStartedEvent extends BaseEvent {
+  type: 'tool_execution_started';
   toolName: string;
   args: any;
-  description?: string;
+  iteration?: number;
 }
 
-export interface ToolProgressEvent extends BaseEvent {
-  type: 'tool_progress';
-  iteration: number;
-  toolName: string;
-  phase: string;
-  message: string;
-  progress?: number;
-  details?: any;
-}
-
-export interface ToolCallCompletedEvent extends BaseEvent {
-  type: 'tool_call_completed';
-  iteration: number;
+export interface ToolExecutionCompletedEvent extends BaseEvent {
+  type: 'tool_execution_completed';
   toolName: string;
   success: boolean;
   result?: any;
   error?: string;
-  duration: number;
+  duration?: number;
+  iteration?: number;
 }
 
-export interface ObservationMadeEvent extends BaseEvent {
-  type: 'observation_made';
-  iteration: number;
-  observation: string;
-  analysis?: string;
+export interface ToolOutputEvent extends BaseEvent {
+  type: 'tool_output';
+  toolName: string;
+  content: string;
+  iteration?: number;
 }
 
+// System and user events
 export interface SystemInfoEvent extends BaseEvent {
   type: 'system_info';
   level: 'info' | 'warning' | 'error';
@@ -108,6 +70,7 @@ export interface UserInputEvent extends BaseEvent {
   command?: string;
 }
 
+// Session management events
 export interface SessionStatsEvent extends BaseEvent {
   type: 'session_stats';
   stats: {
@@ -119,43 +82,50 @@ export interface SessionStatsEvent extends BaseEvent {
   };
 }
 
+// Snapshot events
+export interface SnapshotCreatedEvent extends BaseEvent {
+  type: 'snapshot_created';
+  snapshotId: string;
+  description: string;
+  filesCount: number;
+}
+
+// Union type of all events
 export type UIEvent =
+  | TextGeneratedEvent
   | TaskStartedEvent
   | TaskCompletedEvent
   | SnapshotCreatedEvent
-  | ReActIterationStartedEvent
   | ThoughtGeneratedEvent
-  | PlanUpdatedEvent
-  | ActionSelectedEvent
-  | ToolCallStartedEvent
-  | ToolProgressEvent
-  | ToolCallCompletedEvent
-  | ObservationMadeEvent
+  | ToolExecutionStartedEvent
+  | ToolExecutionCompletedEvent
+  | ToolOutputEvent
   | SystemInfoEvent
   | UserInputEvent
-  | SessionStatsEvent;
+  | SessionStatsEvent
+
 
 export type UIEventType = UIEvent['type'];
 
-// UIEventType enum for easy reference
+// Constants for event types
 export const UIEventType = {
+  // Core events
   TaskStart: 'task_started' as const,
   TaskComplete: 'task_completed' as const,
-  SnapshotCreated: 'snapshot_created' as const,
-  ReActIteration: 'react_iteration_started' as const,
+  ThoughtGenerated: 'thought_generated' as const,
+
+  // Tool execution events
+  ToolExecutionStarted: 'tool_execution_started' as const,
+  ToolExecutionCompleted: 'tool_execution_completed' as const,
+  ToolOutput: 'tool_output' as const,
+
+  // System events
   SystemInfo: 'system_info' as const,
   UserInput: 'user_input' as const,
-  ThoughtGenerated: 'thought_generated' as const,
-  PlanUpdated: 'plan_updated' as const,
-  ActionSelected: 'action_selected' as const,
-  ToolCallStarted: 'tool_call_started' as const,
-  ToolProgress: 'tool_progress' as const,
-  ToolCallCompleted: 'tool_call_completed' as const,
-  ObservationMade: 'observation_made' as const,
   SessionStats: 'session_stats' as const,
+  SnapshotCreated: 'snapshot_created' as const,
 } as const;
 
-export type ProgressCallback = (event: ToolProgressEvent) => void;
 
 export interface EventListener<T extends UIEvent = UIEvent> {
   (event: T): void | Promise<void>;

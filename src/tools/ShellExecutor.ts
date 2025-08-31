@@ -42,7 +42,6 @@ IMPORTANT: Always explain what command you're running and why.`,
             captureError,
         }) => {
             try {
-                // Security validation
                 const validationResult: CommandValidationResult = validator.validateCommand(command);
                 if (!validationResult.allowed) {
                     return {
@@ -58,7 +57,6 @@ IMPORTANT: Always explain what command you're running and why.`,
                     };
                 }
 
-                // HITL confirmation
                 const confirmDescription = `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`;
                 const confirmed = await context.hitlManager.requestConfirmation(
                     'shell_executor',
@@ -88,7 +86,6 @@ IMPORTANT: Always explain what command you're running and why.`,
                 if (workingDirectory) options.cwd = workingDirectory;
 
                 let { stdout, stderr } = await execAsync(command, options);
-
                 stdout = stdout.toString();
                 stderr = stderr.toString();
 
@@ -163,7 +160,6 @@ Examples:
             workingDirectory,
             stopOnFirstError,
         }) => {
-            // Bulk security validation
             const validationResults = validateCommands(commands.map((c) => c.command));
             const blockedCommands = validationResults
                 .map((res, idx) => ({ res, idx, original: commands[idx] }))
@@ -176,7 +172,6 @@ Examples:
                         }`,
                     )
                     .join('\n');
-
                 return {
                     success: false as const,
                     results: [],
@@ -187,7 +182,6 @@ Examples:
                 };
             }
 
-            // HITL confirmation
             const commandsList = commands.slice(0, 3).map(cmd => cmd.command).join(', ');
             const moreCount = commands.length - 3;
             const confirmDescription = `Execute ${commands.length} commands: ${commandsList}${moreCount > 0 ? ` and ${moreCount} more` : ''}`;
@@ -297,7 +291,6 @@ Examples:
 
             const successCount = results.filter((r) => r.success).length;
             const totalCount = results.length;
-
             const summaryContent = `Multi-command execution completed:
 - ${successCount}/${totalCount} commands successful
 - ${totalCount - successCount} commands failed`;

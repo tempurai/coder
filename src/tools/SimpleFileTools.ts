@@ -129,7 +129,6 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
 
             try {
                 const patchCmd = `patch "${absolutePath}" < "${tempPatchFile}"`;
-
                 if (backup) {
                     const backupPath = `${absolutePath}.backup.${Date.now()}`;
                     await fs.promises.copyFile(absolutePath, backupPath);
@@ -196,6 +195,7 @@ async function applyPatchManually(filePath: string, patchContent: string, backup
     const eol = detectNewline(originalContent);
     const originalLines = originalContent.split(/\r?\n/);
     const patchLines = patchContent.split(/\r?\n/);
+
     const hunks: Hunk[] = [];
     let currentHunk: Hunk | null = null;
 
@@ -313,7 +313,6 @@ export const createSearchInFilesTool = (context: ToolContext) => tool({
         try {
             const { stdout } = await execAsync(`grep -r -n "${keyword}" --include="${filePattern}" .`);
             const matches = stdout.trim().split('\n').filter(m => m.length > 0);
-
             const parsedMatches = matches.map(match => {
                 const [filePath, lineNumber, ...contentParts] = match.split(':');
                 return {

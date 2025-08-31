@@ -6,6 +6,7 @@ import { TYPES } from '../di/types.js';
 import { ISnapshotManagerFactory } from '../di/interfaces.js';
 import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent } from '../events/index.js';
 import { ToolAgent } from '../agents/tool_agent/ToolAgent.js';
+import { InterruptService } from './InterruptService.js';
 
 export interface TaskExecutionResult {
     success: boolean;
@@ -59,13 +60,15 @@ export class SessionService {
     private totalTokensUsed: number = 0;
     private totalResponseTime: number = 0;
     private interactionCount: number = 0;
+    private interrupted: boolean = false;
 
     constructor(
         @inject(TYPES.ToolAgent) private _agent: ToolAgent,
         @inject(TYPES.FileWatcherService) private fileWatcherService: FileWatcherService,
         @inject(TYPES.Config) private config: Config,
         @inject(TYPES.SnapshotManagerFactory) private createSnapshotManager: ISnapshotManagerFactory,
-        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter
+        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
+        @inject(TYPES.InterruptService) private interruptService: InterruptService
     ) {
         this.sessionStartTime = new Date();
         console.log('✅ 会话管理服务已初始化（新版ReAct模式）');
@@ -80,9 +83,10 @@ export class SessionService {
     }
 
     async processTask(query: string): Promise<TaskExecutionResult> {
+        this.interruptService.startTask();
+
         const startTime = Date.now();
         console.log('\n🚀 开始处理任务...');
-        console.log(`📝 任务描述: ${query.substring(0, 80)}${query.length > 80 ? '...' : ''}`);
 
         this.eventEmitter.emit({
             type: 'task_started',
@@ -118,7 +122,7 @@ export class SessionService {
             } as SnapshotCreatedEvent);
 
             // 直接创建 SmartAgent 实例，不再使用工厂
-            const smartAgent = new SmartAgent(this._agent, this.eventEmitter);
+            const smartAgent = new SmartAgent(this._agent, this.eventEmitter, this.interruptService);
             smartAgent.initializeTools();
 
             console.log('🔄 开始SmartAgent推理循环...');
@@ -260,10 +264,20 @@ export class SessionService {
         return Math.ceil(text.length / 4);
     }
 
-    // ... 其他辅助方法保持不变 ...
+    interrupt(): void {
+        this.interruptService.interrupt();
+    }
+
+    isInterrupted(): boolean {
+        return this.interruptService.isInterrupted();
+    }
+
+    clearInterrupt(): void {
+        this.interruptService.reset();
+    }
+
     async cleanup(): Promise<void> {
         this.fileWatcherService.cleanup();
         await this._agent.cleanup();
-        console.log('✅ 会话服务资源已清理');
     }
 }

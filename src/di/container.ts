@@ -14,6 +14,7 @@ import { ISnapshotManagerFactory } from './interfaces.js';
 import { TYPES } from './types.js';
 import type { LanguageModel } from 'ai';
 import { HITLManager } from '../services/HITLManager.js';
+import { InterruptService } from '../services/InterruptService.js';
 
 export { TYPES } from './types.js';
 
@@ -73,6 +74,8 @@ export function createContainer(): Container {
 
   container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inSingletonScope();
 
+  container.bind<InterruptService>(TYPES.InterruptService).to(InterruptService).inSingletonScope();
+
   // --- Factories ---
   container.bind<ISnapshotManagerFactory>(TYPES.SnapshotManagerFactory)
     .toFactory(() => {
@@ -90,8 +93,8 @@ export function createContainer(): Container {
         if (initializedAgent) return initializedAgent;
 
         const agent = container.get<ToolAgent>(TYPES.ToolAgent);
-        console.log('✅ ToolAgent已创建，开始异步初始化...');
         await agent.initializeAsync();
+
         console.log('✅ ToolAgent异步初始化完成');
         initializedAgent = agent;
         return agent;
@@ -110,8 +113,8 @@ export function createContainer(): Container {
         await toolAgentFactory();
 
         const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
-        console.log('✅ SmartAgent已创建，开始初始化工具...');
         smartAgent.initializeTools();
+
         console.log('✅ SmartAgent工具初始化完成');
         initializedAgent = smartAgent;
         return smartAgent;

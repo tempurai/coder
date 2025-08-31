@@ -78,7 +78,6 @@ export const createGitDiffTool = (context: ToolContext) => tool({
             const command = file ? `git diff ${file}` : 'git diff';
             const { stdout } = await execAsync(command);
             const diffOutput = stdout.trim() || 'No changes';
-
             const linesChanged = diffOutput === 'No changes' ? 0 :
                 diffOutput.split('\n').filter(line => line.startsWith('+') || line.startsWith('-')).length;
 

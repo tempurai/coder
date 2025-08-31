@@ -19,6 +19,7 @@ export const TYPES = {
   FileWatcherService: Symbol.for('FileWatcherService'),
   UIEventEmitter: Symbol.for('UIEventEmitter'),
   HITLManager: Symbol.for('HITLManager'),
+  InterruptService: Symbol.for('InterruptService'),
 
   // --- Factories for Async/On-demand Initialization ---
   InitializedToolAgent: Symbol.for('InitializedToolAgent'),

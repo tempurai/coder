@@ -19,7 +19,6 @@ Examples of when to use this:
   }),
   execute: async ({ content, category }) => {
     try {
-      // HITL confirmation
       const previewContent = content.substring(0, 150);
       const categoryInfo = category ? ` (Category: ${category})` : '';
       const confirmDescription = `Save to memory${categoryInfo}:\n${previewContent}${content.length > 150 ? '...' : ''}`;
@@ -93,14 +92,12 @@ Examples of when to use this:
 });
 
 function getContextFilePath(): string {
-  // Project context path
   const projectContextPath = path.join(process.cwd(), '.tempurai', 'directives.md');
   const projectDir = path.dirname(projectContextPath);
   if (fs.existsSync(projectDir)) {
     return projectContextPath;
   }
 
-  // Global context path
   const globalContextPath = path.join(os.homedir(), '.tempurai', '.tempurai.md');
   const globalDir = path.dirname(globalContextPath);
   if (!fs.existsSync(globalDir)) {

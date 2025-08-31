@@ -169,6 +169,7 @@ export const createWebSearchTool = (context: ToolContext) => tool({
       }
 
       const data = await response.body.json() as TavilyResponse;
+
       const sources: WebSearchSource[] = data.results.map(result => ({
         title: result.title,
         url: result.url,
@@ -176,9 +177,7 @@ export const createWebSearchTool = (context: ToolContext) => tool({
       }));
 
       const searchResults = `Web search results for "${query}":
-
 Summary: ${data.answer || 'No relevant information found'}
-
 Sources:
 ${sources.map((source, i) => `${i + 1}. ${source.title} - ${source.url}`).join('\n')}`;
 
@@ -284,7 +283,6 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
         }
 
         html = await response.body.text();
-
         if (html.length > maxContentLength * 3) {
           return {
             content: '',
@@ -356,7 +354,6 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
       const fetchResults = `Content fetched from ${url}:
 ${title ? `Title: ${title}` : ''}
 Content length: ${finalContent.length} characters${truncated ? ' (truncated)' : ''}
-
 ${finalContent.split('\n').slice(0, 10).join('\n')}${finalContent.split('\n').length > 10 ? '\n...[content continues]' : ''}`;
 
       context.eventEmitter.emit({

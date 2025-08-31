@@ -95,6 +95,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       const timer = setTimeout(() => setCtrlCCount(0), 2000);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [ctrlCCount]);
 
   useInput((inputChar: string, key: any) => {

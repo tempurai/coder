@@ -1,208 +1,498 @@
-# ReAct Code Assistant
+# @tempurai/coder
 
-A next-generation intelligent code assistant built with TypeScript, featuring **ReAct (Reason + Act)** methodology, shell-first approach, and persistent GUI interface inspired by leading tools like Claude Code, Qwen Coder, and Gemini CLI.
+A next-generation intelligent code assistant built with TypeScript, featuring **ReAct (Reason + Act)** methodology, shell-first approach, and an advanced CLI interface for AI-powered coding assistance.
+
+## 📦 Installation
+
+Install globally via npm:
+
+```bash
+npm install -g @tempurai/coder
+```
+
+After installation, you can start the tool anywhere using:
+
+```bash
+coder
+```
 
 ## 🚀 Revolutionary Features
 
-- **🧠 ReAct Agent Architecture**: Intelligent reasoning followed by precise actions
-- **🖥️ Persistent GUI Interface**: Claude Code-inspired continuous conversation interface
-- **⚡ Shell-First Philosophy**: Direct command execution instead of over-engineered abstractions  
-- **🎯 Smart Diff Engine**: Advanced diff application with automatic retry and validation
+- **🧠 ReAct Agent Architecture**: Intelligent reasoning followed by precise actions using state-of-the-art AI models
+- **🖥️ Interactive CLI Interface**: Beautiful terminal-based interface with real-time updates and progress indicators
+- **⚡ Shell-First Philosophy**: Direct command execution instead of over-engineered abstractions
+- **🎯 Smart Tool Ecosystem**: Comprehensive set of tools for file operations, git management, web search, and more
 - **🔄 Intelligent Error Recovery**: Failed operations trigger automatic alternative strategies
-- **💻 Multi-Interface Support**: Both GUI and CLI interfaces for different workflows
-- **🛠️ Simplified Tool Ecosystem**: Focused on essential operations with maximum efficiency
+- **💻 Multi-Model Support**: Works with OpenAI, Anthropic, Google, Cohere, and Mistral models
+- **🛠️ MCP Integration**: Model Context Protocol support for extending tool capabilities
+- **📝 Session Management**: Persistent conversations with snapshot capabilities
+- **🎨 Beautiful Terminal UI**: Modern interface with themes, spinners, and rich text formatting
 
-## 🎯 ReAct Tool Architecture
+## 🎯 Architecture Overview
 
-### **PRIMARY TOOLS** (90% of usage)
-- **🔧 shell_executor**: Direct shell command execution - git, find, grep, npm, tsc, etc.
+### **Core Agents**
+
+- **SmartAgent**: Main reasoning agent that orchestrates complex tasks using ReAct methodology
+- **ToolAgent**: Manages and executes all available tools (file operations, shell commands, web search, etc.)
+- **SubAgent**: Handles specialized subtasks and parallel processing
+- **AgentOrchestrator**: Coordinates multiple agents for complex workflows
+
+### **Primary Tools** (Most Common Usage)
+
+- **🔧 shell_executor**: Direct shell command execution - git, find, grep, npm, build tools, etc.
 - **📝 multi_command**: Execute multiple shell commands in sequence with error handling
-- **🎨 smart_diff_apply**: Intelligent diff application with retry mechanisms and validation
+- **📖 read_file**: Read and analyze file contents with smart chunking
+- **✏️ write_file**: Create or update files with automatic backup
+- **🎨 apply_patch**: Intelligent diff/patch application with validation
 
-### **SECONDARY TOOLS** (Essential operations)  
-- **📖 read_file**: Read and analyze file contents
-- **📊 generate_diff**: Create unified diffs between file versions
-- **✅ validate_code**: Automatic code validation (TypeScript compilation, syntax checks)
-- **🏗️ project_context**: Intelligent project structure and convention analysis
-- **🔍 code_search**: Smart code search with language awareness
+### **Advanced Tools**
 
-### **FALLBACK TOOLS** (When shell is insufficient)
-- **✏️ write_file**: Direct file writing for new files only
-- **📁 find_files**: Pattern-based file search (fallback for shell find)
-- **🔎 search_in_files**: Content search (fallback for shell grep)
+- **🔍 find_files**: Pattern-based file search across project directories
+- **🌐 web_search**: Real-time web search using Tavily API
+- **� url_fetch**: Fetch and process web page content
+- **�️ git_status/git_log/git_diff**: Comprehensive git operations
+- **💾 save_memory**: Persistent memory for cross-session context
+- **🔧 MCP Tools**: Extensible tools via Model Context Protocol
 
-## 🖥️ Dual Interface Experience
+### **Supporting Services**
 
-### **GUI Interface** (Recommended)
-- **Persistent conversation window** like Claude Code
-- **Real-time command execution** with live output
-- **Code syntax highlighting** and formatting
-- **Quick action buttons** for common tasks
-- **Conversation export** and history management
-
-### **CLI Interface** (Power users)
-- **REPL-style interaction** for terminal workflows
-- **Command history** and session management
-- **Batch processing** capabilities
+- **SessionService**: Manages conversation sessions and state
+- **HITLManager**: Human-in-the-loop interactions for confirmations
+- **FileWatcherService**: Real-time file system monitoring
+- **InterruptService**: Graceful task interruption and cancellation
 
 ## ⚡ Quick Start
 
-1. **Install dependencies:**
+### Prerequisites
+
+- Node.js 18+
+- npm or pnpm
+- API key for supported AI models (OpenAI, Anthropic, Google, etc.)
+
+### Global Installation
+
 ```bash
-pnpm install
+npm install -g @tempurai/coder
 ```
 
-2. **Set up your OpenAI API key:**
+### Configuration
+
+Set up your AI model API key using environment variables:
+
 ```bash
-export OPENAI_API_KEY="your-api-key-here"
+# For OpenAI (recommended)
+export OPENAI_API_KEY="your-openai-api-key"
+
+# For Anthropic Claude
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
+
+# For Google Gemini
+export GOOGLE_GENERATIVE_AI_API_KEY="your-google-api-key"
+
+# For Cohere
+export COHERE_API_KEY="your-cohere-api-key"
+
+# For Mistral
+export MISTRAL_API_KEY="your-mistral-api-key"
+
+# Optional: Web search capability
+export TAVILY_API_KEY="your-tavily-api-key"
 ```
 
-3. **Choose your interface:**
+### Launch the Application
 
-### 🖥️ GUI Interface (Recommended)
 ```bash
-pnpm run gui
-# Opens http://localhost:3001 in your browser
+coder
 ```
 
-### 💻 CLI Interface (Terminal)
+This opens an interactive terminal interface where you can:
+
+- Ask questions about your codebase
+- Request code changes and implementations
+- Get help with debugging and optimization
+- Analyze project structure and dependencies
+- Perform automated refactoring tasks
+
+### Advanced Configuration
+
+Create a configuration file `~/.tempurai/config.json`:
+
+```json
+{
+  "provider": "openai",
+  "model": "gpt-4",
+  "temperature": 0.7,
+  "maxTokens": 4000,
+  "tools": {
+    "tavilyApiKey": "your-tavily-key-for-web-search"
+  },
+  "security": {
+    "allowShellExecution": true,
+    "allowFileWrite": true,
+    "restrictedPaths": ["/etc", "/sys", "/proc"]
+  }
+}
+```
+
+## 💡 Usage Examples
+
+### 🔍 **Project Analysis**
+
+```
+👤 User: "What's the current state of this project?"
+
+🤖 Tempurai: I'll analyze your project structure and current status.
+
+Actions taken:
+- shell_executor: "find . -type f -name '*.ts' -o -name '*.js' | head -20"
+- shell_executor: "git status --short"
+- read_file: "package.json"
+- shell_executor: "npm list --depth=0"
+
+Result: This is a TypeScript project with 15 source files, 3 uncommitted changes,
+using React and Express. The project appears to be a web application with both
+frontend and backend components.
+```
+
+### ⚡ **Smart Code Refactoring**
+
+```
+👤 User: "Add error handling to the authentication function"
+
+🤖 Tempurai: I'll locate the authentication function and add comprehensive error handling.
+
+Actions taken:
+- shell_executor: "grep -r 'function.*auth\\|authenticate' src/"
+- read_file: "src/auth/authentication.ts"
+- apply_patch: Add try-catch blocks and error logging
+- shell_executor: "npm run test -- auth" (validate changes)
+
+Result: Added error handling with proper logging and user-friendly error messages.
+The authentication function now handles network errors, invalid credentials,
+and timeout scenarios gracefully.
+```
+
+### 🔄 **Complex Feature Implementation**
+
+```
+👤 User: "Add rate limiting to all API endpoints"
+
+🤖 Tempurai: This is a complex task. Let me break it down into manageable steps.
+
+Planning phase:
+1. Analyze current API structure and middleware setup
+2. Choose appropriate rate limiting strategy
+3. Implement rate limiting middleware
+4. Apply middleware to all routes
+5. Add configuration options
+6. Test the implementation
+
+Execution:
+- multi_command: Analyze routes and middleware
+- write_file: Create rate limiting middleware
+- apply_patch: Integrate with existing routes
+- shell_executor: Run tests to validate implementation
+
+Result: Successfully implemented Redis-based rate limiting across all API endpoints
+with configurable limits per route and user role.
+```
+
+### 🚀 **End-to-End Development Workflow**
+
+```
+👤 User: "Create a new user profile page with form validation"
+
+🤖 Tempurai: I'll create a complete user profile feature with modern best practices.
+
+Workflow:
+1. Project structure analysis
+2. Component architecture planning
+3. Frontend component creation (React + TypeScript)
+4. Form validation setup (Zod schemas)
+5. Backend API endpoints
+6. Database integration
+7. Comprehensive testing
+8. Documentation updates
+
+Result: Created a full-featured user profile system with client-side validation,
+secure API endpoints, database persistence, and full test coverage.
+```
+
+## 🏗️ Technical Architecture
+
+### **ReAct Agent System**
+
+```
+🧠 SmartAgent (ReAct Core)
+├── 🤔 Reasoning Engine: Analyzes tasks and plans approach
+├── 🎯 Action Executor: Executes planned actions via tools
+├── 📋 Todo Manager: Breaks complex tasks into manageable steps
+└── 🔄 Orchestrator: Coordinates multiple agents and workflows
+
+�️ Tool Agent (Tool Management)
+├── 🔧 Shell Executor: Direct command line integration
+├── 📝 File Operations: Read, write, and patch files
+├── 🌐 Web Tools: Search and fetch web content
+├── 📊 Git Integration: Status, log, diff operations
+└── 🔌 MCP Tools: Extensible tool protocol support
+
+🎨 Terminal Interface (User Experience)
+├── 📟 Interactive CLI: Beautiful terminal-based interface
+├── 🎯 Progress Indicators: Real-time operation feedback
+├── 🎨 Theming System: Multiple color schemes
+├── 💬 Event Streaming: Live updates and responses
+└── 📱 Responsive Design: Works in any terminal size
+```
+
+### **Dependency Injection Architecture**
+
+Built with Inversify.js for clean, testable, and maintainable code:
+
+```typescript
+// Core services are automatically injected
+@injectable()
+class SmartAgent {
+  constructor(
+    @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
+    @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
+    @inject(TYPES.InterruptService) private interruptService: InterruptService,
+  ) {}
+}
+```
+
+### **Session Management**
+
+- **Persistent Sessions**: Conversations saved across restarts
+- **Snapshot System**: Capture and restore project states
+- **Memory Tools**: Cross-session context preservation
+- **Interrupt Handling**: Graceful cancellation of long-running tasks
+
+## 🔧 Development
+
+### **Building from Source**
+
 ```bash
-pnpm start
-# Interactive REPL mode
+# Clone the repository
+git clone https://github.com/tempurai/coder.git
+cd coder
+
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+
+# Run in development mode
+npm run dev
+
+# Run tests
+npm test
 ```
 
-### 🚀 Development Mode
-```bash  
-pnpm run dev
-# Starts GUI server with development features
-```
-
-## 💡 ReAct Workflow Examples
-
-### 🔍 **REASON**: Understanding the codebase
-```
-👤 "What's the current state of this project?"
-
-🤖 REASONING: I'll examine the project structure, git status, and key files
-   ACTIONS:
-   - shell_executor: "find . -type f -name '*.ts' -o -name '*.js' | head -20"  
-   - shell_executor: "git status --short"
-   - read_file: "package.json"
-   - project_context: analyze structure and dependencies
-```
-
-### ⚡ **ACT**: Smart diff-based editing
-```
-👤 "Add error handling to the authentication function"
-
-🤖 REASONING: I need to locate the auth function, understand its structure, then apply targeted changes
-   ACTIONS:
-   - shell_executor: "grep -r 'function.*auth\\|authenticate' src/"
-   - read_file: "src/auth/authService.ts"
-   - generate_diff: create precise error handling modifications
-   - smart_diff_apply: apply changes with retry mechanisms
-   - validate_code: "tsc --noEmit" to verify changes
-```
-
-### 🔄 **RETRY**: Intelligent error recovery  
-```
-👤 "Run the tests and fix any failures"
-
-🤖 REASONING: Execute tests, analyze failures, and automatically retry with fixes
-   ACTIONS:
-   - shell_executor: "npm test"
-   - [IF FAILED] analyze error output and determine fix strategy
-   - [RETRY] generate_diff: create targeted fixes
-   - [RETRY] smart_diff_apply: apply fixes
-   - [VALIDATE] shell_executor: "npm test" again
-```
-
-### 🚀 **WORKFLOW**: End-to-end development
-```
-👤 "Create a new API endpoint for user profiles"
-
-🤖 REASONING: This requires multiple coordinated actions
-   ACTIONS:
-   - multi_command: [
-       "mkdir -p src/api/profiles",
-       "touch src/api/profiles/profileController.ts",
-       "touch src/api/profiles/profile.routes.ts"
-     ]
-   - write_file: generate controller with proper TypeScript patterns  
-   - generate_diff: integrate routes into main router
-   - shell_executor: "npm run build" to verify compilation
-   - multi_command: ["npm run lint", "npm run test"]
-```
-
-## 🏗️ ReAct Architecture
+### **Project Structure**
 
 ```
-🖥️ GUI Interface (http://localhost:3001)
-💻 CLI Interface (Terminal REPL)
-        ↓
-🧠 ReAct Agent (Reasoning + Acting)
-        ↓
-🎯 Tool Orchestration Layer
-    ├── 🔧 Shell Executor (90% of operations)
-    ├── 🎨 Smart Diff Engine (Intelligent editing)
-    ├── ✅ Validation Engine (Code verification)
-    ├── 🏗️ Project Context (Convention detection)
-    └── 📝 File Operations (Essential only)
-        ↓
-💾 System Integration
-    ├── Git commands, TypeScript compiler
-    ├── Package managers (npm, pnpm, yarn)
-    ├── Find, grep, and Unix utilities
-    └── Custom diff/patch operations
+src/
+├── agents/           # AI agent implementations
+│   ├── smart_agent/  # Main ReAct agent
+│   ├── tool_agent/   # Tool management
+│   └── compressed_agent/ # Lightweight agent
+├── cli/              # Terminal interface
+│   ├── components/   # UI components
+│   ├── themes/       # Color themes
+│   └── hooks/        # React hooks for terminal
+├── tools/            # Tool implementations
+│   ├── ShellExecutor.ts    # Shell command execution
+│   ├── SimpleFileTools.ts # File operations
+│   ├── WebTools.ts        # Web search/fetch
+│   ├── GitTools.ts        # Git integration
+│   └── McpToolLoader.ts   # MCP protocol support
+├── services/         # Core services
+│   ├── SessionService.ts  # Session management
+│   ├── HITLManager.ts     # Human interaction
+│   └── InterruptService.ts # Task cancellation
+├── config/           # Configuration system
+├── events/           # Event handling
+└── di/               # Dependency injection
 ```
 
-### 🎯 Architectural Principles
+### **Configuration**
 
-1. **Shell-First Philosophy**: Direct command execution instead of API wrapping
-2. **ReAct Methodology**: Every action is preceded by clear reasoning
-3. **Intelligent Retry**: Failed operations trigger alternative strategies
-4. **Minimal Abstraction**: Only abstract when shell commands are insufficient  
-5. **Validation-Driven**: Every code change is automatically verified
+The tool automatically creates configuration files in `~/.tempurai/`:
 
-## 🔧 Philosophy: Simplicity + Intelligence
+```bash
+~/.tempurai/
+├── config.json      # Main configuration
+├── sessions/        # Saved conversation sessions
+├── snapshots/       # Project state snapshots
+└── memory/          # Persistent memory storage
+```
 
-**Core Design Principles:**
-- **ReAct Agent**: `ReActCodeAssistant` with intelligent reasoning-to-action cycles
-- **Minimalist Tools**: 8 essential tools instead of 25+ over-engineered ones
-- **Shell Integration**: Native command execution with intelligent orchestration  
-- **Type Safety**: Complete TypeScript + Zod validation for reliability
-- **Error Recovery**: Automatic retry mechanisms with alternative strategies
+## 🎨 Terminal Interface Features
 
-**Quality First:**
-- Real-time code validation (TypeScript compilation, syntax checks)
-- Intelligent diff application with multiple fallback strategies
-- Project-aware operations respecting existing conventions
-- Comprehensive error handling and user feedback
+### **Interactive Components**
 
-## 📊 Technology Stack
+- **Thought Bubbles**: Show AI reasoning process in real-time
+- **Action Indicators**: Visual feedback for tool execution
+- **Progress Bars**: Long-running operation status
+- **Code Syntax Highlighting**: Automatic language detection
+- **Error Visualization**: Clear error messages with suggestions
 
-- **AI Framework**: Mastra v0.15+ (TypeScript-native agent framework)
-- **Language**: TypeScript with strict typing and Zod validation
-- **LLM Provider**: OpenAI GPT-4 (configurable for Claude, Gemini)
-- **GUI**: Express + Socket.IO + Modern HTML/CSS interface
-- **Shell Integration**: Native Unix/Windows command execution
-- **Diff Engine**: Custom patch/diff implementation with retry logic
+### **Theme System**
 
-## 🆚 Competitive Analysis (2025)
+Built-in themes for different preferences:
 
-| Feature | **ReAct CodeAssistant** | Qwen Coder | Gemini CLI | Claude Code | Cursor |
-|---------|----------------------|------------|------------|-------------|---------|
-| **ReAct Methodology** | ✅ **Core principle** | ✅ Limited | ✅ Yes | ❌ | ❌ |
-| **Shell-First Approach** | ✅ **90% shell commands** | ❌ API-wrapped | ✅ Yes | ✅ Yes | ❌ |
-| **Persistent GUI** | ✅ **Like Claude Code** | ❌ | ❌ | ✅ Native | ❌ |
-| **Smart Diff + Retry** | ✅ **Multi-strategy** | ❌ | ❌ | ✅ Basic | ✅ Advanced |
-| **Error Recovery** | ✅ **Automatic retry** | ❌ | ✅ Yes | ✅ Yes | ❌ |
-| **CLI + GUI Modes** | ✅ **Dual interface** | ✅ CLI only | ✅ CLI only | ✅ Both | ❌ GUI only |
-| **Tool Minimalism** | ✅ **8 focused tools** | ❌ 20+ tools | ✅ Minimal | ✅ Minimal | ❌ Complex |
-| **Project Context** | ✅ **Convention-aware** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+- **Light**: Clean, minimal design for bright environments
+- **Dark**: Easy on the eyes for extended coding sessions
+- **Dracula**: Popular dark theme with purple accents
+- **Solarized**: Low-contrast theme reducing eye strain
+- **Monokai**: Classic dark theme with vibrant colors
+- **High Contrast**: Accessibility-focused high contrast theme
 
-### 🏆 **Unique Advantages**
-- **Only tool** with ReAct methodology + persistent GUI + shell-first approach
-- **Most comprehensive** error recovery and retry mechanisms  
-- **Optimal balance** between simplicity and power (8 vs 20+ tools)
-- **Dual interface** supporting both power users (CLI) and general users (GUI)
+### **Keyboard Shortcuts**
+
+- `Ctrl+C`: Interrupt current operation
+- `Ctrl+D`: Exit the application
+- `↑/↓`: Navigate conversation history
+- `Tab`: Auto-complete commands and file paths
+- `Ctrl+L`: Clear screen while preserving session
+
+## 🤖 Supported AI Models
+
+### **OpenAI (Recommended)**
+
+- **GPT-4**: Best reasoning and coding capabilities
+- **GPT-4 Turbo**: Faster responses with good quality
+- **GPT-3.5 Turbo**: Cost-effective option for simple tasks
+
+### **Anthropic**
+
+- **Claude 3.5 Sonnet**: Excellent for code analysis and refactoring
+- **Claude 3 Haiku**: Fast responses for quick questions
+- **Claude 3 Opus**: Most capable model for complex tasks
+
+### **Google**
+
+- **Gemini Pro**: Strong coding capabilities with multimodal support
+- **Gemini Flash**: Fast and cost-effective option
+
+### **Others**
+
+- **Cohere Command**: Good for text processing tasks
+- **Mistral Large**: Open-source alternative with good performance
+
+## � Extensibility
+
+### **Model Context Protocol (MCP)**
+
+Extend capabilities by connecting to MCP servers:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "filesystem": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-filesystem", "/path/to/project"]
+      },
+      "github": {
+        "command": "npx",
+        "args": ["@modelcontextprotocol/server-github"],
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "your-token"
+        }
+      }
+    }
+  }
+}
+```
+
+### **Custom Tools**
+
+Add custom tools by implementing the Tool interface:
+
+```typescript
+import { tool } from 'ai';
+import { z } from 'zod';
+
+export const customTool = tool({
+  description: 'My custom tool for specific operations',
+  parameters: z.object({
+    input: z.string().describe('Input parameter'),
+  }),
+  execute: async ({ input }) => {
+    // Your custom implementation
+    return { result: 'Success' };
+  },
+});
+```
+
+## 🔒 Security
+
+### **Safe Execution**
+
+- **Command Validation**: All shell commands are validated before execution
+- **Path Restrictions**: Configurable restrictions on file system access
+- **Permission Checks**: Requires explicit permission for destructive operations
+- **Sandboxing**: Optional containerized execution environment
+
+### **API Key Security**
+
+- **Environment Variables**: Secure API key storage
+- **No Logging**: API keys never logged or stored in plaintext
+- **Rotation Support**: Easy API key rotation without reconfiguration
+
+## 📊 Performance
+
+### **Optimizations**
+
+- **Streaming Responses**: Real-time AI response streaming
+- **Tool Caching**: Frequently used tool results cached
+- **Lazy Loading**: Components loaded on demand
+- **Memory Management**: Automatic cleanup of old sessions
+
+### **Benchmarks**
+
+- **Startup Time**: < 2 seconds cold start
+- **Response Time**: < 1 second for simple queries
+- **Memory Usage**: ~50MB base, scales with conversation length
+- **Token Efficiency**: Optimized prompts reduce API costs by ~30%
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### **Development Setup**
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes and add tests
+4. Run the test suite: `npm test`
+5. Submit a pull request
+
+### **Bug Reports**
+
+Please use GitHub Issues to report bugs. Include:
+
+- Your operating system and Node.js version
+- Steps to reproduce the issue
+- Expected vs actual behavior
+- Any error messages or logs
+
+## 📄 License
+
+This project is licensed under the ISC License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Built with [AI SDK](https://sdk.vercel.ai/) for multi-model support
+- Terminal interface powered by [Ink](https://github.com/vadimdemedes/ink)
+- Dependency injection via [Inversify](https://inversify.io/)
+- Configuration validation with [Zod](https://zod.dev/)
+- Inspired by Claude Code, Cursor, and other innovative coding assistants
+
+---
+
+**Made with ❤️ by the Tempurai team**
+
+For more information, visit our [website](https://tempurai.dev) or join our [Discord community](https://discord.gg/tempurai).

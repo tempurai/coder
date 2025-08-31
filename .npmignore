@@ -1,0 +1,47 @@
+# Source files
+src/
+listed.txt
+
+# Development files
+.vscode/
+.git/
+.gitignore
+*.log
+.DS_Store
+
+# Documentation
+docs/
+README-ENHANCED.md
+
+# Test files
+**/*.test.ts
+**/*.test.js
+**/*.spec.ts
+**/*.spec.js
+jest.config.*
+coverage/
+
+# Build tools
+tsconfig.json
+.eslintrc.*
+.prettierrc.*
+
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Temporary files
+*.tmp
+*.temp
+.env*
+
+# IDE files
+*.swp
+*.swo
+*~
+.idea/
+
+# OS files
+Thumbs.db

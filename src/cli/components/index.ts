@@ -1,4 +1,3 @@
-export { TaskContainer } from './TaskContainer.js';
 export { ThoughtSection } from './ThoughtSection.js';
 export { PlanSection } from './PlanSection.js';
 export { ActionSection } from './ActionSection.js';

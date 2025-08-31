@@ -1,14 +1,16 @@
 {
-  "name": "tempurai",
+  "name": "@tempurai/coder",
   "version": "1.0.0",
-  "description": "AI-assisted programming CLI tool",
+  "description": "A next-generation intelligent code assistant built with TypeScript, featuring ReAct (Reason + Act) methodology and advanced CLI interface",
   "type": "module",
+  "main": "dist/cli/index.js",
   "bin": {
-    "tempurai": "dist/cli/index.js"
+    "coder": "dist/cli/index.js"
   },
   "files": [
     "dist/**/*",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "jest",
@@ -16,11 +18,48 @@
     "build:watch": "tsc --watch",
     "dev": "tsx src/cli/index.ts",
     "prepare": "npm run build",
-    "postpack": "rm -f *.tgz"
+    "postpack": "rm -f *.tgz",
+    "prepublishOnly": "npm run build",
+    "clean": "rm -rf dist"
   },
-  "keywords": [],
-  "author": "tempurai",
-  "license": "ISC",
+  "keywords": [
+    "ai",
+    "code-assistant",
+    "typescript",
+    "react",
+    "cli",
+    "coding",
+    "programming",
+    "developer-tools",
+    "code-generation",
+    "automation",
+    "openai",
+    "anthropic",
+    "claude",
+    "gpt",
+    "terminal",
+    "tempurai",
+    "shell",
+    "git",
+    "refactoring"
+  ],
+  "author": {
+    "name": "Tempurai Team",
+    "email": "team@tempurai.dev",
+    "url": "https://tempurai.dev"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/tempurai/coder#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tempurai/coder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tempurai/coder/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
     "@sindresorhus/tsconfig": "^8.0.1",
     "@types/cors": "^2.8.19",

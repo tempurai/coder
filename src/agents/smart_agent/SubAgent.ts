@@ -97,7 +97,8 @@ Task: "Analyze the authentication system and identify security issues"
     }
   },
   "completed": false,
-  "output": null
+  "output": null,
+  "criticalInfo": null
 }
 
 {
@@ -110,7 +111,8 @@ Task: "Analyze the authentication system and identify security issues"
     }
   },
   "completed": false,
-  "output": null
+  "output": null,
+  "criticalInfo": null
 }
 
 {
@@ -124,7 +126,8 @@ Task: "Analyze the authentication system and identify security issues"
     "summary": "Security analysis completed",
     "issues_found": ["Hardcoded secrets", "Missing input validation", "Weak password policy"],
     "files_analyzed": ["src/auth.js", "middleware/security.js"]
-  }
+  },
+  "criticalInfo": "Security analysis found 3 critical vulnerabilities in authentication system"
 }
 
 **Example 2: File Refactoring Task**
@@ -140,7 +143,8 @@ Task: "Convert callback functions to async/await"
     }
   },
   "completed": false,
-  "output": null
+  "output": null,
+  "criticalInfo": null
 }
 
 {
@@ -153,7 +157,8 @@ Task: "Convert callback functions to async/await"
     }
   },
   "completed": false,
-  "output": null
+  "output": null,
+  "criticalInfo": "Applied patch to services/userService.js - converted callback to async/await"
 }
 
 {
@@ -166,7 +171,8 @@ Task: "Convert callback functions to async/await"
     }
   },
   "completed": false,
-  "output": null
+  "output": null,
+  "criticalInfo": null
 }
 
 {
@@ -180,7 +186,8 @@ Task: "Convert callback functions to async/await"
     "summary": "Successfully converted callbacks to async/await",
     "files_modified": ["services/userService.js", "utils/database.js"],
     "verification": "All tests passing"
-  }
+  },
+  "criticalInfo": "Refactoring completed - 2 files modified, all tests passing"
 }
 
 Remember: You are operating independently to accomplish a specific goal. Focus on delivering results efficiently and effectively while maintaining high quality standards. Use shell commands as your primary exploration and verification tool.`;

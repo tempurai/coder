@@ -8,6 +8,42 @@ import { ToolOutputEvent } from '../events/EventTypes.js';
 
 const execAsync = util.promisify(exec);
 
+export interface ShellExecutionResult {
+    success: boolean;
+    stdout?: string;
+    stderr?: string;
+    command: string;
+    description: string;
+    cancelled: boolean;
+    commandClassification?: CommandClassification;
+    error?: string;
+    exitCode?: number;
+    workingDirectory?: string;
+    securityBlocked?: boolean;
+    suggestion?: string;
+}
+
+export interface MultiCommandResult {
+    command: string;
+    description: string;
+    success: boolean;
+    stdout?: string;
+    stderr?: string;
+    cancelled: boolean;
+    error?: string;
+    exitCode?: number;
+    commandClassification?: CommandClassification;
+}
+
+export interface MultiCommandExecutionResult {
+    success: boolean;
+    results: MultiCommandResult[];
+    summary: string;
+    workingDirectory: string;
+    cancelled: boolean;
+    securityBlocked?: boolean;
+}
+
 export const createShellExecutorTools = (context: ToolContext) => {
     const validator = new CommandValidator(context.configLoader);
 
@@ -40,7 +76,7 @@ IMPORTANT: Always explain what command you're running and why.`,
             workingDirectory,
             timeout,
             captureError,
-        }) => {
+        }): Promise<ShellExecutionResult> => {
             try {
                 const validationResult = validator.validateCommand(command);
                 const classification = validator.classifyCommand(command);
@@ -55,10 +91,8 @@ IMPORTANT: Always explain what command you're running and why.`,
                         );
                         if (!confirmed) {
                             return {
-                                success: false as const,
+                                success: false,
                                 error: 'Command execution cancelled by user',
-                                stdout: '',
-                                stderr: '',
                                 command,
                                 description,
                                 cancelled: true,
@@ -67,10 +101,8 @@ IMPORTANT: Always explain what command you're running and why.`,
                         }
                     } else {
                         return {
-                            success: false as const,
+                            success: false,
                             error: `Security policy violation: ${validationResult.reason}`,
-                            stdout: '',
-                            stderr: '',
                             command,
                             description,
                             cancelled: false,
@@ -88,10 +120,8 @@ IMPORTANT: Always explain what command you're running and why.`,
                     );
                     if (!confirmed) {
                         return {
-                            success: false as const,
+                            success: false,
                             error: 'Command execution cancelled by user',
-                            stdout: '',
-                            stderr: '',
                             command,
                             description,
                             cancelled: true,
@@ -128,11 +158,12 @@ IMPORTANT: Always explain what command you're running and why.`,
                 } as ToolOutputEvent);
 
                 return {
-                    success: true as const,
+                    success: true,
                     stdout: stdout?.toString()?.trim() || '',
                     stderr: captureError ? stderr?.toString()?.trim() || '' : '',
                     command,
                     description,
+                    cancelled: false,
                     workingDirectory: workingDirectory || process.cwd(),
                     commandClassification: classification,
                 };
@@ -152,14 +183,14 @@ IMPORTANT: Always explain what command you're running and why.`,
                 } as ToolOutputEvent);
 
                 return {
-                    success: false as const,
+                    success: false,
                     error: error?.message ?? String(error),
                     stdout: error?.stdout?.toString()?.trim() || '',
                     stderr: error?.stderr?.toString()?.trim() || '',
                     command,
                     description,
-                    exitCode: error?.code,
                     cancelled: false,
+                    exitCode: error?.code,
                     commandClassification: classification,
                 };
             }
@@ -187,7 +218,7 @@ Examples:
             commands,
             workingDirectory,
             stopOnFirstError,
-        }) => {
+        }): Promise<MultiCommandExecutionResult> => {
             const validationResults = validateCommands(commands.map((c) => c.command));
             const blockedCommands = validationResults
                 .map((res, idx) => ({ res, idx, original: commands[idx] }))
@@ -201,7 +232,7 @@ Examples:
                     )
                     .join('\n');
                 return {
-                    success: false as const,
+                    success: false,
                     results: [],
                     summary: `Security policy violations detected:\n${blockedList}`,
                     workingDirectory: workingDirectory || process.cwd(),
@@ -223,7 +254,7 @@ Examples:
 
             if (!confirmed) {
                 return {
-                    success: false as const,
+                    success: false,
                     results: [],
                     summary: 'Multi-command execution cancelled by user',
                     workingDirectory: workingDirectory || process.cwd(),
@@ -231,17 +262,7 @@ Examples:
                 };
             }
 
-            const results: Array<{
-                command: string;
-                description: string;
-                success: boolean;
-                stdout: string;
-                stderr: string;
-                cancelled: boolean;
-                error?: string;
-                exitCode?: number;
-                commandClassification?: CommandClassification;
-            }> = [];
+            const results: MultiCommandResult[] = [];
 
             context.eventEmitter.emit({
                 type: 'tool_output',
@@ -341,8 +362,7 @@ Examples:
             return {
                 success: successCount === totalCount,
                 results,
-                summary: `Executed ${totalCount} commands, ${successCount} successful, ${totalCount - successCount
-                    } failed`,
+                summary: `Executed ${totalCount} commands, ${successCount} successful, ${totalCount - successCount} failed`,
                 workingDirectory: workingDirectory || process.cwd(),
                 cancelled: false,
             };

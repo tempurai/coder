@@ -108,8 +108,8 @@ export class SubAgent {
     async executeTask(task: SubAgentTask): Promise<SubAgentResult> {
         const startTime = Date.now();
         const logs: string[] = [];
-        const maxTurns = task.maxTurns || this.MAX_TURNS;
-        const timeout = task.timeoutMs || this.DEFAULT_TIMEOUT;
+        const maxTurns = this.MAX_TURNS;
+        const timeout = this.DEFAULT_TIMEOUT;
 
         logs.push(`Starting SubAgent task: ${task.type}`);
         console.log(`SubAgent executing: ${task.type} - ${task.description}`);
@@ -274,8 +274,6 @@ The sub-agent will work autonomously until task completion or failure.`,
             taskType: z.string().describe('Type of task (e.g., "file_analysis", "code_refactor", "testing")'),
             description: z.string().describe('Clear description of what the sub-agent should accomplish'),
             context: z.any().optional().describe('Any relevant context or data needed for the task'),
-            maxTurns: z.number().default(15).optional().describe('Maximum number of iterations for the sub-agent'),
-            timeoutMs: z.number().default(300000).optional().describe('Timeout in milliseconds (default: 5 minutes)')
         }),
         execute: async (args) => {
             const taskId = `subagent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -284,8 +282,6 @@ The sub-agent will work autonomously until task completion or failure.`,
                 type: args.taskType,
                 description: args.description,
                 context: args.context || {},
-                maxTurns: args.maxTurns,
-                timeoutMs: args.timeoutMs
             };
 
             try {

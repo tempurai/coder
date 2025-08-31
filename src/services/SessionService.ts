@@ -60,7 +60,8 @@ export class SessionService {
     private totalTokensUsed: number = 0;
     private totalResponseTime: number = 0;
     private interactionCount: number = 0;
-    private interrupted: boolean = false;
+    private messageQueue: string[] = [];
+    private isTaskRunning: boolean = false;
 
     constructor(
         @inject(TYPES.ToolAgent) private _agent: ToolAgent,
@@ -71,7 +72,6 @@ export class SessionService {
         @inject(TYPES.InterruptService) private interruptService: InterruptService
     ) {
         this.sessionStartTime = new Date();
-        console.log('✅ 会话管理服务已初始化（新版ReAct模式）');
     }
 
     get agent(): ToolAgent {
@@ -82,9 +82,33 @@ export class SessionService {
         return this.eventEmitter;
     }
 
-    async processTask(query: string): Promise<TaskExecutionResult> {
-        this.interruptService.startTask();
+    public queueMessage(message: string): void {
+        if (message.trim()) {
+            this.messageQueue.push(message.trim());
+        }
+    }
 
+    private async processQueuedMessages(): Promise<void> {
+        while (this.messageQueue.length > 0) {
+            const nextMessage = this.messageQueue.shift()!;
+            await this.processTask(nextMessage);
+        }
+    }
+
+    async processTask(query: string): Promise<TaskExecutionResult> {
+        if (this.isTaskRunning) {
+            this.queueMessage(query);
+            return {
+                success: true,
+                taskDescription: query,
+                duration: 0,
+                iterations: 0,
+                summary: 'Message queued for processing',
+            };
+        }
+
+        this.isTaskRunning = true;
+        this.interruptService.startTask();
         const startTime = Date.now();
         console.log('\n🚀 开始处理任务...');
 
@@ -97,6 +121,7 @@ export class SessionService {
         try {
             const snapshotManager = await this.createSnapshotManager(process.cwd());
             console.log('📸 创建任务开始前的快照...');
+
             const snapshotResult = await snapshotManager.createSnapshot(
                 `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
             );
@@ -112,8 +137,8 @@ export class SessionService {
                     error: snapshotResult.error
                 };
             }
-            console.log(`✅ 安全快照已创建: ${snapshotResult.snapshotId}`);
 
+            console.log(`✅ 安全快照已创建: ${snapshotResult.snapshotId}`);
             this.eventEmitter.emit({
                 type: 'snapshot_created',
                 snapshotId: snapshotResult.snapshotId!,
@@ -121,10 +146,8 @@ export class SessionService {
                 filesCount: snapshotResult.filesCount || 0,
             } as SnapshotCreatedEvent);
 
-            // 直接创建 SmartAgent 实例，不再使用工厂
             const smartAgent = new SmartAgent(this._agent, this.eventEmitter, this.interruptService);
             smartAgent.initializeTools();
-
             console.log('🔄 开始SmartAgent推理循环...');
             const taskResult = await smartAgent.runTask(query);
 
@@ -140,7 +163,6 @@ export class SessionService {
 
             this.interactionCount++;
             this.totalResponseTime += finalResult.duration;
-
             this.addToHistory('user', query);
             this.addToHistory('assistant', finalResult.summary, {
                 duration: finalResult.duration,
@@ -160,10 +182,21 @@ export class SessionService {
             } as TaskCompletedEvent);
 
             return finalResult;
+
         } catch (error) {
             const duration = Date.now() - startTime;
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
             console.error(`💥 ${errorMessage}`);
+
+            this.eventEmitter.emit({
+                type: 'task_completed',
+                success: false,
+                duration,
+                iterations: 0,
+                summary: 'Error occurred during task execution',
+                error: errorMessage
+            } as TaskCompletedEvent);
+
             return {
                 success: false,
                 taskDescription: query,
@@ -172,6 +205,13 @@ export class SessionService {
                 summary: '任务执行时发生严重错误',
                 error: errorMessage
             };
+        } finally {
+            this.isTaskRunning = false;
+
+            // 任务完成后检查队列
+            if (this.messageQueue.length > 0) {
+                await this.processQueuedMessages();
+            }
         }
     }
 

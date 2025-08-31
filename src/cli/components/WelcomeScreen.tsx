@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../themes/index.js';
+import { MAX_FRAME_WIDTH } from './base.js';
 
 interface WelcomeScreenProps {
   onDismiss: () => void;
@@ -33,13 +34,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onDismiss }) => {
   const textSecondary = c.text?.secondary ?? 'white';
   const textMuted = c.text?.muted ?? 'gray';
 
-  // 固定宽度：可按需调整，例如 72
-  const FIXED_WIDTH = 72;
-
   return (
     <Box width='100%' justifyContent='flex-start' minHeight={25}>
-      <Box width={FIXED_WIDTH} flexDirection='column' alignItems='flex-start'>
-        {/* ASCII Logo，带左右边框与内边距 */}
+      <Box width={MAX_FRAME_WIDTH} flexDirection='column' alignItems='flex-start'>
         <Box borderStyle='round' borderColor={border} paddingX={2} paddingY={1} marginY={1} width='100%' justifyContent='center'>
           <Box flexDirection='column' alignItems='center'>
             {logo.split('\n').map((line, i) => (

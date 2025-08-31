@@ -106,20 +106,20 @@ export const EventItem: React.FC<EventItemProps> = React.memo(({ event, index, d
   const { indicatorType, mainContent, details, timestamp, isActive } = getEventContent();
 
   return (
-    <Box flexDirection='column' marginBottom={1}>
+    <Box flexDirection='column'>
+      <Box>
+        <Text color={currentTheme.colors.text.muted}>[{formatTime(timestamp)}]</Text>
+      </Box>
       <Box>
         <Box marginRight={1}>
           <StatusIndicator type={indicatorType} isActive={isActive} />
-        </Box>
-        <Box marginRight={2}>
-          <Text color={currentTheme.colors.text.muted}>[{formatTime(timestamp)}]</Text>
         </Box>
         <Box flexGrow={1} flexDirection='column'>
           <Text color={currentTheme.colors.text.primary}>{mainContent}</Text>
         </Box>
       </Box>
       {details && (
-        <Box marginLeft={4} marginTop={0}>
+        <Box marginTop={0}>
           <Text color={currentTheme.colors.text.secondary}>{details}</Text>
         </Box>
       )}

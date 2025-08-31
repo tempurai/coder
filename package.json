@@ -19,7 +19,7 @@
     "postpack": "rm -f *.tgz"
   },
   "keywords": [],
-  "author": "",
+  "author": "tempurai",
   "license": "ISC",
   "devDependencies": {
     "@sindresorhus/tsconfig": "^8.0.1",

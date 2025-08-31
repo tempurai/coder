@@ -167,5 +167,5 @@ export const startInkUI = async (sessionService: SessionService) => {
   process.on('SIGINT', exitFn);
   process.on('SIGTERM', exitFn);
 
-  render(<CodeAssistantApp sessionService={sessionService} />, { patchConsole: false });
+  render(<CodeAssistantApp sessionService={sessionService} />);
 };

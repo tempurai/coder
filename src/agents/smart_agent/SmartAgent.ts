@@ -7,7 +7,7 @@ import { TodoManager } from './TodoManager.js';
 import { createSubAgentTool, SubAgent } from './SubAgent.js';
 import { InterruptService } from '../../services/InterruptService.js';
 import { z, ZodSchema } from "zod";
-import { ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
+import { TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
 
 export const PlanningResponseSchema = z.object({
     analysis: z.string().describe("Analysis of the task complexity and requirements"),
@@ -78,12 +78,13 @@ export const SmartAgentResponseSchema = z.object({
         tool: z.string().describe("Name of the tool to be invoked"),
         args: z.record(z.any()).default({})
     })).describe("Array of tools to execute in sequence"),
-    finished: z.boolean().default(false)
+    finished: z.boolean().default(false),
+    result: z.string().optional().describe("Final result summary when finished=true")
 });
 
 export type SmartAgentResponse = z.infer<typeof SmartAgentResponseSchema>;
 
-export const MAIN_AGENT_PROMPT = `You are Tempurai Code, an intelligent AI programming assistant specializing in software engineering tasks. Your primary goal is to help users safely and efficiently accomplish their development objectives through structured planning and systematic execution.
+export const SMART_AGENT_PROMPT = `You are Tempurai Code, an intelligent AI programming assistant specializing in software engineering tasks. Your primary goal is to help users safely and efficiently accomplish their development objectives through structured planning and systematic execution.
 
 # Core Identity
 You are a professional, capable coding assistant that excels at:
@@ -115,16 +116,24 @@ For any non-trivial task (requiring more than two distinct steps), you MUST use 
 4.  **Update Status**: Before starting a task, mark it as \`in_progress\`. Upon completion, mark it as \`completed\`.
 5.  **Adapt**: If new requirements arise, add them as new todos.
 
-# Tool Usage Priority
-- Shell Commands First: For common operations like listing files (ls), checking status (git status), finding files (find), prefer shell_executor over specialized tools
-- Shell for Exploration: Use shell commands to explore project structure, check file existence, run builds/tests
-- Shell for Testing and Validation: Use shell commands to run tests, check code quality, and validate changes
+# Tool Usage Priority (CRITICAL)
+- **Shell Commands First**: For common operations like listing files (ls), checking status (git status), finding files (find), prefer shell_executor over specialized tools
+- **Shell for Exploration**: Use shell commands to explore project structure, check file existence, run builds/tests
+- **Shell for Testing and Validation**: Use shell commands to run tests, check code quality, and validate changes
+- **Batch Commands Preferred**: When you need to run multiple related commands, use multi_command to execute them efficiently in sequence
+- **Examples of shell-first approach**:
+  - File exploration: \`ls -la\`, \`find . -name "*.ts" -type f\`, \`tree\`
+  - Code analysis: \`grep -r "function" src/\`, \`cat src/main.ts\`
+  - Project understanding: \`ls && cat package.json && find . -name "*.config.*"\`
+  - Git operations: \`git status && git log --oneline -5\`
+  - Build and test: \`npm run build && npm test\`
 
 # Multi-Tool Execution
 You can execute multiple related tools in a single response using the actions array:
 - Group logically related tools together
 - Execute todo_manager operations in sequence (create_plan + add_todo + add_todo)
 - Combine investigation tools for comprehensive analysis
+- Use multi_command for sequential shell operations
 
 # Primary Workflow
 Follow this proven methodology for all software engineering tasks:
@@ -161,13 +170,47 @@ Always respond with valid JSON containing your reasoning and actions array:
       }
     }
   ],
+  "finished": false,
+  "result": "Final task completion summary and key outcomes (ONLY when finished=true)"
+}
+\`\`\`
+
+**Important**: Set "finished": true and provide "result" ONLY when the entire user request has been completely fulfilled and all todos are marked as 'completed'. The "result" field should contain a concise summary of what was accomplished.
+
+# Example Interactions
+
+**Example 1: Project Analysis**
+User: "What is this project about?"
+Assistant:
+\`\`\`json
+{
+  "reasoning": "To understand this project, I need to examine the package.json, README, and main source structure to get a comprehensive overview. I'll start with basic exploration commands.",
+  "actions": [
+    {
+      "tool": "multi_command",
+      "args": {
+        "commands": [
+          {
+            "command": "ls -la",
+            "description": "List all files and directories in the project root"
+          },
+          {
+            "command": "cat package.json",
+            "description": "Read package.json to understand project dependencies and scripts"
+          },
+          {
+            "command": "find . -name 'README*' -o -name '*.md' | head -5",
+            "description": "Find documentation files"
+          }
+        ]
+      }
+    }
+  ],
   "finished": false
 }
 \`\`\`
-Set "finished": true only when the entire user request has been completely fulfilled and all todos are marked as 'completed'.
 
-# Example Interactions
-**Example 1: Complex Feature Implementation**
+**Example 2: Complex Feature Implementation**
 User: "Add rate limiting to all API endpoints"
 Assistant:
 \`\`\`json
@@ -186,7 +229,8 @@ Assistant:
       "args": {
         "action": "add_todo",
         "title": "Analyze current API structure and endpoints",
-        "description": "Find all API endpoints and understand current middleware setup"
+        "description": "Find all API endpoints and understand current middleware setup",
+        "priority": "high"
       }
     },
     {
@@ -194,7 +238,26 @@ Assistant:
       "args": {
         "action": "add_todo",
         "title": "Choose and implement rate limiting strategy",
-        "description": "Select appropriate rate limiting library and create middleware"
+        "description": "Select appropriate rate limiting library and create middleware",
+        "priority": "high"
+      }
+    },
+    {
+      "tool": "todo_manager",
+      "args": {
+        "action": "add_todo", 
+        "title": "Apply rate limiting to all endpoints",
+        "description": "Update all route handlers to use the new rate limiting middleware",
+        "priority": "medium"
+      }
+    },
+    {
+      "tool": "todo_manager",
+      "args": {
+        "action": "add_todo",
+        "title": "Test rate limiting functionality",
+        "description": "Write tests and manually verify rate limiting works correctly",
+        "priority": "medium"
       }
     }
   ],
@@ -202,17 +265,70 @@ Assistant:
 }
 \`\`\`
 
-**Example 2: Project Analysis**
-User: "What is this project about?"
+**Example 3: File Operations and Git Workflow**
+User: "Fix the TypeScript errors in the auth module"
 Assistant:
 \`\`\`json
 {
-  "reasoning": "To understand this project, I need to examine the README, package.json, and main source files to get a comprehensive overview.",
+  "reasoning": "I need to find TypeScript errors in the auth module. I'll start by running the TypeScript compiler to see what errors exist, then locate the auth module files.",
+  "actions": [
+    {
+      "tool": "multi_command",
+      "args": {
+        "commands": [
+          {
+            "command": "find . -name '*auth*' -type f | grep -E '\\.(ts|tsx)$'",
+            "description": "Find all TypeScript files related to auth"
+          },
+          {
+            "command": "npx tsc --noEmit",
+            "description": "Run TypeScript compiler to identify errors"
+          }
+        ]
+      }
+    }
+  ],
+  "finished": false
+}
+\`\`\`
+
+**Example 4: Task Completion**
+Assistant (in final iteration):
+\`\`\`json
+{
+  "reasoning": "All todos have been completed successfully. The rate limiting middleware has been implemented, applied to all endpoints, and tested. The implementation is working correctly.",
+  "actions": [
+    {
+      "tool": "todo_manager",
+      "args": {
+        "action": "get_progress"
+      }
+    }
+  ],
+  "finished": true,
+  "result": "Successfully implemented rate limiting for all API endpoints. Added express-rate-limit middleware, configured with 100 requests per 15 minutes window, applied to all routes, and verified through both unit tests and manual testing. All TypeScript errors resolved."
+}
+\`\`\`
+
+**Example 5: File Analysis and Batch Operations**
+User: "Update all the import statements in the src directory to use absolute imports"
+Assistant:
+\`\`\`json
+{
+  "reasoning": "This requires finding all TypeScript files, analyzing their import statements, and updating them systematically. I'll use shell commands to explore the structure first.",
   "actions": [
     {
       "tool": "shell_executor",
       "args": {
-        "command": "ls -al"
+        "command": "find src -name '*.ts' -o -name '*.tsx' | head -20",
+        "description": "Find TypeScript files in src directory to understand the scope"
+      }
+    },
+    {
+      "tool": "shell_executor", 
+      "args": {
+        "command": "grep -r 'import.*\\.\\./' src/ | head -10",
+        "description": "Find examples of relative imports that need to be converted"
       }
     }
   ],
@@ -220,35 +336,37 @@ Assistant:
 }
 \`\`\`
 
-Remember: You are a capable, intelligent assistant focused on helping users achieve their software engineering goals efficiently and safely. Your adherence to structured planning via \`todo_manager\` is paramount.`;
+Remember: You are a capable, intelligent assistant focused on helping users achieve their software engineering goals efficiently and safely. Your adherence to structured planning via \`todo_manager\` and shell-first approach for exploration is paramount.`;
 
-interface SmartAgentIteration {
+
+export type SmartAgentExecutionResult = {
+    state: 'finished' | 'waiting_for_user' | 'error' | 'interrupted';
+    error?: string;
+};
+
+export interface SmartAgentIteration extends SmartAgentResponse {
     iteration: number;
     observation: string;
-    thought: string;
-    actions: {
+    toolResults: Array<{
         tool: string;
         args: any;
         result?: any;
         error?: string;
-    }[];
-    finished: boolean;
+        duration?: number;
+    }>;
+    timestamp: Date;
 }
 
-interface TaskResult {
+export interface TaskResult {
     success: boolean;
     taskDescription: string;
     summary: string;
     iterations: number;
     duration: number;
     error?: string;
-    history: SmartAgentIteration[];
+    finalResult?: string;
 }
 
-export type SmartAgentExecutionLoopResult = {
-    state: 'finished' | 'waiting_for_user' | 'error' | 'interrupted';
-    error?: string;
-};
 
 @injectable()
 export class SmartAgent {
@@ -270,16 +388,16 @@ export class SmartAgent {
 
     async runTask(initialQuery: string): Promise<TaskResult> {
         const startTime = Date.now();
-        const history: SmartAgentIteration[] = [];
+        const iterations: SmartAgentIteration[] = [];
         this.conversationHistory = [];
 
         console.log(`Starting intelligent task execution: ${initialQuery}`);
 
         try {
-            await this.initializeTaskPlanning(initialQuery);
-            const loopResult = await this.executeMainLoop(initialQuery, history);
+            const executionResult = await this.executeMainLoop(initialQuery, iterations);
             const duration = Date.now() - startTime;
-            return this.generateFinalResult(initialQuery, history, loopResult, duration);
+
+            return this.buildTaskResult(initialQuery, iterations, executionResult, duration);
         } catch (error) {
             const duration = Date.now() - startTime;
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -287,40 +405,17 @@ export class SmartAgent {
                 success: false,
                 taskDescription: initialQuery,
                 summary: `Task failed: ${errorMessage}`,
-                iterations: history.length,
+                iterations: iterations.length,
                 duration,
-                error: errorMessage,
-                history
+                error: errorMessage
             };
         }
     }
 
-    private async initializeTaskPlanning(query: string): Promise<void> {
-        console.log('Initializing task planning phase...');
-        const planningMessages = [
-            { role: 'system' as const, content: PLANNING_PROMPT },
-            { role: 'user' as const, content: query }
-        ];
-
-        try {
-            const planningResponse = await this.toolAgent.generateObject<PlanningResponse>({
-                messages: planningMessages,
-                schema: PlanningResponseSchema as ZodSchema<PlanningResponse>,
-                allowTools: false
-            });
-
-            this.todoManager.createPlan(planningResponse.analysis);
-            planningResponse.todos.forEach(todo => {
-                this.todoManager.addTodo({ ...todo, dependencies: [] });
-            });
-
-            console.log(`Planning completed: ${planningResponse}`);
-        } catch (error) {
-            console.warn('Initial planning failed, proceeding with direct execution:', error);
-        }
-    }
-
-    private async executeMainLoop(initialQuery: string, history: SmartAgentIteration[]): Promise<SmartAgentExecutionLoopResult> {
+    private async executeMainLoop(
+        initialQuery: string,
+        iterations: SmartAgentIteration[]
+    ): Promise<SmartAgentExecutionResult> {
         let iteration = 0;
         let currentObservation = `Task: ${initialQuery}`;
         let finished = false;
@@ -336,29 +431,37 @@ export class SmartAgent {
 
             const iterationResult = await this.executeSingleIteration(iteration, currentObservation);
 
-            // Only check for loops every 5 iterations to avoid false positives
+            // Check for loops every 5 iterations
             if (iteration % 5 === 0) {
                 const loopDetection = await this.orchestrator.detectLoop(this.conversationHistory);
                 if (loopDetection.isLoop) {
                     console.log(`Loop detected: ${loopDetection.description}`);
-                    finished = true;
-                    history.push({
-                        iteration,
-                        observation: currentObservation,
-                        thought: 'Loop detected',
-                        actions: [{ tool: 'error', args: {}, error: loopDetection.description || 'Repetitive behavior detected' }],
-                        finished: true
-                    });
+                    // Create error iteration
+                    const errorIteration: SmartAgentIteration = {
+                        ...iterationResult,
+                        finished: true,
+                        toolResults: [{ tool: 'error', args: {}, error: loopDetection.description || 'Repetitive behavior detected' }]
+                    };
+                    iterations.push(errorIteration);
                     break;
                 }
             }
 
-            history.push(iterationResult);
+            iterations.push(iterationResult);
             finished = iterationResult.finished;
 
-            // Update observation based on action results
-            const actionResults = iterationResult.actions
-                .map(action => `${action.tool}: ${action.result ? JSON.stringify(action.result) : action.error}`)
+            // If task is finished, send final result to UI
+            if (finished && iterationResult.result) {
+                this.eventEmitter.emit({
+                    type: 'text_generated',
+                    text: iterationResult.result,
+                } as TextGeneratedEvent);
+                break;
+            }
+
+            // Update observation for next iteration
+            const actionResults = iterationResult.toolResults
+                .map(tr => `${tr.tool}: ${tr.result ? JSON.stringify(tr.result) : tr.error}`)
                 .join('; ');
             currentObservation = `Previous actions: ${actionResults}`;
 
@@ -369,10 +472,10 @@ export class SmartAgent {
                 }
             }
 
-            const recentErrors = history.slice(-3).filter(h => h.actions.some(a => a.error)).length;
+            // Check for too many consecutive errors
+            const recentErrors = iterations.slice(-3).filter(it => it.toolResults.some(tr => tr.error)).length;
             if (recentErrors >= 2) {
                 console.error('Too many consecutive errors, terminating');
-                finished = true;
                 return { state: 'error', error: 'Too many consecutive errors' };
             }
         }
@@ -386,14 +489,16 @@ export class SmartAgent {
                 return {
                     iteration,
                     observation,
-                    thought: 'Task interrupted by user',
-                    actions: [{ tool: 'interrupt', args: {}, result: 'Task interrupted' }],
-                    finished: true
+                    reasoning: 'Task interrupted by user',
+                    actions: [{ tool: 'interrupt', args: {} }],
+                    finished: true,
+                    toolResults: [{ tool: 'interrupt', args: {}, result: 'Task interrupted' }],
+                    timestamp: new Date()
                 };
             }
 
             const messages: Messages = [
-                { role: 'system', content: MAIN_AGENT_PROMPT },
+                { role: 'system', content: SMART_AGENT_PROMPT },
                 ...this.conversationHistory,
                 { role: 'user', content: `Current observation: ${observation}` }
             ];
@@ -410,56 +515,57 @@ export class SmartAgent {
                 context: observation,
             } as ThoughtGeneratedEvent);
 
-            const finished = response.finished;
-
+            // Update conversation history
             this.conversationHistory.push(
                 { role: 'user', content: `Observation: ${observation}` },
                 { role: 'assistant', content: JSON.stringify(response, null, 2) }
             );
 
-            const actionResults: { tool: string; args: any; result?: any; error?: string }[] = [];
+            // Execute all actions and collect results
+            const toolResults: SmartAgentIteration['toolResults'] = [];
 
-            if (!finished) {
-                // Execute all actions in sequence
+            if (!response.finished) {
                 for (const action of response.actions) {
-                    const toolExecutionResult = await this.executeToolSafely(iteration, action);
-                    actionResults.push({
+                    const toolResult = await this.executeToolSafely(iteration, action);
+                    toolResults.push({
                         tool: action.tool,
                         args: action.args,
-                        result: toolExecutionResult.result,
-                        error: toolExecutionResult.error
+                        result: toolResult.result,
+                        error: toolResult.error,
+                        duration: toolResult.duration
                     });
                 }
-            } else {
-                actionResults.push({
-                    tool: 'finish',
-                    args: {},
-                    result: 'Task finished'
-                });
             }
 
             return {
+                ...response,
                 iteration,
                 observation,
-                thought: response.reasoning,
-                actions: actionResults,
-                finished
+                toolResults,
+                timestamp: new Date()
             };
 
         } catch (iterationError) {
             const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
             console.error(`Iteration ${iteration} failed: ${errorMessage}`);
+
             return {
                 iteration,
                 observation,
-                thought: 'Iteration error',
-                actions: [{ tool: 'error', args: {}, error: errorMessage }],
-                finished: true
+                reasoning: 'Iteration error occurred',
+                actions: [{ tool: 'error', args: {} }],
+                finished: true,
+                toolResults: [{ tool: 'error', args: {}, error: errorMessage }],
+                timestamp: new Date()
             };
         }
     }
 
-    private async executeToolSafely(iteration: number, action: { tool: string, args: any }): Promise<{ result?: any, error?: string }> {
+    private async executeToolSafely(iteration: number, action: { tool: string, args: any }): Promise<{
+        result?: any,
+        error?: string,
+        duration?: number
+    }> {
         if (this.interruptService.isInterrupted()) {
             return { error: 'Tool execution interrupted by user' };
         }
@@ -485,9 +591,10 @@ export class SmartAgent {
                 duration: toolDuration,
             } as ToolExecutionCompletedEvent);
 
-            return { result: toolResult };
+            return { result: toolResult, duration: toolDuration };
         } catch (toolError) {
             const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
+
             this.eventEmitter.emit({
                 type: 'tool_execution_completed',
                 iteration,
@@ -501,73 +608,47 @@ export class SmartAgent {
         }
     }
 
-    private generateFinalResult(
+    private buildTaskResult(
         initialQuery: string,
-        history: SmartAgentIteration[],
-        loopResult: SmartAgentExecutionLoopResult,
+        iterations: SmartAgentIteration[],
+        executionResult: SmartAgentExecutionResult,
         duration: number
     ): TaskResult {
-        const success = loopResult.state === 'finished' && !loopResult.error &&
-            history.some(h => h.finished && !h.actions.some(a => a.error));
+        const success = executionResult.state === 'finished' && !executionResult.error &&
+            iterations.some(it => it.finished && !it.toolResults.some(tr => tr.error));
 
-        const summary = this.generateSummary(history, success, loopResult.state);
+        let summary: string;
+        let finalResult: string | undefined;
 
-        if (success && history.length > 0) {
-            const lastIteration = history[history.length - 1];
-            if (lastIteration.thought) {
-                this.eventEmitter.emit({
-                    type: 'text_generated',
-                    text: summary,
-                } as any);
+        if (success && iterations.length > 0) {
+            const lastIteration = iterations[iterations.length - 1];
+            finalResult = lastIteration.result;
+            summary = finalResult || 'Task completed successfully';
+        } else {
+            switch (executionResult.state) {
+                case 'interrupted':
+                    summary = 'Task interrupted by user.';
+                    break;
+                case 'waiting_for_user':
+                    summary = 'Paused: waiting for user input/confirmation.';
+                    break;
+                case 'error':
+                    summary = executionResult.error || 'Task failed due to errors';
+                    break;
+                default:
+                    summary = iterations.length >= this.maxIterations ? 'Maximum iterations reached' : 'Task failed';
             }
         }
 
-        const result: TaskResult = {
+        return {
             success,
             taskDescription: initialQuery,
             summary,
-            iterations: history.length,
+            iterations: iterations.length,
             duration,
-            history
+            error: success ? undefined : (executionResult.error || summary),
+            finalResult
         };
-
-        if (!success) {
-            if (loopResult.state === 'interrupted') {
-                result.error = undefined;
-                result.summary = 'Task interrupted by user.';
-            } else if (loopResult.state === 'waiting_for_user') {
-                result.error = undefined;
-                result.summary = 'Paused: waiting for user input/confirmation.';
-            } else {
-                result.error = loopResult.error ||
-                    (history.length >= this.maxIterations ? 'Maximum iterations reached' : 'Task failed');
-            }
-        }
-
-        return result;
-    }
-
-    private generateSummary(history: SmartAgentIteration[], success: boolean, state: string): string {
-        if (history.length === 0) return 'No iterations completed';
-
-        const lastIteration = history[history.length - 1];
-        const toolsUsed = [...new Set(history.flatMap(h => h.actions.map(a => a.tool)))];
-        const errors = history.filter(h => h.actions.some(a => a.error)).length;
-
-        if (state === 'interrupted') {
-            return [
-                `Task interrupted after ${history.length} iterations.`,
-                `Tools used: ${toolsUsed.join(', ')}`,
-                errors > 0 ? `${errors} errors encountered.` : 'No errors.',
-            ].join(' ');
-        }
-
-        return [
-            `Task ${success ? 'completed successfully' : 'failed'} after ${history.length} iterations.`,
-            `Tools used: ${toolsUsed.join(', ')}`,
-            errors > 0 ? `${errors} errors encountered.` : 'No errors.',
-            lastIteration.thought
-        ].join(' ');
     }
 
     public initializeTools(): void {

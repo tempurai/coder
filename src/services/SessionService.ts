@@ -4,7 +4,7 @@ import { Config } from '../config/ConfigLoader.js';
 import { injectable, inject } from 'inversify';
 import { TYPES } from '../di/types.js';
 import { ISnapshotManagerFactory } from '../di/interfaces.js';
-import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent } from '../events/index.js';
+import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent, TextGeneratedEvent } from '../events/index.js';
 import { ToolAgent } from '../agents/tool_agent/ToolAgent.js';
 import { InterruptService } from './InterruptService.js';
 
@@ -16,6 +16,7 @@ export interface TaskExecutionResult {
     summary: string;
     snapshotId?: string;
     error?: string;
+    finalResult?: string;
 }
 
 export interface ProcessedInput {
@@ -72,6 +73,7 @@ export class SessionService {
         @inject(TYPES.InterruptService) private interruptService: InterruptService
     ) {
         this.sessionStartTime = new Date();
+        console.log('✅ 会话管理服务已初始化（新版ReAct模式）');
     }
 
     get agent(): ToolAgent {
@@ -82,28 +84,17 @@ export class SessionService {
         return this.eventEmitter;
     }
 
-    public queueMessage(message: string): void {
-        if (message.trim()) {
-            this.messageQueue.push(message.trim());
-        }
-    }
-
-    private async processQueuedMessages(): Promise<void> {
-        while (this.messageQueue.length > 0) {
-            const nextMessage = this.messageQueue.shift()!;
-            await this.processTask(nextMessage);
-        }
-    }
-
     async processTask(query: string): Promise<TaskExecutionResult> {
+        // Handle concurrent task requests
         if (this.isTaskRunning) {
             this.queueMessage(query);
             return {
-                success: true,
+                success: false,
                 taskDescription: query,
                 duration: 0,
                 iterations: 0,
-                summary: 'Message queued for processing',
+                summary: 'Task queued - another task is currently running',
+                error: 'Another task is already in progress'
             };
         }
 
@@ -128,12 +119,20 @@ export class SessionService {
 
             if (!snapshotResult.success) {
                 console.error('❌ 快照创建失败:', snapshotResult.error);
+                const errorMessage = 'Failed to create safety snapshot: ' + snapshotResult.error;
+
+                // Send error message to UI
+                this.eventEmitter.emit({
+                    type: 'text_generated',
+                    text: errorMessage,
+                } as TextGeneratedEvent);
+
                 return {
                     success: false,
                     taskDescription: query,
                     duration: Date.now() - startTime,
                     iterations: 0,
-                    summary: 'Failed to create safety snapshot',
+                    summary: errorMessage,
                     error: snapshotResult.error
                 };
             }
@@ -148,6 +147,7 @@ export class SessionService {
 
             const smartAgent = new SmartAgent(this._agent, this.eventEmitter, this.interruptService);
             smartAgent.initializeTools();
+
             console.log('🔄 开始SmartAgent推理循环...');
             const taskResult = await smartAgent.runTask(query);
 
@@ -158,11 +158,13 @@ export class SessionService {
                 iterations: taskResult.iterations,
                 summary: taskResult.summary,
                 snapshotId: snapshotResult.snapshotId,
-                error: taskResult.error
+                error: taskResult.error,
+                finalResult: taskResult.finalResult
             };
 
             this.interactionCount++;
             this.totalResponseTime += finalResult.duration;
+
             this.addToHistory('user', query);
             this.addToHistory('assistant', finalResult.summary, {
                 duration: finalResult.duration,
@@ -188,14 +190,11 @@ export class SessionService {
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
             console.error(`💥 ${errorMessage}`);
 
+            // Send error message to UI
             this.eventEmitter.emit({
-                type: 'task_completed',
-                success: false,
-                duration,
-                iterations: 0,
-                summary: 'Error occurred during task execution',
-                error: errorMessage
-            } as TaskCompletedEvent);
+                type: 'text_generated',
+                text: errorMessage,
+            } as TextGeneratedEvent);
 
             return {
                 success: false,
@@ -207,11 +206,7 @@ export class SessionService {
             };
         } finally {
             this.isTaskRunning = false;
-
-            // 任务完成后检查队列
-            if (this.messageQueue.length > 0) {
-                await this.processQueuedMessages();
-            }
+            this.processNextQueuedMessage();
         }
     }
 
@@ -314,6 +309,29 @@ export class SessionService {
 
     clearInterrupt(): void {
         this.interruptService.reset();
+    }
+
+    private queueMessage(query: string): void {
+        this.messageQueue.push(query);
+
+        // Notify UI about queued message
+        this.eventEmitter.emit({
+            type: 'text_generated',
+            text: `Task queued: ${this.messageQueue.length} task(s) waiting. Current task: "${query.substring(0, 100)}${query.length > 100 ? '...' : ''}"`,
+        } as TextGeneratedEvent);
+    }
+
+    private async processNextQueuedMessage(): Promise<void> {
+        if (this.messageQueue.length > 0) {
+            const nextQuery = this.messageQueue.shift()!;
+
+            // Process the next queued message asynchronously
+            setTimeout(() => {
+                this.processTask(nextQuery).catch(error => {
+                    console.error('Error processing queued task:', error);
+                });
+            }, 100); // Small delay to prevent immediate recursion
+        }
     }
 
     async cleanup(): Promise<void> {

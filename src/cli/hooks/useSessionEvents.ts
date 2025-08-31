@@ -55,8 +55,10 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     setCurrentActivity('Processing...');
                     break;
                 case UIEventType.TaskComplete:
-                    setIsProcessing(false);
-                    setCurrentActivity('');
+                    setTimeout(() => {
+                        setIsProcessing(false);
+                        setCurrentActivity('');
+                    }, 500);
                     break;
                 case UIEventType.ToolConfirmationRequest:
                     const confirmEvent = event as any;

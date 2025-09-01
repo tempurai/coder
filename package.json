@@ -1,6 +1,6 @@
 {
   "name": "@tempurai/coder",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A next-generation intelligent code assistant built with TypeScript, featuring ReAct (Reason + Act) methodology and advanced CLI interface",
   "type": "module",
   "main": "dist/cli/index.js",
@@ -18,7 +18,6 @@
     "build:watch": "tsc --watch",
     "dev": "tsx src/cli/index.ts",
     "prepare": "npm run build",
-    "postpack": "rm -f *.tgz",
     "prepublishOnly": "npm run build",
     "clean": "rm -rf dist",
     "publish:npm": "./scripts/npm-registry.sh",
@@ -50,8 +49,8 @@
   ],
   "author": {
     "name": "Tempurai Team",
-    "email": "team@tempurai.dev",
-    "url": "https://tempurai.dev"
+    "email": "team@tempur.ai",
+    "url": "https://tempur.ai"
   },
   "license": "Apache-2.0",
   "homepage": "https://github.com/tempurai/coder#readme",

@@ -213,7 +213,12 @@ create_package() {
     
     # Create package tarball
     if npm pack; then
-        local tarball="${PACKAGE_NAME//@/-}-$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version").tgz"
+        # Get the actual tarball name that npm creates (handles scoped packages correctly)
+        local tarball=$(ls -t *.tgz 2>/dev/null | head -n1)
+        if [[ -z "$tarball" ]]; then
+            log_error "No tarball file found after npm pack"
+            exit 1
+        fi
         log_success "Package created: $tarball"
         
         # Extract and validate package contents

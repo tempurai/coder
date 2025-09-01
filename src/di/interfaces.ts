@@ -1,18 +1,4 @@
-import { TaskExecutionResult } from '../services/SessionService.js';
 import { SnapshotResult, RestoreResult, SnapshotInfo } from '../services/SnapshotManager.js';
-
-/**
- * ReAct Agent接口定义
- * 提供基于ReAct模式的任务执行能力
- */
-export interface IReActAgent {
-  /**
-   * 执行任务
-   * @param query 任务查询描述
-   * @returns 任务执行结果
-   */
-  runTask(query: string): Promise<TaskExecutionResult>;
-}
 
 /**
  * 快照管理器接口定义
@@ -62,11 +48,6 @@ export interface ISnapshotManager {
     latestSnapshot?: SnapshotInfo;
   }>;
 }
-
-/**
- * ReAct Agent工厂函数类型
- */
-export type IReActAgentFactory = (agent: any) => Promise<IReActAgent>;
 
 /**
  * 快照管理器工厂函数类型

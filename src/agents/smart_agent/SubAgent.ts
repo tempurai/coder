@@ -18,7 +18,6 @@ interface SubAgentTask {
     attentionAreas: string[];
     expectedOutputs: string[];
   };
-  tools?: string[];
   maxTurns?: number;
   timeoutMs?: number;
 }
@@ -120,11 +119,6 @@ Complete this task efficiently.`;
 
         if (response.action.tool === 'think') {
           currentObservation = `Previous: Reasoning completed\nThought: ${response.reasoning}`;
-          continue;
-        }
-
-        if (task.tools && !task.tools.includes(response.action.tool)) {
-          currentObservation = `Error: Tool ${response.action.tool} is not available for this specialized task`;
           continue;
         }
 

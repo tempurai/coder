@@ -13,7 +13,8 @@ import { registerMemoryTools } from '../../tools/MemoryTools.js';
 import { registerMcpTools } from '../../tools/McpToolLoader.js';
 import { InterruptService } from '../../services/InterruptService.js';
 
-export type Messages = Array<{ role: 'system' | 'user' | 'assistant', content: string }>;
+export type Message = { role: 'system' | 'user' | 'assistant', content: string };
+export type Messages = Message[];
 
 export interface TaskExecutionMetadata {
     createdAt?: number;

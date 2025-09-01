@@ -1,6 +1,6 @@
 import { injectable, inject } from 'inversify';
 import { TYPES } from '../../di/types.js';
-import { ToolAgent, Messages, TaskExecutionResult, TerminateReason } from '../tool_agent/ToolAgent.js';
+import { ToolAgent, Message, Messages, TaskExecutionResult, TerminateReason } from '../tool_agent/ToolAgent.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 import { AgentOrchestrator } from './AgentOrchestrator.js';
 import { TodoManager } from './TodoManager.js';
@@ -11,25 +11,14 @@ import { z, ZodSchema } from "zod";
 import { TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
 import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
 
-
-
-export interface SmartAgentIteration extends SmartAgentResponse {
+export interface SmartAgentMessage extends Message {
   iteration: number;
-  observation: string;
-  toolResults: Array<{
-    tool: string;
-    args: any;
-    result?: any;
-    error?: string;
-    duration?: number;
-  }>;
-  timestamp: Date;
 }
 
 @injectable()
 export class SmartAgent {
   private maxIterations: number;
-  private iterationHistory: Messages = [];
+  private iterations: SmartAgentMessage[] = [];
   private todoManager: TodoManager;
   private orchestrator: AgentOrchestrator;
 
@@ -46,16 +35,14 @@ export class SmartAgent {
   }
 
   async runTask(initialQuery: string, sessionHistory: Messages = []): Promise<TaskExecutionResult> {
-    const iterations: SmartAgentIteration[] = [];
-    this.iterationHistory = [];
+    this.iterations = [...sessionHistory.map((msg, i) => ({ ...msg, iteration: 0 }))];
 
     console.log(`Starting intelligent task execution: ${initialQuery}`);
     const startTime = Date.now();
 
     try {
       await this.initializeTaskPlanning(initialQuery);
-      const result = await this.executeMainLoop(initialQuery, sessionHistory, iterations);
-
+      const result = await this.executeMainLoop(initialQuery);
       return {
         ...result,
         metadata: {
@@ -64,12 +51,11 @@ export class SmartAgent {
           duration: Date.now() - startTime,
         }
       }
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return {
         terminateReason: 'ERROR',
-        history: this.iterationHistory,
+        history: this.toMessages(this.iterations),
         error: errorMessage
       };
     }
@@ -77,7 +63,6 @@ export class SmartAgent {
 
   private async initializeTaskPlanning(query: string): Promise<void> {
     console.log('Initializing task planning phase...');
-
     const planningMessages = [
       { role: 'system' as const, content: PLANNING_PROMPT },
       { role: 'user' as const, content: query }
@@ -101,17 +86,18 @@ export class SmartAgent {
     }
   }
 
-  private async executeMainLoop(initialQuery: string, sessionHistory: Messages, iterations: SmartAgentIteration[]): Promise<TaskExecutionResult> {
+  private async executeMainLoop(initialQuery: string): Promise<TaskExecutionResult> {
     let iteration = 0;
     let currentObservation = `Task: ${initialQuery}`;
     let finished = false;
+    let recentErrorCount = 0;
 
     while (!finished && iteration < this.maxIterations) {
       if (this.interruptService.isInterrupted()) {
         console.log('Task execution interrupted by user');
         return {
           terminateReason: 'INTERRUPTED',
-          history: this.iterationHistory,
+          history: this.toMessages(this.iterations),
           metadata: {
             iterations: iteration,
           }
@@ -121,68 +107,54 @@ export class SmartAgent {
       iteration++;
       console.log(`Smart Agent Iteration ${iteration}/${this.maxIterations}`);
 
-      const iterationResult = await this.executeSingleIteration(
-        iteration,
-        currentObservation,
-        sessionHistory
-      );
+      const { response, observation, error } = await this.executeSingleIteration(iteration, currentObservation);
 
       if (iteration % 5 === 0) {
-        const loopDetection = await this.orchestrator.detectLoop(this.iterationHistory);
+        const iterationHistory = this.toMessages(this.iterations);
+        const loopDetection = await this.orchestrator.detectLoop(iterationHistory);
         if (loopDetection.isLoop) {
           console.log(`Loop detected: ${loopDetection.description}`);
-          const errorIteration: SmartAgentIteration = {
-            ...iterationResult,
-            finished: true,
-            toolResults: [{ tool: 'error', args: {}, error: loopDetection.description || 'Repetitive behavior detected' }]
-          };
-          iterations.push(errorIteration);
-
-          return { terminateReason: 'ERROR', history: this.iterationHistory, error: loopDetection.description || 'Repetitive behavior detected' };
+          return { terminateReason: 'ERROR', history: iterationHistory, error: loopDetection.description || 'Repetitive behavior detected' };
         }
       }
 
-      iterations.push(iterationResult);
-      finished = iterationResult.finished;
+      finished = response.finished;
 
-      if (finished && iterationResult.result) {
+      if (finished && response.result) {
         this.eventEmitter.emit({
           type: 'text_generated',
-          text: iterationResult.result,
+          text: response.result,
         } as TextGeneratedEvent);
-
         return {
           terminateReason: 'FINISHED',
-          history: this.iterationHistory,
+          history: this.toMessages(this.iterations),
           metadata: {
             iterations: iteration,
           }
         };
       }
 
-      const actionResults = iterationResult.toolResults
-        .map(tr => `${tr.tool}: ${tr.result ? JSON.stringify(tr.result) : tr.error}`)
-        .join('; ');
-      currentObservation = `Previous actions: ${actionResults}`;
+      currentObservation = observation;
 
       if (!finished) {
-        const shouldContinue = await this.orchestrator.shouldContinue(this.iterationHistory, currentObservation);
+        const iterationHistory = this.toMessages(this.iterations);
+        const shouldContinue = await this.orchestrator.shouldContinue(iterationHistory, currentObservation);
         if (!shouldContinue) {
-          return { terminateReason: 'WAITING_FOR_USER', history: this.iterationHistory };
+          return { terminateReason: 'WAITING_FOR_USER', history: iterationHistory };
         }
       }
 
-      const recentErrors = iterations.slice(-3).filter(it => it.toolResults.some(tr => tr.error)).length;
-      if (recentErrors >= 2) {
+      recentErrorCount += (error ? 1 : 0);
+      if (recentErrorCount >= 2) {
         console.error('Too many consecutive errors, terminating');
-        return { terminateReason: 'ERROR', history: this.iterationHistory, error: 'Too many consecutive errors' };
+        return { terminateReason: 'ERROR', history: this.toMessages(this.iterations), error: 'Too many consecutive errors' };
       }
     }
 
     if (iteration >= this.maxIterations) {
       return {
         terminateReason: 'TIMEOUT',
-        history: this.iterationHistory,
+        history: this.toMessages(this.iterations),
         metadata: {
           iterations: iteration,
         }
@@ -191,7 +163,7 @@ export class SmartAgent {
 
     return {
       terminateReason: 'FINISHED',
-      history: this.iterationHistory,
+      history: this.toMessages(this.iterations),
       metadata: {
         iterations: iteration,
       }
@@ -200,26 +172,21 @@ export class SmartAgent {
 
   private async executeSingleIteration(
     iteration: number,
-    observation: string,
-    sessionHistory: Messages
-  ): Promise<SmartAgentIteration> {
+    observation: string
+  ): Promise<{ response: SmartAgentResponse; observation: string, error?: string }> {
     try {
       if (this.interruptService.isInterrupted()) {
-        return {
-          iteration,
-          observation,
-          reasoning: 'Task interrupted by user',
-          actions: [{ tool: 'interrupt', args: {} }],
-          finished: true,
-          toolResults: [{ tool: 'interrupt', args: {}, result: 'Task interrupted' }],
-          timestamp: new Date()
-        };
+        const response = { reasoning: 'Task interrupted by user', actions: [], finished: true };
+        this.iterations.push(
+          { role: 'user', content: `Observation: ${observation}`, iteration },
+          { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
+        );
+        return { response, observation: 'Task interrupted' };
       }
 
       const messages: Messages = [
         { role: 'system', content: SMART_AGENT_PROMPT },
-        ...sessionHistory,
-        ...this.iterationHistory,
+        ...this.toMessages(this.iterations),
         { role: 'user', content: `Current observation: ${observation}` }
       ];
 
@@ -235,13 +202,15 @@ export class SmartAgent {
         context: observation,
       } as ThoughtGeneratedEvent);
 
-      this.iterationHistory.push(
-        { role: 'user', content: `Observation: ${observation}` },
-        { role: 'assistant', content: JSON.stringify(response, null, 2) }
+      this.iterations.push(
+        { role: 'user', content: `Observation: ${observation}`, iteration },
+        { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
       );
 
-      const toolResults: SmartAgentIteration['toolResults'] = [];
+      let nextObservation = 'No actions executed';
+
       if (!response.finished) {
+        const toolResults = [];
         for (const action of response.actions) {
           const toolResult = await this.executeToolSafely(iteration, action);
           toolResults.push({
@@ -252,28 +221,38 @@ export class SmartAgent {
             duration: toolResult.duration
           });
         }
+
+        const toolMessage = JSON.stringify(toolResults, null, 2);
+        this.iterations.push({
+          role: 'user',
+          content: toolMessage,
+          iteration
+        });
+
+        const results = toolResults.map(tr =>
+          `${tr.tool}: ${tr.result ? JSON.stringify(tr.result) : tr.error}`
+        );
+        nextObservation = `Previous actions: ${results.join('; ')}`;
       }
 
-      return {
-        ...response,
-        iteration,
-        observation,
-        toolResults,
-        timestamp: new Date()
-      };
+      return { response, observation: nextObservation };
+
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
       console.error(`Iteration ${iteration} failed: ${errorMessage}`);
-      return {
-        iteration,
-        observation,
-        reasoning: 'Iteration error occurred',
-        actions: [{ tool: 'error', args: {} }],
-        finished: true,
-        toolResults: [{ tool: 'error', args: {}, error: errorMessage }],
-        timestamp: new Date()
-      };
+
+      const response = { reasoning: 'Iteration error occurred', actions: [], finished: true };
+      this.iterations.push(
+        { role: 'user', content: `Observation: ${observation}`, iteration },
+        { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
+      );
+
+      return { response, observation: "", error: errorMessage };
     }
+  }
+
+  private toMessages(smartAgentMessages: SmartAgentMessage[]): Messages {
+    return smartAgentMessages.map(m => ({ role: m.role, content: m.content }));
   }
 
   private async executeToolSafely(iteration: number, action: { tool: string, args: any }): Promise<{
@@ -309,6 +288,7 @@ export class SmartAgent {
       return { result: toolResult, duration: toolDuration };
     } catch (toolError) {
       const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
+
       this.eventEmitter.emit({
         type: 'tool_execution_completed',
         iteration,

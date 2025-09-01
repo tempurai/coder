@@ -163,9 +163,6 @@ interface ModelFactory {
 
   /** 获取支持的提供商列表 */
   getSupportedProviders(): ModelProvider[];
-
-  /** 解析模型字符串为配置对象 */
-  parseModelString(modelString: string): ModelConfig;
 }
 
 /**
@@ -208,6 +205,7 @@ export class DefaultModelFactory implements ModelFactory {
 
         // 执行请求
         const response = await fetch(url, options);
+        const cloned = response.clone();
 
         // 记录响应
         const duration = Date.now() - startTime;
@@ -215,11 +213,11 @@ export class DefaultModelFactory implements ModelFactory {
           requestId,
           provider,
           model: modelName,
-          status: response.status,
-          statusText: response.statusText,
+          status: cloned.status,
+          statusText: cloned.statusText,
           duration,
-          responseHeaders: Object.fromEntries(response.headers.entries()),
-          responseBody: await response.json()
+          responseHeaders: Object.fromEntries(cloned.headers.entries()),
+          responseBody: await cloned.json()
         }, 'MODEL');
 
         return response;
@@ -248,11 +246,7 @@ export class DefaultModelFactory implements ModelFactory {
    * @param config - 模型配置对象或模型字符串
    * @returns Promise<LanguageModel> - AI SDK 语言模型实例
    */
-  async createModel(config: ModelConfig | string): Promise<LanguageModel> {
-    const modelConfig = typeof config === 'string'
-      ? this.parseModelString(config)
-      : config;
-
+  async createModel(modelConfig: ModelConfig): Promise<LanguageModel> {
     this.logger?.info('Creating model instance', { provider: modelConfig.provider, name: modelConfig.name }, 'MODEL');
 
     let model: LanguageModel;
@@ -313,72 +307,6 @@ export class DefaultModelFactory implements ModelFactory {
     ];
   }
 
-  /**
-   * 解析模型字符串为配置对象
-   * 支持格式：'gpt-4o-mini' 或 'openai:gpt-4o-mini' 或 'openai-compatible:http://localhost:8080:my-model'
-   * @param modelString - 模型字符串
-   * @returns ModelConfig - 解析后的模型配置对象
-   */
-  parseModelString(modelString: string): ModelConfig {
-    if (modelString.includes(':')) {
-      const parts = modelString.split(':');
-
-      if (parts.length === 2) {
-        const [provider, name] = parts;
-        return {
-          provider: provider as ModelProvider,
-          name: name
-        } as ModelConfig;
-      } else if (parts.length === 3 && parts[0] === 'openai-compatible') {
-        // openai-compatible:http://localhost:8080:model-name
-        const [, baseUrl, name] = parts;
-        return {
-          provider: 'openai-compatible',
-          name: name,
-          baseUrl: baseUrl
-        } as OpenAICompatibleModelConfig;
-      }
-    }
-
-    // 根据模型名称推断提供商
-    const provider = this.inferProviderFromModelName(modelString);
-    return {
-      provider,
-      name: modelString
-    } as ModelConfig;
-  }
-
-  /**
-   * 根据模型名称推断提供商
-   * @param modelName - 模型名称
-   * @returns ModelProvider - 推断的提供商
-   */
-  private inferProviderFromModelName(modelName: string): ModelProvider {
-    if (modelName.startsWith('gpt-') || modelName.includes('openai')) {
-      return 'openai';
-    }
-    if (modelName.startsWith('gemini-') || modelName.includes('google')) {
-      return 'google';
-    }
-    if (modelName.startsWith('claude-') || modelName.includes('anthropic')) {
-      return 'anthropic';
-    }
-    if (modelName.startsWith('grok-') || modelName.includes('xai')) {
-      return 'xai';
-    }
-    if (modelName.includes('deepseek')) {
-      return 'deepseek';
-    }
-
-    // 默认为 OpenAI（向后兼容）
-    return 'openai';
-  }
-
-  /**
-   * 创建 OpenAI 模型实例
-   * @param config - OpenAI 模型配置
-   * @returns Promise<LanguageModel> - OpenAI 语言模型实例
-   */
   private async createOpenAIModel(config: OpenAIModelConfig): Promise<LanguageModel> {
     const { openai } = await import('@ai-sdk/openai');
 
@@ -406,11 +334,6 @@ export class DefaultModelFactory implements ModelFactory {
     return openaiWithLogging(config.name) as LanguageModel;
   }
 
-  /**
-   * 创建 Google 模型实例
-   * @param config - Google 模型配置
-   * @returns Promise<LanguageModel> - Google 语言模型实例
-   */
   private async createGoogleModel(config: GoogleModelConfig): Promise<LanguageModel> {
     const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
 
@@ -427,11 +350,6 @@ export class DefaultModelFactory implements ModelFactory {
     return googleWithLogging(config.name) as LanguageModel;
   }
 
-  /**
-   * 创建 Anthropic 模型实例
-   * @param config - Anthropic 模型配置
-   * @returns Promise<LanguageModel> - Anthropic 语言模型实例
-   */
   private async createAnthropicModel(config: AnthropicModelConfig): Promise<LanguageModel> {
     const { createAnthropic } = await import('@ai-sdk/anthropic');
 
@@ -448,11 +366,6 @@ export class DefaultModelFactory implements ModelFactory {
     return anthropicWithLogging(config.name) as LanguageModel;
   }
 
-  /**
-   * 创建 xAI 模型实例 (通过 OpenAI 兼容接口)
-   * @param config - xAI 模型配置
-   * @returns Promise<LanguageModel> - xAI 语言模型实例
-   */
   private async createXAIModel(config: XAIModelConfig): Promise<LanguageModel> {
     const { createOpenAI } = await import('@ai-sdk/openai');
 
@@ -470,33 +383,22 @@ export class DefaultModelFactory implements ModelFactory {
     return xaiProvider(config.name) as LanguageModel;
   }
 
-  /**
-   * 创建 DeepSeek 模型实例
-   * @param config - DeepSeek 模型配置
-   * @returns Promise<LanguageModel> - DeepSeek 语言模型实例
-   */
   private async createDeepSeekModel(config: DeepSeekModelConfig): Promise<LanguageModel> {
-    const { createOpenAI } = await import('@ai-sdk/openai');
+    const { createDeepSeek } = await import('@ai-sdk/deepseek');
 
     const apiKey = config.apiKey || process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
       throw new Error('DeepSeek API key not found. Please set it in config or DEEPSEEK_API_KEY environment variable.');
     }
 
-    const deepseekProvider = createOpenAI({
+    const deepseekProvider = createDeepSeek({
       apiKey: apiKey,
-      baseURL: 'https://api.deepseek.com/v1',
       fetch: this.createLoggingFetch('deepseek', config.name)
     });
 
     return deepseekProvider(config.name) as LanguageModel;
   }
 
-  /**
-   * 创建 Azure OpenAI 模型实例
-   * @param config - Azure 模型配置
-   * @returns Promise<LanguageModel> - Azure OpenAI 语言模型实例
-   */
   private async createAzureModel(config: AzureModelConfig): Promise<LanguageModel> {
     const { createOpenAI } = await import('@ai-sdk/openai');
 
@@ -517,20 +419,10 @@ export class DefaultModelFactory implements ModelFactory {
     return azureProvider(config.name) as LanguageModel;
   }
 
-  /**
-   * 创建 AWS Bedrock 模型实例 (暂不支持)
-   * @param config - AWS 模型配置
-   * @returns Promise<LanguageModel> - AWS Bedrock 语言模型实例
-   */
   private async createAWSModel(config: AWSModelConfig): Promise<LanguageModel> {
     throw new Error('AWS Bedrock provider is not yet supported. Please use another provider.');
   }
 
-  /**
-   * 创建 OpenRouter 模型实例
-   * @param config - OpenRouter 模型配置
-   * @returns Promise<LanguageModel> - OpenRouter 语言模型实例
-   */
   private async createOpenRouterModel(config: OpenRouterModelConfig): Promise<LanguageModel> {
     const { createOpenAI } = await import('@ai-sdk/openai');
 
@@ -543,7 +435,7 @@ export class DefaultModelFactory implements ModelFactory {
       apiKey: apiKey,
       baseURL: 'https://openrouter.ai/api/v1',
       headers: {
-        'HTTP-Referer': config.options?.siteUrl || 'https://tempurai.ai',
+        'HTTP-Referer': config.options?.siteUrl || 'https://tempur.ai',
         'X-Title': config.options?.siteName || 'Tempurai',
       },
       fetch: this.createLoggingFetch('openrouter', config.name)
@@ -552,20 +444,10 @@ export class DefaultModelFactory implements ModelFactory {
     return openRouterProvider(config.name) as LanguageModel;
   }
 
-  /**
-   * 创建 Ollama 模型实例 (暂不支持)
-   * @param config - Ollama 模型配置
-   * @returns Promise<LanguageModel> - Ollama 语言模型实例
-   */
   private async createOllamaModel(config: OllamaModelConfig): Promise<LanguageModel> {
     throw new Error('Ollama provider is not yet supported. Please use another provider.');
   }
 
-  /**
-   * 创建 OpenAI 兼容模型实例
-   * @param config - OpenAI 兼容模型配置
-   * @returns Promise<LanguageModel> - OpenAI 兼容语言模型实例
-   */
   private async createOpenAICompatibleModel(config: OpenAICompatibleModelConfig): Promise<LanguageModel> {
     const { createOpenAI } = await import('@ai-sdk/openai');
 
@@ -573,7 +455,7 @@ export class DefaultModelFactory implements ModelFactory {
       throw new Error('OpenAI-compatible model requires baseUrl');
     }
 
-    const apiKey = config.apiKey || 'dummy-key'; // 某些本地模型不需要真实的API key
+    const apiKey = config.apiKey
 
     const compatibleProvider = createOpenAI({
       apiKey: apiKey,

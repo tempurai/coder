@@ -9,7 +9,7 @@ import { InterruptService } from '../../services/InterruptService.js';
 import { ToolRegistry, ToolNames } from '../../tools/ToolRegistry.js';
 import { z, ZodSchema } from "zod";
 import { TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
-import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
+import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
 
 export interface SmartAgentMessage extends Message {
   iteration: number;
@@ -80,7 +80,7 @@ export class SmartAgent {
         this.todoManager.addTodo({ ...todo, dependencies: [] });
       });
 
-      console.log(`Planning completed: ${planningResponse}`);
+      console.log("Planning completed", planningResponse);
     } catch (error) {
       console.warn('Initial planning failed, proceeding with direct execution:', error);
     }
@@ -109,7 +109,7 @@ export class SmartAgent {
 
       const { response, observation, error } = await this.executeSingleIteration(iteration, currentObservation);
 
-      if (iteration % 5 === 0) {
+      if (iteration % 10 === 0) {
         const iterationHistory = this.toMessages(this.iterations);
         const loopDetection = await this.orchestrator.detectLoop(iterationHistory);
         if (loopDetection.isLoop) {
@@ -120,7 +120,7 @@ export class SmartAgent {
 
       finished = response.finished;
 
-      if (finished && response.result) {
+      if (finished) {
         this.eventEmitter.emit({
           type: 'text_generated',
           text: response.result,
@@ -176,7 +176,7 @@ export class SmartAgent {
   ): Promise<{ response: SmartAgentResponse; observation: string, error?: string }> {
     try {
       if (this.interruptService.isInterrupted()) {
-        const response = { reasoning: 'Task interrupted by user', actions: [], finished: true };
+        const response = { reasoning: 'Task interrupted by user', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
         this.iterations.push(
           { role: 'user', content: `Observation: ${observation}`, iteration },
           { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
@@ -241,7 +241,7 @@ export class SmartAgent {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
       console.error(`Iteration ${iteration} failed: ${errorMessage}`);
 
-      const response = { reasoning: 'Iteration error occurred', actions: [], finished: true };
+      const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
       this.iterations.push(
         { role: 'user', content: `Observation: ${observation}`, iteration },
         { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }

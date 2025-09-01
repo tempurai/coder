@@ -35,7 +35,7 @@ export class Logger {
     // 确定日志目录 - 优先使用项目级别，否则使用全局
     const projectLogDir = path.join(process.cwd(), '.tempurai');
     const globalLogDir = path.join(os.homedir(), '.tempurai');
-    
+
     // 检查项目目录是否存在或可以创建
     try {
       fs.mkdirSync(projectLogDir, { recursive: true });
@@ -172,45 +172,6 @@ export class Logger {
 
   public error(message: string, data?: any, source?: string): void {
     this.log(LogLevel.ERROR, message, data, source);
-  }
-
-  // 专门用于记录模型请求的方法
-  public logModelRequest(provider: string, model: string, prompt: string, response?: string, metadata?: any): void {
-    this.info('Model Request', {
-      provider,
-      model,
-      promptLength: prompt.length,
-      promptPreview: prompt.substring(0, 200) + (prompt.length > 200 ? '...' : ''),
-      responseLength: response?.length,
-      responsePreview: response ? response.substring(0, 200) + (response.length > 200 ? '...' : '') : undefined,
-      metadata
-    }, 'MODEL');
-  }
-
-  // 专门用于记录工具执行的方法
-  public logToolExecution(toolName: string, parameters: any, result?: any, error?: Error): void {
-    this.info('Tool Execution', {
-      toolName,
-      parameters,
-      success: !error,
-      result: result ? (typeof result === 'string' ? result.substring(0, 500) : result) : undefined,
-      error: error ? {
-        message: error.message,
-        stack: error.stack
-      } : undefined
-    }, 'TOOL');
-  }
-
-  // 专门用于记录用户交互的方法
-  public logUserInteraction(action: string, data?: any): void {
-    this.info('User Interaction', {
-      action,
-      data
-    }, 'USER');
-  }
-
-  public getLogFile(): string {
-    return this.logFile;
   }
 
   // 恢复原始console（用于清理）

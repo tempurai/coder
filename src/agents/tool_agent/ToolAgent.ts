@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai';
+import { generateObject, generateText, isToolOrDynamicToolUIPart, Output } from 'ai';
 import { Config } from '../../config/ConfigLoader.js';
 import type { LanguageModel, ToolSet } from 'ai';
 import { injectable, inject } from 'inversify';
@@ -14,6 +14,7 @@ import { registerMcpTools } from '../../tools/McpToolLoader.js';
 import { InterruptService } from '../../services/InterruptService.js';
 import { ToolExecutionCompletedEvent } from '../../events/EventTypes.js';
 import { Logger } from '../../utils/Logger.js';
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 export type Message = { role: 'system' | 'user' | 'assistant', content: string };
 export type Messages = Message[];
@@ -67,7 +68,7 @@ export class ToolAgent {
         this.logger.info('Initializing ToolAgent', {}, 'AGENT');
         await this.loadAllTools();
         console.log(`ToolAgent initialized with ${this.toolRegistry.getToolNames().length} tools`);
-        this.logger.info('ToolAgent initialized', { 
+        this.logger.info('ToolAgent initialized', {
             toolCount: this.toolRegistry.getToolNames().length,
             tools: this.toolRegistry.getToolNames()
         }, 'AGENT');
@@ -147,11 +148,34 @@ export class ToolAgent {
 
     private buildToolInfo(): string {
         const tools = this.toolRegistry.getAll();
-        const toolList = Object.entries(tools).map(([name, tool]) =>
-            `## ${name}\n${tool.description}\nParameters: ${JSON.stringify(tool.inputSchema, null, 2)}`
-        );
+        let out = "";
+        for (const [name, tool] of Object.entries(tools)) {
+            const json = zodToJsonSchema(tool.inputSchema as any) as any;
+            const required: string[] = json.required || [];
+            out += `name: ${name}\n`;
+            out += `desc: ${tool.description || "(no description)"}\n`;
+            out += "params:\n";
 
-        return toolList.length > 0 ? `# Available Tools\n\n${toolList.join('\n\n')}` : '';
+            const props = json.properties || {};
+            if (Object.keys(props).length === 0) {
+                out += "  - (none)\n\n";
+                continue;
+            }
+
+            for (const [k, v] of Object.entries<any>(props)) {
+                if (/toolExecutionId/i.test(k)) continue;
+                const typ = v.type || (Array.isArray(v.enum) ? `enum{${v.enum.join(",")}}` : "any");
+                const desc = v.description || "";
+                const opt = required.includes(k) ? "" : "optional";
+                const def = v.default !== undefined ? `default: ${v.default}` : "";
+                const meta = [def, opt].filter(Boolean).join(", ");
+                out += `  - ${k}: ${typ} — ${desc}${meta ? " (" + meta + ")" : ""}\n`;
+            }
+            out += "\n";
+        }
+
+        console.log("tool info", out)
+        return out.trim();
     }
 
     async executeTool(toolName: string, args: any): Promise<any> {

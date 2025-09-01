@@ -56,17 +56,31 @@ You must respond in this JSON format:
 Analyze the user's task and output the planning JSON.
 `;
 
-export const SmartAgentResponseSchema = z.object({
-  reasoning: z.string().describe("Description of the reasoning behind the chosen actions"),
-  actions: z.array(z.object({
-    tool: z.string().describe("Name of the tool to be invoked"),
-    args: z.record(z.any()).default({})
-  })).describe("Array of tools to execute in sequence"),
-  finished: z.boolean().default(false),
-  result: z.string().optional().describe("Final result summary when finished=true")
+const ActionSchema = z.object({
+  tool: z.string().min(1).describe("Name of the tool to be invoked"),
+  args: z.record(z.any()).default({})
 });
 
+const SmartAgentResponseFinishedSchema = z.object({
+  reasoning: z.string().describe("Why no further actions are needed"),
+  actions: z.array(ActionSchema).max(0).describe("Must be an empty array when finished=true"),
+  finished: z.literal(true),
+  result: z.string().min(1).describe("Final result summary when finished=true")
+})
+
+export const SmartAgentResponseSchema = z.union([
+  z.object({
+    reasoning: z.string().describe("Description of the reasoning behind the chosen actions"),
+    actions: z.array(ActionSchema).min(1).describe("Tools to execute next"),
+    finished: z.literal(false).default(false),
+    result: z.undefined().optional()
+  }),
+  SmartAgentResponseFinishedSchema
+]);
+
+export type SmartAgentResponseFinished = z.infer<typeof SmartAgentResponseFinishedSchema>;
 export type SmartAgentResponse = z.infer<typeof SmartAgentResponseSchema>;
+
 
 export const SMART_AGENT_PROMPT = `You are Tempurai Code, an intelligent AI programming assistant specializing in software engineering tasks. Your primary goal is to help users safely and efficiently accomplish their development objectives through structured planning and systematic execution.
 
@@ -169,7 +183,7 @@ Always respond with valid JSON containing your reasoning and actions array:
       }
     }
   ],
-  "finished": true,
+  "finished": boolean, // Set to true if the task is completed and actions empty
   "result": "Final task completion summary and key outcomes (ONLY when finished=true)"
 }
 
@@ -187,6 +201,13 @@ Always respond with valid JSON containing your reasoning and actions array:
   ],
   "finished": false
 }
+
+### When you may set \`"finished": true\`
+- You may set \`"finished": true\` **only when** there are **no further tool calls to make** in this turn.
+- When \`"finished": true\`, **\`actions\` must be an empty array** (\`[]\`) and you **must** provide a non-empty \`"result"\`.
+
+### When you must keep \`"finished": false\`
+- If this response includes **any** tool invocations (i.e., \`actions.length > 0\`), you **must** set \`"finished": false\` and **must not** include \`"result"\` in this turn.
 
 **Important**: Set "finished": true and provide "result":
 The "result" field should provide a clear summary and instruction of the accomplished work.  

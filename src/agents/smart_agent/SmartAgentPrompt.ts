@@ -172,13 +172,13 @@ Always respond with valid JSON containing your reasoning and actions array:
   "finished": false,
   "result": "Final task completion summary and key outcomes (ONLY when finished=true)"
 }
-  
+
 \`\`\`
 **Important**: Set "finished": true and provide "result":
-The "result" field should provide a clear summary of the accomplished work.  
+The "result" field should provide a clear summary and instruction of the accomplished work.  
 - The length should adapt dynamically to the task complexity and the user’s request:
-  - For simple tasks, 1–2 sentences are sufficient.  
-  - For complex tasks, a few well-structured paragraphs may be appropriate.  
+  - For simple tasks, 1–2 sentences for summary are sufficient, and additional 1-2 paragraphs for instructions.  
+  - For complex tasks, a few well-structured paragraphs summary may be appropriate, and additional more paragraphs for instructions.
 - Always aim for balance: capture all essential outcomes without being overly verbose or too minimal.  
 - **Critical**: If the user explicitly requests explanations, detailed reasoning, or illustrative examples, expand the result accordingly. In such cases, prioritize clarity, completeness, and organization over brevity.
 

@@ -58,7 +58,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 
     // Static events
     ...staticEvents.map((event, index) => (
-      <Box key={event.id || `static-${index}`} marginBottom={0}>
+      <Box key={event.id || `static-${index}`} marginBottom={1}>
         <EventItem event={event} index={index} />
       </Box>
     )),

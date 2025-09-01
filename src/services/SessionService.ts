@@ -74,6 +74,7 @@ export class SessionService {
 
         this.eventEmitter.emit({
             type: 'task_started',
+            displayTitle: "Task Started",
             description: query,
             workingDirectory: process.cwd(),
         } as TaskStartedEvent);
@@ -125,6 +126,7 @@ export class SessionService {
 
             this.eventEmitter.emit({
                 type: 'task_completed',
+                displayTitle: "Finished",
                 success: taskResult.terminateReason === 'FINISHED',
                 duration: taskResult.metadata?.duration,
                 iterations: taskResult.metadata?.iterations,

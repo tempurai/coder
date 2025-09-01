@@ -2,16 +2,16 @@ import z from "zod";
 import { ToolNames } from "../../tools/ToolRegistry.js";
 
 export const PlanningResponseSchema = z.object({
-    analysis: z.string().describe("Analysis of the task complexity and requirements"),
-    approach: z.string().describe("Overall approach to solve this task"),
-    todos: z.array(z.object({
-        title: z.string().describe("Title of the todo item"),
-        description: z.string().describe("Detailed description of the todo item"),
-        priority: z.enum(['high', 'medium', 'low']).describe("Priority level of the todo item"),
-        estimatedEffort: z.number().min(1).max(10).describe("Estimated effort to complete the todo item"),
-        context: z.any().optional().describe("Any additional context or information relevant to the todo item")
-    })),
-    needsPlanning: z.boolean().describe("Whether this task requires structured planning with todos")
+  analysis: z.string().describe("Analysis of the task complexity and requirements"),
+  approach: z.string().describe("Overall approach to solve this task"),
+  todos: z.array(z.object({
+    title: z.string().describe("Title of the todo item"),
+    description: z.string().describe("Detailed description of the todo item"),
+    priority: z.enum(['high', 'medium', 'low']).describe("Priority level of the todo item"),
+    estimatedEffort: z.number().min(1).max(10).describe("Estimated effort to complete the todo item"),
+    context: z.any().optional().describe("Any additional context or information relevant to the todo item")
+  })),
+  needsPlanning: z.boolean().describe("Whether this task requires structured planning with todos")
 });
 
 export type PlanningResponse = z.infer<typeof PlanningResponseSchema>;
@@ -57,13 +57,13 @@ Analyze the user's task and output the planning JSON.
 `;
 
 export const SmartAgentResponseSchema = z.object({
-    reasoning: z.string().describe("Description of the reasoning behind the chosen actions"),
-    actions: z.array(z.object({
-        tool: z.string().describe("Name of the tool to be invoked"),
-        args: z.record(z.any()).default({})
-    })).describe("Array of tools to execute in sequence"),
-    finished: z.boolean().default(false),
-    result: z.string().optional().describe("Final result summary when finished=true")
+  reasoning: z.string().describe("Description of the reasoning behind the chosen actions"),
+  actions: z.array(z.object({
+    tool: z.string().describe("Name of the tool to be invoked"),
+    args: z.record(z.any()).default({})
+  })).describe("Array of tools to execute in sequence"),
+  finished: z.boolean().default(false),
+  result: z.string().optional().describe("Final result summary when finished=true")
 });
 
 export type SmartAgentResponse = z.infer<typeof SmartAgentResponseSchema>;
@@ -122,6 +122,11 @@ For any non-trivial task (requiring more than two distinct steps), you MUST use 
   - Git operations: \`git status && git log --oneline -5\`
   - Build and test: \`npm run build && npm test\`
 
+# Shell Tools Tips:
+- When using \`find\`, always exclude large vendor or dependency directories (e.g., \`node_modules\`, \`.venv\`) to avoid noise and performance issues.
+  Example: \`find . -type f -not -path "*/node_modules/*" -not -path "*/.venv/*"\`
+- Use \`ls -al\` at the project root first to get an overview of the structure before running deeper searches.
+
 # Multi-Tool Execution
 You can execute multiple related tools in a single response using the actions array:
 - Group logically related tools together
@@ -167,8 +172,14 @@ Always respond with valid JSON containing your reasoning and actions array:
   "finished": false,
   "result": "Final task completion summary and key outcomes (ONLY when finished=true)"
 }
+  
 \`\`\`
-
-**Important**: Set "finished": true and provide "result" ONLY when the entire user request has been completely fulfilled and all todos are marked as 'completed'. The "result" field should contain a concise summary of what was accomplished.
+**Important**: Set "finished": true and provide "result":
+The "result" field should provide a clear summary of the accomplished work.  
+- The length should adapt dynamically to the task complexity and the user’s request:
+  - For simple tasks, 1–2 sentences are sufficient.  
+  - For complex tasks, a few well-structured paragraphs may be appropriate.  
+- Always aim for balance: capture all essential outcomes without being overly verbose or too minimal.  
+- **Critical**: If the user explicitly requests explanations, detailed reasoning, or illustrative examples, expand the result accordingly. In such cases, prioritize clarity, completeness, and organization over brevity.
 
 Remember: You are a capable, intelligent assistant focused on helping users achieve their software engineering goals efficiently and safely. Your adherence to structured planning via \`${ToolNames.TODO_MANAGER}\` and shell-first approach for exploration is paramount.`;

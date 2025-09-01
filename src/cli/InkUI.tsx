@@ -6,9 +6,9 @@ import { WelcomeScreen } from './components/WelcomeScreen.js';
 import { ThemeSelector } from './components/ThemeSelector.js';
 import { DynamicInput } from './components/DynamicInput.js';
 import { useSessionEvents } from './hooks/useSessionEvents.js';
+import { useEventSeparation } from './hooks/useEventSeparation.js';
 import { EventItem } from './components/EventItem.js';
 import { ProgressIndicator } from './components/ProgressIndicator.js';
-import { UIEvent, UIEventType } from '../events/index.js';
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
 
@@ -18,12 +18,14 @@ interface CodeAssistantAppProps {
 
 interface MainUIProps {
   sessionService: SessionService;
-  detailMode: boolean;
 }
 
-const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
+const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   const { currentTheme } = useTheme();
   const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions } = useSessionEvents(sessionService);
+
+  // 使用新的事件分离hook
+  const { staticEvents, dynamicEvents } = useEventSeparation(events);
 
   const handleSubmit = useCallback(
     async (userInput: string) => {
@@ -33,48 +35,21 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
     [sessionService, isProcessing, pendingConfirmation],
   );
 
-  // 分离静态和动态内容
-  const { staticEvents, dynamicEvents } = React.useMemo(() => {
-    const dynamic: UIEvent[] = [];
-    const static_events: UIEvent[] = [];
-
-    events.forEach((event) => {
-      // 检查是否是正在进行的工具执行
-      if (event.type === UIEventType.ToolExecutionStarted) {
-        const toolEvent = event as any;
-        const executionStatus = toolEvent.executionStatus || 'started';
-
-        if (executionStatus === 'started' || executionStatus === 'executing') {
-          dynamic.push(event);
-        } else {
-          static_events.push(event);
-        }
-      } else {
-        // 其他事件直接放入静态区域
-        static_events.push(event);
-      }
-    });
-
-    return {
-      staticEvents: static_events,
-      dynamicEvents: dynamic,
-    };
-  }, [events]);
-
   const staticItems = [
     // Header
     <Box key='header' flexDirection='column' marginBottom={1} paddingX={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
       <Text color={currentTheme.colors.info}>Welcome to Tempurai Code Assistant</Text>
       <Text> </Text>
-      <Text>Type /help for help, /status for your current setup</Text>
+      <Text>
+        Type /help for commands • <Text color={currentTheme.colors.accent}>Ctrl+R</Text> for detail mode
+      </Text>
       <Text color={currentTheme.colors.text.muted}>cwd: {process.cwd()}</Text>
-      <Text color={currentTheme.colors.text.muted}>Detail mode: {detailMode ? 'enabled' : 'disabled'} (Ctrl+R to toggle)</Text>
       <Text> </Text>
-      <Text color={currentTheme.colors.text.muted}>AI Can make mistake, please make sure to check the output carefully.</Text>
+      <Text color={currentTheme.colors.text.muted}>AI can make mistakes, please check output carefully.</Text>
     </Box>,
 
     // Title
-    <Box key='title'>
+    <Box key='title' marginBottom={1}>
       <Text color={currentTheme.colors.ui.highlight}>{'⚡'} </Text>
       <Text color={currentTheme.colors.primary} bold>
         Tempurai Code Assistant
@@ -83,8 +58,8 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
 
     // Static events
     ...staticEvents.map((event, index) => (
-      <Box key={event.id || `static-${index}`}>
-        <EventItem event={event} index={index} detailMode={detailMode} />
+      <Box key={event.id || `static-${index}`} marginBottom={0}>
+        <EventItem event={event} index={index} />
       </Box>
     )),
   ];
@@ -94,21 +69,21 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
       {/* Static content */}
       <Static items={staticItems}>{(item) => item}</Static>
 
-      {/* Dynamic content */}
+      {/* Dynamic events */}
       {dynamicEvents.map((event, index) => (
-        <Box key={event.id || `dynamic-${index}`}>
-          <EventItem event={event} index={index} detailMode={detailMode} />
+        <Box key={event.id || `dynamic-${index}`} marginBottom={0}>
+          <EventItem event={event} index={index} />
         </Box>
       ))}
 
       {/* Processing indicator */}
       {isProcessing && (
-        <Box>
+        <Box marginY={1}>
           <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
         </Box>
       )}
 
-      {/* Input */}
+      {/* Input area */}
       <Box marginTop={1} paddingTop={1}>
         <DynamicInput onSubmit={handleSubmit} isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} />
       </Box>
@@ -119,7 +94,6 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
 const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService }) => {
   const { setTheme, availableThemes, themeName } = useTheme();
   const [appState, setAppState] = useState<AppState>('welcome');
-  const [detailMode, setDetailMode] = useState<boolean>(false);
   const [ctrlCCount, setCtrlCCount] = useState<number>(0);
 
   useEffect(() => {
@@ -147,8 +121,9 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       return;
     }
 
+    // Ctrl+R is reserved for detail mode (not implemented yet)
     if (key.ctrl && inputChar === 'r') {
-      setDetailMode((prev) => !prev);
+      // TODO: Toggle detail mode functionality
       return;
     }
 
@@ -172,7 +147,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   if (appState === 'welcome') return <WelcomeScreen onDismiss={handleWelcomeDismiss} />;
   if (appState === 'theme-selection') return <ThemeSelector onThemeSelected={handleThemeSelected} />;
 
-  return <MainUI sessionService={sessionService} detailMode={detailMode} />;
+  return <MainUI sessionService={sessionService} />;
 };
 
 const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => (

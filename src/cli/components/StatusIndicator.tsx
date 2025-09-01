@@ -26,7 +26,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ type, isActive
         };
       case 'tool':
         return {
-          symbol: isActive ? '~' : '•',
+          symbol: isActive ? '~' : '●',
           color: isActive ? currentTheme.colors.warning : currentTheme.colors.success,
         };
       case 'error':

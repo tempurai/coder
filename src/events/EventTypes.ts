@@ -8,10 +8,12 @@ export interface TaskStartedEvent extends BaseEvent {
   type: 'task_started';
   description: string;
   workingDirectory: string;
+  displayTitle: string;
 }
 
 export interface TaskCompletedEvent extends BaseEvent {
   type: 'task_completed';
+  displayTitle: string;
   success: boolean;
   duration: number;
   iterations: number;

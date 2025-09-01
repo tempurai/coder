@@ -195,13 +195,6 @@ export class SmartAgent {
         schema: SmartAgentResponseSchema as ZodSchema<SmartAgentResponse>
       });
 
-      this.eventEmitter.emit({
-        type: 'thought_generated',
-        iteration,
-        thought: response.reasoning,
-        context: observation,
-      } as ThoughtGeneratedEvent);
-
       this.iterations.push(
         { role: 'user', content: `Observation: ${observation}`, iteration },
         { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
@@ -210,6 +203,13 @@ export class SmartAgent {
       let nextObservation = 'No actions executed';
 
       if (!response.finished) {
+        this.eventEmitter.emit({
+          type: 'thought_generated',
+          iteration,
+          thought: response.reasoning,
+          context: observation,
+        } as ThoughtGeneratedEvent);
+
         const toolResults = [];
         for (const action of response.actions) {
           const toolResult = await this.executeToolSafely(iteration, action);

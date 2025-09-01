@@ -20,7 +20,12 @@
     "prepare": "npm run build",
     "postpack": "rm -f *.tgz",
     "prepublishOnly": "npm run build",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "publish:npm": "./scripts/npm-registry.sh",
+    "publish:dry-run": "./scripts/npm-registry.sh --dry-run",
+    "publish:test": "./scripts/npm-registry.sh --test",
+    "publish:build": "./scripts/npm-registry.sh --build",
+    "publish:cleanup": "./scripts/npm-registry.sh --cleanup"
   },
   "keywords": [
     "ai",

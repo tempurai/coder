@@ -8,12 +8,8 @@ import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEv
 import { ToolAgent, Messages } from '../agents/tool_agent/ToolAgent.js';
 import { InterruptService } from './InterruptService.js';
 import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
-
-export interface TaskExecutionResult {
-    success: boolean;
-    summary: string;
-    error?: string;
-}
+import { TaskExecutionResult, TerminateReason } from '../agents/tool_agent/ToolAgent.js';
+import { ToolRegistry } from '../tools/ToolRegistry.js';
 
 export interface SessionStats {
     totalInteractions: number;
@@ -42,7 +38,8 @@ export class SessionService {
         @inject(TYPES.Config) private config: Config,
         @inject(TYPES.SnapshotManagerFactory) private createSnapshotManager: ISnapshotManagerFactory,
         @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
-        @inject(TYPES.InterruptService) private interruptService: InterruptService
+        @inject(TYPES.InterruptService) private interruptService: InterruptService,
+        @inject(TYPES.ToolRegistry) private toolRegistry: ToolRegistry,
     ) {
         this.sessionStartTime = new Date();
         this.compressedAgent = new CompressedAgent(_agent);
@@ -61,8 +58,8 @@ export class SessionService {
         if (this.isTaskRunning) {
             this.queueMessage(query);
             return {
-                success: false,
-                summary: 'Task queued - another task is currently running',
+                terminateReason: 'ERROR',
+                history: [],
                 error: 'Another task is already in progress'
             };
         }
@@ -72,10 +69,7 @@ export class SessionService {
 
         console.log('\n🚀 开始处理任务...');
 
-        // 添加用户输入到最近历史
         this.recentHistory.push({ role: 'user', content: query });
-
-        // 检查是否需要压缩
         await this.compressContextIfNeeded();
 
         this.eventEmitter.emit({
@@ -87,6 +81,7 @@ export class SessionService {
         try {
             const snapshotManager = await this.createSnapshotManager(process.cwd());
             console.log('📸 创建任务开始前的快照...');
+
             const snapshotResult = await snapshotManager.createSnapshot(
                 `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
             );
@@ -101,8 +96,8 @@ export class SessionService {
                 } as TextGeneratedEvent);
 
                 return {
-                    success: false,
-                    summary: errorMessage,
+                    terminateReason: 'ERROR',
+                    history: [],
                     error: snapshotResult.error
                 };
             }
@@ -115,41 +110,29 @@ export class SessionService {
                 filesCount: snapshotResult.filesCount || 0,
             } as SnapshotCreatedEvent);
 
-            const smartAgent = new SmartAgent(this._agent, this.eventEmitter, this.interruptService);
+            const smartAgent = new SmartAgent(this._agent, this.eventEmitter, this.interruptService, this.toolRegistry);
             smartAgent.initializeTools();
 
             console.log('🔄 开始SmartAgent推理循环...');
 
-            // 构建完整的上下文历史
             const fullHistory = this.buildFullHistory();
             const taskResult = await smartAgent.runTask(query, fullHistory);
 
-            // 添加助手响应到最近历史
-            this.recentHistory.push({
-                role: 'assistant',
-                content: taskResult.finalResult || taskResult.summary
-            });
-
-            const finalResult: TaskExecutionResult = {
-                success: taskResult.success,
-                summary: taskResult.summary,
-                error: taskResult.error
-            };
+            this.recentHistory.push(...taskResult.history);
 
             this.interactionCount++;
-
-            console.log(`\n✅ 任务处理完成: ${finalResult.success ? '成功' : '失败'}`);
+            console.log(`\n✅ 任务处理完成: ${taskResult.terminateReason === 'FINISHED' ? '成功' : '失败'}`);
 
             this.eventEmitter.emit({
                 type: 'task_completed',
-                success: finalResult.success,
-                duration: taskResult.duration,
-                iterations: taskResult.iterations,
-                summary: finalResult.summary,
-                error: finalResult.error,
+                success: taskResult.terminateReason === 'FINISHED',
+                duration: taskResult.metadata?.duration,
+                iterations: taskResult.metadata?.iterations,
+                summary: taskResult.terminateReason === 'FINISHED' ? 'Task completed successfully' : 'Task failed',
+                error: taskResult.error,
             } as TaskCompletedEvent);
 
-            return finalResult;
+            return taskResult;
 
         } catch (error) {
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
@@ -161,8 +144,8 @@ export class SessionService {
             } as TextGeneratedEvent);
 
             return {
-                success: false,
-                summary: '任务执行时发生严重错误',
+                terminateReason: 'ERROR',
+                history: [],
                 error: errorMessage
             };
         } finally {
@@ -178,24 +161,20 @@ export class SessionService {
             return;
         }
 
-        // 分离需要压缩的历史和保留的最近历史
         const toCompress = this.recentHistory.slice(0, -this.preserveRecentCount);
         const toKeep = this.recentHistory.slice(-this.preserveRecentCount);
 
-        // 使用CompressedAgent进行压缩
         this.compressedContext = await this.compressedAgent.compress(
             this.compressedContext,
             toCompress
         );
 
-        // 只保留最近的历史
         this.recentHistory = toKeep;
     }
 
     private buildFullHistory(): Messages {
         const history: Messages = [];
 
-        // 如果有压缩的上下文，添加为系统消息
         if (this.compressedContext) {
             history.push({
                 role: 'system',
@@ -203,9 +182,7 @@ export class SessionService {
             });
         }
 
-        // 添加最近的历史
         history.push(...this.recentHistory);
-
         return history;
     }
 
@@ -279,7 +256,6 @@ export class SessionService {
 
     private queueMessage(query: string): void {
         this.messageQueue.push(query);
-
         this.eventEmitter.emit({
             type: 'text_generated',
             text: `Task queued: ${this.messageQueue.length} task(s) waiting. Current task: "${query.substring(0, 100)}${query.length > 100 ? '...' : ''}"`,
@@ -289,7 +265,6 @@ export class SessionService {
     private async processNextQueuedMessage(): Promise<void> {
         if (this.messageQueue.length > 0) {
             const nextQuery = this.messageQueue.shift()!;
-
             setTimeout(() => {
                 this.processTask(nextQuery).catch(error => {
                     console.error('Error processing queued task:', error);

@@ -7,32 +7,20 @@ import { inject } from 'inversify';
 import { TYPES } from '../../di/types.js';
 import { tool } from 'ai';
 import { SUB_AGENT_PROMPT, SubAgentResponse, SubAgentResponseSchema } from './SubAgentPrompt.js';
+import { TaskExecutionResult, TerminateReason } from '../tool_agent/ToolAgent.js';
 
 interface SubAgentTask {
   id: string;
   type: string;
   description: string;
   context: any;
-  contextGuidance?: {
-    focusAreas: string[];
-    criticalTypes: string[];
+  preservationGuidance?: {
+    attentionAreas: string[];
     expectedOutputs: string[];
   };
   tools?: string[];
   maxTurns?: number;
   timeoutMs?: number;
-}
-
-interface SubAgentResult {
-  success: boolean;
-  taskId: string;
-  output: any;
-  iterations: number;
-  criticalInfo: string;
-  duration: number;
-  terminateReason: 'GOAL' | 'MAX_TURNS' | 'TIMEOUT' | 'ERROR';
-  error?: string;
-  logs: string[];
 }
 
 export class SubAgent {
@@ -44,13 +32,11 @@ export class SubAgent {
     @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
   ) { }
 
-  async executeTask(task: SubAgentTask): Promise<SubAgentResult> {
+  async executeTask(task: SubAgentTask): Promise<TaskExecutionResult> {
     const startTime = Date.now();
-    const logs: string[] = [];
     const maxTurns = this.MAX_TURNS;
     const timeout = this.DEFAULT_TIMEOUT;
 
-    logs.push(`Starting SubAgent task: ${task.type}`);
     console.log(`SubAgent executing: ${task.type} - ${task.description}`);
 
     this.eventEmitter.emit({
@@ -62,88 +48,73 @@ export class SubAgent {
 
     try {
       const result = await Promise.race([
-        this.executeTaskLoop(task, maxTurns, logs),
+        this.executeTaskLoop(task, maxTurns),
         this.createTimeoutPromise(timeout)
       ]);
 
       const duration = Date.now() - startTime;
-      logs.push(`Task ${result.success ? 'completed' : 'failed'} in ${duration}ms`);
 
       this.eventEmitter.emit({
         type: 'system_info',
-        level: result.success ? 'info' : 'warning',
-        message: `SubAgent ${result.success ? 'completed' : 'failed'}: ${task.type}`,
-        context: { taskId: task.id, duration, iterations: result.iterations },
+        level: result.terminateReason === 'FINISHED' ? 'info' : 'warning',
+        message: `SubAgent ${result.terminateReason === 'FINISHED' ? 'completed' : 'failed'}: ${task.type}`,
+        context: { taskId: task.id, duration },
       } as SystemInfoEvent);
 
-      return { ...result, taskId: task.id, duration, logs };
+      return {
+        ...result,
+        metadata: {
+          ...result?.metadata,
+          createdAt: startTime,
+          duration: Date.now() - startTime,
+        }
+      }
+
     } catch (error) {
-      const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logs.push(`Task failed with error: ${errorMessage}`);
 
       return {
-        success: false,
-        taskId: task.id,
-        output: null,
-        iterations: 0,
-        criticalInfo: `Task failed: ${errorMessage}`,
-        duration,
         terminateReason: 'ERROR',
+        history: [],
         error: errorMessage,
-        logs
+        metadata: {
+          createdAt: startTime,
+          duration: Date.now() - startTime,
+        }
       };
     }
   }
 
-  private async executeTaskLoop(task: SubAgentTask, maxTurns: number, logs: string[]) {
-    const criticalInfoList: string[] = [];
+  private async executeTaskLoop(task: SubAgentTask, maxTurns: number): Promise<TaskExecutionResult> {
     const conversationHistory: Messages = [
       { role: 'system', content: SUB_AGENT_PROMPT },
-      {
-        role: 'user',
-        content: `Task: ${task.description}
-Context: ${JSON.stringify(task.context, null, 2)}
-Complete this task efficiently.`
-          + (task.contextGuidance ? `
-Context Guidance: ${JSON.stringify(task.contextGuidance, null, 2)}` : '')
-      }
     ];
 
-    let currentObservation = `Task: ${task.description}\nType: ${task.type}\nContext: ${JSON.stringify(task.context, null, 2)}`;
+    let currentObservation = `Task: ${task.description}
+Context: ${JSON.stringify(task.context, null, 2)}
+Preservation Guidance: ${JSON.stringify(task.preservationGuidance, null, 2)}
+Complete this task efficiently.`;
+
     let turnCount = 0;
     let taskCompleted = false;
-    let finalOutput: any = null;
 
     while (!taskCompleted && turnCount < maxTurns) {
       turnCount++;
-      logs.push(`Turn ${turnCount}: Processing observation`);
 
       try {
-        conversationHistory.push({
-          role: 'user',
-          content: `Current observation: ${currentObservation}`
-        });
+        const userMessage = { role: 'user' as const, content: `Current observation: ${currentObservation}` };
+        conversationHistory.push(userMessage);
 
         const response = await this.toolAgent.generateObject<SubAgentResponse>({
           messages: conversationHistory,
           schema: SubAgentResponseSchema as z.ZodSchema<SubAgentResponse>,
         });
 
-        conversationHistory.push({
-          role: 'assistant',
-          content: JSON.stringify(response, null, 2)
-        });
-
-        logs.push(`Turn ${turnCount}: ${response.action.tool}`);
-
-        if (response.criticalInfo) {
-          criticalInfoList.push(response.criticalInfo);
-        }
+        const assistantMessage = { role: 'assistant' as const, content: JSON.stringify(response, null, 2) };
+        conversationHistory.push(assistantMessage);
 
         if (response.completed || response.action.tool === 'finish') {
           taskCompleted = true;
-          finalOutput = response.output || response.action.args;
           break;
         }
 
@@ -161,75 +132,92 @@ Context Guidance: ${JSON.stringify(task.contextGuidance, null, 2)}` : '')
           const toolResult = await this.toolAgent.executeTool(response.action.tool, response.action.args);
           currentObservation = `Previous: ${response.action.tool}\nResult: ${JSON.stringify(toolResult, null, 2)}`;
 
-          if (this.shouldPreserveTool(response.action.tool, toolResult)) {
-            const info = this.summarizeResult(response.action.tool, toolResult);
-            criticalInfoList.push(info);
-          }
         } catch (toolError) {
           const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
           currentObservation = `Previous: ${response.action.tool}\nError: ${errorMessage}`;
 
-          criticalInfoList.push(`ERROR ${response.action.tool}: ${errorMessage}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        logs.push(`Turn ${turnCount}: Error: ${errorMessage}`);
         currentObservation = `Error occurred: ${errorMessage}`;
         if (turnCount >= maxTurns - 2) break;
+
       }
     }
 
-    let terminateReason: 'GOAL' | 'MAX_TURNS' | 'ERROR';
+    let terminateReason: TerminateReason;
     if (taskCompleted) {
-      terminateReason = 'GOAL';
+      terminateReason = 'FINISHED';
     } else if (turnCount >= maxTurns) {
-      terminateReason = 'MAX_TURNS';
+      terminateReason = 'TIMEOUT';
     } else {
       terminateReason = 'ERROR';
     }
 
-    const criticalInfo = criticalInfoList.join('\n');
+    const criticalHistory = this.filterCriticalHistory(conversationHistory);
 
     return {
-      success: taskCompleted,
-      output: finalOutput,
-      criticalInfo,
-      iterations: turnCount,
-      terminateReason
+      terminateReason,
+      history: criticalHistory,
+      error: terminateReason !== 'FINISHED' ? 'Task did not complete successfully' : undefined,
+      metadata: {
+        iterations: turnCount
+      }
     };
   }
 
-  private shouldPreserveTool(toolName: string, result: any): boolean {
-    if ([ToolNames.WRITE_FILE, ToolNames.APPLY_PATCH].includes(toolName)) {
+  private filterCriticalHistory(conversationHistory: Messages): Messages {
+    const criticalHistory: Messages = [];
+
+    // Always preserve system message
+    if (conversationHistory[0]?.role === 'system') {
+      criticalHistory.push(conversationHistory[0]);
+    }
+
+    // Find critical assistant messages and their following user messages
+    for (let i = 1; i < conversationHistory.length; i++) {
+      const message = conversationHistory[i];
+
+      if (message.role === 'assistant') {
+        try {
+          const response = JSON.parse(message.content) as SubAgentResponse;
+          const isCritical = response.criticalInfo || this.isWriteOperationTool(response.action.tool, response.action.args);
+
+          if (isCritical) {
+            criticalHistory.push(message);
+            // Add next user message if it exists
+            if (conversationHistory[i + 1]?.role === 'user') {
+              criticalHistory.push(conversationHistory[i + 1]);
+            }
+          }
+        } catch {
+          // Skip messages that can't be parsed
+        }
+      }
+    }
+
+    return criticalHistory;
+  }
+
+  private isWriteOperationTool(toolName: string, args: any): boolean {
+    const writeTools = [ToolNames.WRITE_FILE, ToolNames.APPLY_PATCH];
+    if (writeTools.includes(toolName)) {
       return true;
     }
 
-    if (!result.success) {
-      return true;
+    if (toolName === ToolNames.SHELL_EXECUTOR && args && args.command) {
+      const securityEngine = this.toolAgent['toolRegistry'].getContext().securityEngine;
+      return securityEngine.isWriteOperation(args.command);
     }
 
-    if (toolName === ToolNames.SHELL_EXECUTOR || toolName === ToolNames.MULTI_COMMAND) {
-      return result.commandClassification && !result.commandClassification.isReadOnly;
+    if (toolName === ToolNames.MULTI_COMMAND && args && args.commands) {
+      const securityEngine = this.toolAgent['toolRegistry'].getContext().securityEngine;
+      return args.commands.some((cmd: any) =>
+        cmd.command && securityEngine.isWriteOperation(cmd.command)
+      );
     }
 
     return false;
-  }
-
-  private summarizeResult(toolName: string, result: any): string {
-    if (!result.success) {
-      return `ERROR ${toolName}: ${result.error}`;
-    }
-
-    switch (toolName) {
-      case ToolNames.WRITE_FILE:
-        return `Wrote file: ${result.filePath}`;
-      case ToolNames.APPLY_PATCH:
-        return `Applied patch to: ${result.filePath}`;
-      case ToolNames.SHELL_EXECUTOR:
-        return `Executed (${result.commandClassification?.category}): ${result.command}`;
-      default:
-        return `${toolName}: completed`;
-    }
   }
 
   private createTimeoutPromise(timeoutMs: number): Promise<never> {
@@ -240,18 +228,11 @@ Context Guidance: ${JSON.stringify(task.contextGuidance, null, 2)}` : '')
 }
 
 export const createSubAgentTool = (toolAgent: ToolAgent, eventEmitter: UIEventEmitter) => {
-  const startSubAgent = async (args: any): Promise<any> => {
+  const startSubAgent = async (args: any): Promise<TaskExecutionResult> => {
     console.log('Starting sub-agent for specialized task');
     const subAgent = new SubAgent(toolAgent, eventEmitter);
-    return await subAgent.executeTask({
-      ...args,
-      contextGuidance: args.contextGuidance || {
-        focusAreas: ['file_changes', 'errors', 'build_results'],
-        criticalTypes: ['write_operations', 'error_messages'],
-        expectedOutputs: ['modified_files', 'error_details']
-      }
-    });
-  }
+    return await subAgent.executeTask(args);
+  };
 
   return tool({
     description: `Start a specialized sub-agent for focused, autonomous task execution. Use this for:
@@ -264,11 +245,10 @@ The sub-agent will work autonomously until task completion or failure.`,
       taskType: z.string().describe('Type of task (e.g., "file_analysis", "code_refactor", "testing")'),
       description: z.string().describe('Clear description of what the sub-agent should accomplish'),
       context: z.any().optional().describe('Any relevant context or data needed for the task'),
-      contextGuidance: z.object({
-        focusAreas: z.array(z.string()).optional().describe('Areas to pay special attention to'),
-        criticalTypes: z.array(z.string()).optional().describe('Types of information to preserve'),
+      preservationGuidance: z.object({
+        attentionAreas: z.array(z.string()).optional().describe('Areas to pay special attention to'),
         expectedOutputs: z.array(z.string()).optional().describe('Expected output types')
-      }).optional().describe('Guidance on what context information to preserve')
+      }).optional().describe('Guidance on what areas to pay attention to')
     }),
     execute: async (args) => {
       const taskId = `subagent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -277,31 +257,10 @@ The sub-agent will work autonomously until task completion or failure.`,
         type: args.taskType,
         description: args.description,
         context: args.context || {},
-        contextGuidance: args.contextGuidance
+        preservationGuidance: args.preservationGuidance
       };
 
-      try {
-        const result = await startSubAgent(task);
-        return {
-          success: result.success,
-          taskId: result.taskId,
-          output: result.output,
-          iterations: result.iterations,
-          duration: result.duration,
-          criticalInfo: result.criticalInfo,
-          terminateReason: result.terminateReason,
-          error: result.error,
-          message: result.success
-            ? `Sub-agent completed task "${args.taskType}" successfully in ${result.iterations} iterations`
-            : `Sub-agent failed: ${result.error}`
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          message: `Sub-agent execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        };
-      }
+      return await startSubAgent(task);
     }
   });
-}
+};

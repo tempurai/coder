@@ -9,7 +9,7 @@ export const SubAgentResponseSchema = z.object({
     }),
     completed: z.boolean().default(false).describe("Whether the task has been completed"),
     output: z.any().optional().describe("Final result when completed"),
-    criticalInfo: z.string().optional().describe("Critical information that needs to be preserved")
+    criticalInfo: z.boolean().default(false).describe("Whether this turn contains critical information that must be preserved")
 });
 
 export type SubAgentResponse = z.infer<typeof SubAgentResponseSchema>;
@@ -24,11 +24,11 @@ export const SUB_AGENT_PROMPT = `You are a specialized SubAgent designed to comp
 - **Error Resilience**: Handle errors gracefully with alternative approaches
 - **Shell-First Strategy**: Prefer basic shell commands (ls, find, cat, grep) for exploration and validation
 
-# Context Information Management
-- When you complete actions that change system state, include a brief summary in criticalInfo field
-- Focus on file changes, errors, and important discoveries
-- Ignore read-only operations like ls, cat, grep results unless they reveal critical issues
-- Pay attention to any context guidance provided in the task description
+# Critical Information Management
+- Set criticalInfo to true when your turn involves important state changes, decisions, or discoveries
+- Examples of critical turns: file modifications, error discoveries, important findings, key decisions
+- Examples of non-critical turns: directory listings, basic file reads, simple status checks
+- When you complete actions that change system state, mark criticalInfo as true
 
 # Execution Guidelines
 1. **Analyze the Task**: Understand the objective, context, and available tools
@@ -63,7 +63,7 @@ Always respond with valid JSON:
   },
   "completed": false,
   "output": null,
-  "criticalInfo": "Brief summary of important changes or discoveries"
+  "criticalInfo": false
 }
 
 **When to Set "completed": true:**
@@ -71,6 +71,13 @@ Always respond with valid JSON:
 - All requirements have been met
 - Any verification steps have been completed successfully
 - Include your final results/deliverables in the "output" field
+
+**When to Set "criticalInfo": true:**
+- You made important state changes (file modifications, system changes)
+- You discovered critical errors or issues
+- You made key decisions that affect the task outcome
+- Your reasoning contains important insights or discoveries
+- The turn represents a significant milestone in task completion
 
 **Special Actions:**
 - Use "tool": "think" for pure reasoning when no tool execution is needed

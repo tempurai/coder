@@ -38,6 +38,16 @@ export class SecurityPolicyEngine {
         'ps', 'top', 'df', 'du', 'free', 'uname', 'env', 'printenv'
     ]);
 
+    // 添加write操作命令集合
+    private readonly writeOperationCommands = new Set([
+        'cp', 'mv', 'mkdir', 'touch', 'tee', 'dd',
+        'echo', 'printf', 'sed', 'awk',  // 当使用重定向时
+        'git', 'npm', 'yarn', 'pnpm',    // 可能修改文件
+        'node', 'python', 'pip',         // 可能修改文件
+        'make', 'cmake', 'gcc', 'javac', // 编译可能生成文件
+        'tar', 'zip', 'unzip', 'gzip',   // 压缩解压可能修改文件
+    ]);
+
     constructor(
         @inject(TYPES.ConfigLoader) private configLoader: ConfigLoader
     ) { }
@@ -145,12 +155,48 @@ export class SecurityPolicyEngine {
             };
         }
 
+        // 判断是否为write操作
+        if (this.isWriteOperation(commandLine, rootCommand)) {
+            return {
+                isReadOnly: false,
+                category: 'write',
+                operationType: 'write',
+                requiresConfirmation: true
+            };
+        }
+
         return {
             isReadOnly: false,
             category: 'execute',
             operationType: 'execute',
             requiresConfirmation: true
         };
+    }
+
+    // 添加方法判断是否为write操作
+    isWriteOperation(commandLine: string, rootCommand?: string): boolean {
+        const command = rootCommand || this.extractRootCommand(commandLine);
+
+        // 直接的write操作命令
+        if (this.writeOperationCommands.has(command)) {
+            return true;
+        }
+
+        // 检查是否包含重定向操作符，这些通常表示写入文件
+        if (/[>&]|>>?|\|/.test(commandLine)) {
+            return true;
+        }
+
+        // 特殊情况检查
+        if (command === 'echo' && commandLine.includes('>')) {
+            return true;
+        }
+
+        if (command === 'cat' && commandLine.includes('>')) {
+            return true;
+        }
+
+        return false;
     }
 
     private extractRootCommand(commandLine: string): string {

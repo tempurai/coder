@@ -15,6 +15,21 @@ import { InterruptService } from '../../services/InterruptService.js';
 
 export type Messages = Array<{ role: 'system' | 'user' | 'assistant', content: string }>;
 
+export interface TaskExecutionMetadata {
+    createdAt?: number;
+    duration?: number;
+    iterations?: number;
+}
+
+export type TerminateReason = 'FINISHED' | 'ERROR' | 'TIMEOUT' | 'INTERRUPTED' | 'WAITING_FOR_USER';
+
+export interface TaskExecutionResult {
+    terminateReason: TerminateReason;
+    history: Messages;
+    error?: string;
+    metadata?: TaskExecutionMetadata
+}
+
 export interface ToolAgentTextProps {
     messages: Messages;
     tools?: ToolSet;

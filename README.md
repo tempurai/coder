@@ -10,7 +10,6 @@
   <a href="#installation">Installation</a> •
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#architecture">Architecture</a> •
   <a href="#configuration">Configuration</a>
 </p>
 
@@ -227,26 +226,6 @@ The tool automatically creates a configuration directory at `~/.tempurai/`:
   }
 }
 ```
-
-## 📊 Performance
-
-### Optimizations
-
-- **⚡ Streaming Responses**: Real-time AI output with sub-second latency
-- **🧠 Smart Caching**: Intelligent tool result caching
-- **📦 Lazy Loading**: Components loaded on-demand
-- **🗑️ Memory Management**: Automatic session cleanup
-- **🎯 Token Optimization**: Reduced API costs through efficient prompting
-
-### Benchmarks
-
-| Metric                | Performance            |
-| --------------------- | ---------------------- |
-| Cold Start Time       | < 2 seconds            |
-| Simple Query Response | < 1 second             |
-| Memory Usage (Base)   | ~50MB                  |
-| Token Efficiency      | 30% cost reduction     |
-| Concurrent Operations | Up to 5 parallel tools |
 
 ## 🤝 Contributing
 

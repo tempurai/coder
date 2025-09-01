@@ -9,6 +9,7 @@ import { HITLManager } from '../services/HITLManager.js';
 export class ToolNames {
     static readonly SHELL_EXECUTOR = 'shell_executor';
     static readonly MULTI_COMMAND = 'multi_command';
+    static readonly CREATE_FILE = 'create_file';
     static readonly WRITE_FILE = 'write_file';
     static readonly APPLY_PATCH = 'apply_patch';
     static readonly FIND_FILES = 'find_files';

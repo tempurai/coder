@@ -10,6 +10,61 @@ import { ToolExecutionResult } from './ToolRegistry.js';
 
 const execAsync = util.promisify(exec);
 
+export const createCreateFileTool = (context: ToolContext) => tool({
+    description: `Create a new file with content. 
+    Fails if the file already exists to prevent accidental overwrites.
+    Use this tool when you want to ensure you're creating a completely new file.
+    All changes should be made on a task branch.
+    The Git workflow handles versioning, backups, and rollbacks automatically.`,
+    inputSchema: z.object({
+        filePath: z.string().describe('Path to the new file to create'),
+        content: z.string().describe('Content to write to the new file'),
+        toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
+    }),
+    execute: async ({ filePath, content, toolExecutionId }): Promise<ToolExecutionResult> => {
+        const displayTitle = `Create(${filePath})`;
+
+        context.eventEmitter.emit({
+            type: 'tool_execution_started',
+            toolName: ToolNames.CREATE_FILE,
+            args: { filePath, content },
+            toolExecutionId: toolExecutionId!,
+            displayTitle,
+        } as ToolExecutionStartedEvent);
+
+        try {
+            const absolutePath = path.resolve(filePath);
+
+            // Check if file already exists
+            if (fs.existsSync(absolutePath)) {
+                return {
+                    error: `File already exists: ${filePath}`,
+                    displayDetails: `Cannot create file - it already exists: ${filePath}`,
+                };
+            }
+
+            const dir = path.dirname(absolutePath);
+
+            // Create directory if it doesn't exist
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+
+            await fs.promises.writeFile(absolutePath, content, 'utf-8');
+
+            return {
+                result: { filePath: absolutePath, size: content.length },
+                displayDetails: `New file created successfully (${content.length} characters)`,
+            };
+        } catch (error) {
+            return {
+                error: error instanceof Error ? error.message : 'Unknown error',
+                displayDetails: `Failed to create file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            };
+        }
+    }
+});
+
 export const createWriteFileTool = (context: ToolContext) => tool({
     description: `Write content to a file or overwrite an existing file.
     This operation is direct and atomic. All changes should be made on a task branch.
@@ -20,7 +75,7 @@ export const createWriteFileTool = (context: ToolContext) => tool({
         toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
     }),
     execute: async ({ filePath, content, toolExecutionId }): Promise<ToolExecutionResult> => {
-        const displayTitle = `Write(${filePath})`;
+        const displayTitle = `Write(${filePath}, ${content.length > 10 ? content.substring(0, 10) + '...' : content})`;
 
         context.eventEmitter.emit({
             type: 'tool_execution_started',
@@ -257,6 +312,7 @@ export const createFindFilesTool = (context: ToolContext) => tool({
 export const registerFileTools = (registry: any) => {
     const context = registry.getContext();
     registry.registerMultiple([
+        { name: ToolNames.CREATE_FILE, tool: createCreateFileTool(context), category: 'file' },
         { name: ToolNames.WRITE_FILE, tool: createWriteFileTool(context), category: 'file' },
         { name: ToolNames.APPLY_PATCH, tool: createApplyPatchTool(context), category: 'file' },
         { name: ToolNames.FIND_FILES, tool: createFindFilesTool(context), category: 'file' }

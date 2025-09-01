@@ -10,6 +10,7 @@ import { ConfigLoader } from '../config/ConfigLoader.js';
 import { SessionService } from '../services/SessionService.js';
 import type { LanguageModel } from 'ai';
 import { startInkUI } from './InkUI.js';
+import { Logger } from '../utils/Logger.js';
 
 /**
  * 应用启动模式
@@ -35,39 +36,58 @@ export interface LaunchContext {
  */
 export class ApplicationBootstrap {
   private container = getContainer();
+  private logger: Logger;
+
+  constructor() {
+    // 早期初始化logger，确保后续所有操作都能被记录
+    this.logger = this.container.get<Logger>(TYPES.Logger);
+    this.logger.info('Application bootstrap started');
+    
+    // 清理旧日志文件
+    this.logger.cleanupOldLogs();
+  }
 
   /**
    * 验证配置和环境
    * @returns 验证结果
    */
   private async validateEnvironment(): Promise<{ valid: boolean; error?: string }> {
+    this.logger.info('Starting environment validation');
     try {
       const configLoader = this.container.get<ConfigLoader>(TYPES.ConfigLoader);
 
       // 验证配置
       const validation = configLoader.validateConfig();
       if (!validation.isValid) {
+        const error = `配置验证失败: ${validation.errors.join(', ')}`;
+        this.logger.error('Configuration validation failed', { errors: validation.errors });
         return {
           valid: false,
-          error: `配置验证失败: ${validation.errors.join(', ')}`
+          error
         };
       }
 
       // 验证模型配置
       try {
         const model = await this.container.getAsync<LanguageModel>(TYPES.LanguageModel);
+        this.logger.info('Model configuration validated successfully');
       } catch (error) {
+        const errorMessage = `模型配置验证失败: ${error instanceof Error ? error.message : '未知错误'}`;
+        this.logger.error('Model configuration validation failed', { error: error instanceof Error ? error.message : error });
         return {
           valid: false,
-          error: `模型配置验证失败: ${error instanceof Error ? error.message : '未知错误'}`
+          error: errorMessage
         };
       }
 
+      this.logger.info('Environment validation completed successfully');
       return { valid: true };
     } catch (error) {
+      const errorMessage = `环境验证失败: ${error instanceof Error ? error.message : '未知错误'}`;
+      this.logger.error('Environment validation failed', { error: error instanceof Error ? error.message : error });
       return {
         valid: false,
-        error: `环境验证失败: ${error instanceof Error ? error.message : '未知错误'}`
+        error: errorMessage
       };
     }
   }
@@ -77,11 +97,13 @@ export class ApplicationBootstrap {
    */
   async launchCodeEditor(): Promise<void> {
     console.log('🎨 启动代码编辑界面...');
+    this.logger.info('Launching code editor interface');
 
     // 验证环境
     const validation = await this.validateEnvironment();
     if (!validation.valid) {
       console.error('❌', validation.error);
+      this.logger.error('Failed to launch code editor', { reason: validation.error });
       process.exit(1);
     }
 
@@ -90,12 +112,15 @@ export class ApplicationBootstrap {
       const sessionService = await this.container.getAsync<SessionService>(TYPES.InitializedSessionService);
 
       console.log('✅ 新的依赖注入架构已初始化');
+      this.logger.info('Dependency injection architecture initialized successfully');
 
       // 启动InkUI界面
+      this.logger.info('Starting Ink UI interface');
       await startInkUI(sessionService);
 
     } catch (error) {
       console.error('❌ 启动代码编辑界面失败:', error instanceof Error ? error.message : '未知错误');
+      this.logger.error('Failed to launch code editor interface', { error: error instanceof Error ? error.message : error });
       process.exit(1);
     }
   }

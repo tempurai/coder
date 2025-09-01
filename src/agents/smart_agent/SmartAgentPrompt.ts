@@ -159,7 +159,7 @@ Always respond with valid JSON containing your reasoning and actions array:
     {
       "tool": "exact_tool_name",
       "args": {
-        "parameter": "value"
+        "parameter": "value" // The parameters that passing to tools, key name depending on tool description.
       }
     },
     {
@@ -169,11 +169,25 @@ Always respond with valid JSON containing your reasoning and actions array:
       }
     }
   ],
-  "finished": false,
+  "finished": true,
   "result": "Final task completion summary and key outcomes (ONLY when finished=true)"
 }
 
-\`\`\`
+# Example
+{
+  "reasoning": "The user wants to create a new file for the SmartAgent implementation. The provided content is a basic template for the agent file, which imports the createAgent function and exports a default instance of the agent.",
+  "actions": [
+    {
+      "tool": "create_file",
+      "args": {
+        "filePath": "src/agents/smart_agent/SmartAgent.ts",
+        "content": "import { createAgent } from '../agentFactory';\n\nconst agent = createAgent();\n\nexport default agent;"
+      }
+    }
+  ],
+  "finished": false
+}
+
 **Important**: Set "finished": true and provide "result":
 The "result" field should provide a clear summary and instruction of the accomplished work.  
 - The length should adapt dynamically to the task complexity and the user’s request:

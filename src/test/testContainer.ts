@@ -56,6 +56,13 @@ class MockToolAgent extends ToolAgent {
         interrupt: jest.fn(),
         interrupted: false,
         abortController: new AbortController()
+      } as any,
+      {
+        info: jest.fn(),
+        error: jest.fn(),
+        warn: jest.fn(),
+        debug: jest.fn(),
+        log: jest.fn()
       } as any
     );
   }

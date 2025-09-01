@@ -13,6 +13,7 @@ import { registerMemoryTools } from '../../tools/MemoryTools.js';
 import { registerMcpTools } from '../../tools/McpToolLoader.js';
 import { InterruptService } from '../../services/InterruptService.js';
 import { ToolExecutionCompletedEvent } from '../../events/EventTypes.js';
+import { Logger } from '../../utils/Logger.js';
 
 export type Message = { role: 'system' | 'user' | 'assistant', content: string };
 export type Messages = Message[];
@@ -57,13 +58,19 @@ export class ToolAgent {
         @inject(TYPES.Config) private config: Config,
         @inject(TYPES.LanguageModel) private model: LanguageModel,
         @inject(TYPES.ToolRegistry) private toolRegistry: ToolRegistry,
-        @inject(TYPES.InterruptService) private interruptService: InterruptService
+        @inject(TYPES.InterruptService) private interruptService: InterruptService,
+        @inject(TYPES.Logger) private logger: Logger
     ) { }
 
     async initializeAsync(): Promise<void> {
         if (this.isInitialized) return;
+        this.logger.info('Initializing ToolAgent', {}, 'AGENT');
         await this.loadAllTools();
         console.log(`ToolAgent initialized with ${this.toolRegistry.getToolNames().length} tools`);
+        this.logger.info('ToolAgent initialized', { 
+            toolCount: this.toolRegistry.getToolNames().length,
+            tools: this.toolRegistry.getToolNames()
+        }, 'AGENT');
         this.isInitialized = true;
     }
 

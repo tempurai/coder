@@ -159,20 +159,10 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => (
 export const startInkUI = async (sessionService: SessionService) => {
   console.log('Starting InkUI Interface...');
 
-  const originalConsole = {
-    log: console.log,
-    error: console.error,
-    warn: console.warn,
-    info: console.info,
-  };
-
-  const silentConsole = () => {};
-  console.log = silentConsole;
-  console.info = silentConsole;
-  console.warn = silentConsole;
+  // 不再静默console，让logger的拦截继续工作
+  // console重定向由Logger类负责处理
 
   const exitFn = () => {
-    Object.assign(console, originalConsole);
     sessionService.interrupt();
     process.exit(0);
   };

@@ -5,6 +5,7 @@ import { ConfigLoader } from '../config/ConfigLoader.js';
 import { SecurityPolicyEngine } from '../security/SecurityPolicyEngine.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
 import { HITLManager } from '../services/HITLManager.js';
+import { Logger } from '../utils/Logger.js';
 
 export class ToolNames {
     static readonly SHELL_EXECUTOR = 'shell_executor';
@@ -54,7 +55,8 @@ export class ToolRegistry {
         @inject(TYPES.ConfigLoader) configLoader: ConfigLoader,
         @inject(TYPES.SecurityPolicyEngine) securityEngine: SecurityPolicyEngine,
         @inject(TYPES.UIEventEmitter) eventEmitter: UIEventEmitter,
-        @inject(TYPES.HITLManager) hitlManager: HITLManager
+        @inject(TYPES.HITLManager) hitlManager: HITLManager,
+        @inject(TYPES.Logger) private logger: Logger
     ) {
         this.toolContext = {
             configLoader,
@@ -66,6 +68,10 @@ export class ToolRegistry {
 
     register(definition: ToolDefinition): void {
         this.tools.set(definition.name, definition);
+        this.logger.info('Tool registered', { 
+            toolName: definition.name, 
+            category: definition.category
+        }, 'TOOL');
     }
 
     registerMultiple(definitions: ToolDefinition[]): void {

@@ -18,6 +18,7 @@ import { InterruptService } from '../services/InterruptService.js';
 import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SecurityPolicyEngine } from '../security/SecurityPolicyEngine.js';
+import { Logger } from '../utils/Logger.js';
 
 export { TYPES } from './types.js';
 
@@ -54,6 +55,7 @@ export function createContainer(): Container {
   // --- Supporting Services ---
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter).toDynamicValue(() => new UIEventEmitter()).inSingletonScope();
   container.bind<FileWatcherService>(TYPES.FileWatcherService).to(FileWatcherService).inSingletonScope();
+  container.bind<Logger>(TYPES.Logger).to(Logger).inSingletonScope();
 
   // --- Core Agents (in dependency order) ---
 

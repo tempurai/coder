@@ -1,11 +1,13 @@
-import { injectable } from 'inversify';
+import { injectable, inject, optional } from 'inversify';
 import type { LanguageModel } from 'ai';
+import type { Logger } from '../utils/Logger.js';
+import { TYPES } from '../di/types.js';
 
 /**
  * 支持的模型提供商
  * 基于 AI SDK 官方支持 + 主流提供商
  */
-export type ModelProvider = 
+export type ModelProvider =
   | 'openai'           // OpenAI GPT models
   | 'google'           // Google Gemini models  
   | 'anthropic'        // Anthropic Claude models
@@ -140,10 +142,10 @@ interface OpenAICompatibleModelConfig extends BaseModelConfig {
 /**
  * 联合模型配置类型
  */
-export type ModelConfig = 
-  | OpenAIModelConfig 
-  | GoogleModelConfig 
-  | AnthropicModelConfig 
+export type ModelConfig =
+  | OpenAIModelConfig
+  | GoogleModelConfig
+  | AnthropicModelConfig
   | XAIModelConfig
   | DeepSeekModelConfig
   | AzureModelConfig
@@ -158,10 +160,10 @@ export type ModelConfig =
 interface ModelFactory {
   /** 创建模型实例 */
   createModel(config: ModelConfig | string): Promise<LanguageModel>;
-  
+
   /** 获取支持的提供商列表 */
   getSupportedProviders(): ModelProvider[];
-  
+
   /** 解析模型字符串为配置对象 */
   parseModelString(modelString: string): ModelConfig;
 }
@@ -172,41 +174,124 @@ interface ModelFactory {
  */
 @injectable()
 export class DefaultModelFactory implements ModelFactory {
-  
+
+  constructor(
+    @inject(TYPES.Logger) @optional() private logger?: Logger
+  ) { }
+
+  /**
+   * 创建带日志功能的模型包装器
+   */
+  /**
+   * 创建带日志功能的fetch包装器
+   */
+  private createLoggingFetch(provider: string, modelName: string) {
+    if (!this.logger) {
+      return fetch;
+    }
+
+    return async (url: RequestInfo | URL, options?: RequestInit) => {
+      const requestId = Date.now().toString();
+      const startTime = Date.now();
+
+      try {
+        // 记录请求
+        this.logger!.info('Model API request started', {
+          requestId,
+          provider,
+          model: modelName,
+          url: url.toString(),
+          method: options?.method || 'GET',
+          headers: options?.headers,
+          body: options?.body
+        }, 'MODEL');
+
+        // 执行请求
+        const response = await fetch(url, options);
+
+        // 记录响应
+        const duration = Date.now() - startTime;
+        this.logger!.info('Model API request completed', {
+          requestId,
+          provider,
+          model: modelName,
+          status: response.status,
+          statusText: response.statusText,
+          duration,
+          responseHeaders: Object.fromEntries(response.headers.entries()),
+          responseBody: await response.json()
+        }, 'MODEL');
+
+        return response;
+      } catch (error) {
+        // 记录错误
+        const duration = Date.now() - startTime;
+        this.logger!.error('Model API request failed', {
+          requestId,
+          provider,
+          model: modelName,
+          duration,
+          error: error instanceof Error ? error.message : String(error)
+        }, 'MODEL');
+        throw error;
+      }
+    };
+  }
+
+  private wrapModelWithLogging(model: LanguageModel, provider: string, modelName: string): LanguageModel {
+    this.logger?.info('Model instance created', { provider, model: modelName }, 'MODEL');
+    return model;
+  }
+
   /**
    * 创建模型实例
    * @param config - 模型配置对象或模型字符串
    * @returns Promise<LanguageModel> - AI SDK 语言模型实例
    */
   async createModel(config: ModelConfig | string): Promise<LanguageModel> {
-    const modelConfig = typeof config === 'string' 
-      ? this.parseModelString(config) 
+    const modelConfig = typeof config === 'string'
+      ? this.parseModelString(config)
       : config;
 
+    this.logger?.info('Creating model instance', { provider: modelConfig.provider, name: modelConfig.name }, 'MODEL');
+
+    let model: LanguageModel;
     switch (modelConfig.provider) {
       case 'openai':
-        return this.createOpenAIModel(modelConfig as OpenAIModelConfig);
+        model = await this.createOpenAIModel(modelConfig as OpenAIModelConfig);
+        break;
       case 'google':
-        return this.createGoogleModel(modelConfig as GoogleModelConfig);
+        model = await this.createGoogleModel(modelConfig as GoogleModelConfig);
+        break;
       case 'anthropic':
-        return this.createAnthropicModel(modelConfig as AnthropicModelConfig);
+        model = await this.createAnthropicModel(modelConfig as AnthropicModelConfig);
+        break;
       case 'xai':
-        return this.createXAIModel(modelConfig as XAIModelConfig);
+        model = await this.createXAIModel(modelConfig as XAIModelConfig);
+        break;
       case 'deepseek':
-        return this.createDeepSeekModel(modelConfig as DeepSeekModelConfig);
+        model = await this.createDeepSeekModel(modelConfig as DeepSeekModelConfig);
+        break;
       case 'azure':
-        return this.createAzureModel(modelConfig as AzureModelConfig);
+        model = await this.createAzureModel(modelConfig as AzureModelConfig);
+        break;
       case 'aws':
-        return this.createAWSModel(modelConfig as AWSModelConfig);
+        model = await this.createAWSModel(modelConfig as AWSModelConfig);
+        break;
       case 'openrouter':
-        return this.createOpenRouterModel(modelConfig as OpenRouterModelConfig);
+        model = await this.createOpenRouterModel(modelConfig as OpenRouterModelConfig);
+        break;
       case 'ollama':
-        return this.createOllamaModel(modelConfig as OllamaModelConfig);
+        model = await this.createOllamaModel(modelConfig as OllamaModelConfig);
+        break;
       case 'openai-compatible':
-        return this.createOpenAICompatibleModel(modelConfig as OpenAICompatibleModelConfig);
+        model = await this.createOpenAICompatibleModel(modelConfig as OpenAICompatibleModelConfig);
+        break;
       default:
         throw new Error(`Unsupported model provider: ${(modelConfig as { provider: string }).provider}`);
     }
+
+    return this.wrapModelWithLogging(model, modelConfig.provider, modelConfig.name);
   }
 
   /**
@@ -216,7 +301,7 @@ export class DefaultModelFactory implements ModelFactory {
   getSupportedProviders(): ModelProvider[] {
     return [
       'openai',
-      'google', 
+      'google',
       'anthropic',
       'xai',
       'deepseek',
@@ -237,7 +322,7 @@ export class DefaultModelFactory implements ModelFactory {
   parseModelString(modelString: string): ModelConfig {
     if (modelString.includes(':')) {
       const parts = modelString.split(':');
-      
+
       if (parts.length === 2) {
         const [provider, name] = parts;
         return {
@@ -284,7 +369,7 @@ export class DefaultModelFactory implements ModelFactory {
     if (modelName.includes('deepseek')) {
       return 'deepseek';
     }
-    
+
     // 默认为 OpenAI（向后兼容）
     return 'openai';
   }
@@ -310,7 +395,15 @@ export class DefaultModelFactory implements ModelFactory {
       process.env.OPENAI_BASE_URL = config.baseUrl;
     }
 
-    return openai(config.name) as LanguageModel;
+    // 创建带日志的OpenAI实例
+    const { createOpenAI } = await import('@ai-sdk/openai');
+    const openaiWithLogging = createOpenAI({
+      apiKey,
+      baseURL: config.baseUrl,
+      fetch: this.createLoggingFetch('openai', config.name)
+    });
+
+    return openaiWithLogging(config.name) as LanguageModel;
   }
 
   /**
@@ -319,15 +412,19 @@ export class DefaultModelFactory implements ModelFactory {
    * @returns Promise<LanguageModel> - Google 语言模型实例
    */
   private async createGoogleModel(config: GoogleModelConfig): Promise<LanguageModel> {
-    const { google } = await import('@ai-sdk/google');
+    const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
 
     const apiKey = config.apiKey || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       throw new Error('Google AI API key not found. Please set it in config or GOOGLE_AI_API_KEY environment variable.');
     }
 
-    process.env.GOOGLE_AI_API_KEY = apiKey;
-    return google(config.name) as LanguageModel;
+    const googleWithLogging = createGoogleGenerativeAI({
+      apiKey,
+      fetch: this.createLoggingFetch('google', config.name)
+    });
+
+    return googleWithLogging(config.name) as LanguageModel;
   }
 
   /**
@@ -336,15 +433,19 @@ export class DefaultModelFactory implements ModelFactory {
    * @returns Promise<LanguageModel> - Anthropic 语言模型实例
    */
   private async createAnthropicModel(config: AnthropicModelConfig): Promise<LanguageModel> {
-    const { anthropic } = await import('@ai-sdk/anthropic');
+    const { createAnthropic } = await import('@ai-sdk/anthropic');
 
     const apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new Error('Anthropic API key not found. Please set it in config or ANTHROPIC_API_KEY environment variable.');
     }
 
-    process.env.ANTHROPIC_API_KEY = apiKey;
-    return anthropic(config.name) as LanguageModel;
+    const anthropicWithLogging = createAnthropic({
+      apiKey,
+      fetch: this.createLoggingFetch('anthropic', config.name)
+    });
+
+    return anthropicWithLogging(config.name) as LanguageModel;
   }
 
   /**
@@ -353,7 +454,6 @@ export class DefaultModelFactory implements ModelFactory {
    * @returns Promise<LanguageModel> - xAI 语言模型实例
    */
   private async createXAIModel(config: XAIModelConfig): Promise<LanguageModel> {
-    // xAI 使用 OpenAI 兼容接口
     const { createOpenAI } = await import('@ai-sdk/openai');
 
     const apiKey = config.apiKey || process.env.XAI_API_KEY;
@@ -363,7 +463,8 @@ export class DefaultModelFactory implements ModelFactory {
 
     const xaiProvider = createOpenAI({
       apiKey: apiKey,
-      baseURL: 'https://api.x.ai/v1'
+      baseURL: 'https://api.x.ai/v1',
+      fetch: this.createLoggingFetch('xai', config.name)
     });
 
     return xaiProvider(config.name) as LanguageModel;
@@ -375,7 +476,6 @@ export class DefaultModelFactory implements ModelFactory {
    * @returns Promise<LanguageModel> - DeepSeek 语言模型实例
    */
   private async createDeepSeekModel(config: DeepSeekModelConfig): Promise<LanguageModel> {
-    // DeepSeek 使用 OpenAI 兼容接口
     const { createOpenAI } = await import('@ai-sdk/openai');
 
     const apiKey = config.apiKey || process.env.DEEPSEEK_API_KEY;
@@ -385,7 +485,8 @@ export class DefaultModelFactory implements ModelFactory {
 
     const deepseekProvider = createOpenAI({
       apiKey: apiKey,
-      baseURL: 'https://api.deepseek.com/v1'
+      baseURL: 'https://api.deepseek.com/v1',
+      fetch: this.createLoggingFetch('deepseek', config.name)
     });
 
     return deepseekProvider(config.name) as LanguageModel;
@@ -410,6 +511,7 @@ export class DefaultModelFactory implements ModelFactory {
       headers: {
         'api-key': apiKey,
       },
+      fetch: this.createLoggingFetch('azure', config.name)
     });
 
     return azureProvider(config.name) as LanguageModel;
@@ -444,6 +546,7 @@ export class DefaultModelFactory implements ModelFactory {
         'HTTP-Referer': config.options?.siteUrl || 'https://tempurai.ai',
         'X-Title': config.options?.siteName || 'Tempurai',
       },
+      fetch: this.createLoggingFetch('openrouter', config.name)
     });
 
     return openRouterProvider(config.name) as LanguageModel;
@@ -475,6 +578,7 @@ export class DefaultModelFactory implements ModelFactory {
     const compatibleProvider = createOpenAI({
       apiKey: apiKey,
       baseURL: config.baseUrl,
+      fetch: this.createLoggingFetch('openai-compatible', config.name)
     });
 
     return compatibleProvider(config.name) as LanguageModel;

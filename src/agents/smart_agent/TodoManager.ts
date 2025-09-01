@@ -158,10 +158,10 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
         }
 
         console.log(`Added todo: ${todo.title} (${todo.priority} priority)`);
-        this.eventEmitter.emit({
-            type: 'text_generated',
-            text: `Todo "${todo.title}" added`
-        } as TextGeneratedEvent);
+        // this.eventEmitter.emit({
+        //     type: 'text_generated',
+        //     text: `Todo "${todo.title}" added`
+        // } as TextGeneratedEvent);
 
         return {
             success: true,

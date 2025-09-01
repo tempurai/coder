@@ -147,7 +147,7 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
           </Text>
         </Box>
       )}
-      <Box borderStyle='round' borderColor={currentTheme.colors.ui.border} paddingX={1} paddingY={0}>
+      <Box borderStyle='round' borderColor={currentTheme.colors.ui.border} paddingX={1}>
         <Box alignItems='center' width='100%'>
           <Text color={currentTheme.colors.text.primary}>{'> '}</Text>
           <Text color={currentTheme.colors.text.primary}>

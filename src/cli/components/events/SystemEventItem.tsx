@@ -18,7 +18,7 @@ export const SystemEventItem: React.FC<SystemEventItemProps> = ({ event }) => {
         const userEvent = event as any;
         return {
           indicatorType: 'user' as const,
-          content: `> ${userEvent.input}`,
+          content: `${userEvent.input}`,
         };
 
       case 'task_completed':

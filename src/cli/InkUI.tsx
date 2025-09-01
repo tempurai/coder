@@ -78,13 +78,13 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 
       {/* Processing indicator */}
       {isProcessing && (
-        <Box marginY={1}>
+        <Box marginBottom={1}>
           <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
         </Box>
       )}
 
       {/* Input area */}
-      <Box marginTop={1} paddingTop={1}>
+      <Box>
         <DynamicInput onSubmit={handleSubmit} isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} />
       </Box>
     </Box>

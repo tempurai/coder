@@ -260,7 +260,7 @@ const DiffRenderer: React.FC<DiffRendererProps> = ({ diffContent }) => {
                 {/* Change indicator and content with background */}
                 <Text color={textColor} backgroundColor={backgroundColor}>
                   {prefix}
-                  {'   '}
+                  {'    '}
                   {line.content}
                 </Text>
               </Box>

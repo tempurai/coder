@@ -4,7 +4,7 @@ import { TYPES } from '../di/types.js';
 import { TEST_CONFIG } from './config.js';
 import { mockAISDK } from './MockAISDK.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
-import { SimpleAgent } from '../agents/tool_agent/ToolAgent.js';
+import { ToolAgent } from '../agents/tool_agent/ToolAgent.js';
 import { SessionService } from '../services/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/index.js';
@@ -33,13 +33,31 @@ class MockConfigLoader extends ConfigLoader {
   }
 }
 
-// Mock SimpleAgent for tests
-class MockSimpleAgent extends SimpleAgent {
+// Mock ToolAgent for tests  
+class MockToolAgent extends ToolAgent {
   constructor() {
-    // Create a simple mock language model
-    const mockModel = mockAISDK.createMockModel() as unknown as LanguageModel;
-    const mockConfigLoader = new MockConfigLoader();
-    super(TEST_CONFIG, mockModel, mockConfigLoader);
+    // This will be called by the DI container, so we need to use super() with proper types
+    // The actual dependencies will be injected by the container
+    super(
+      TEST_CONFIG,
+      mockAISDK.createMockModel() as unknown as LanguageModel,
+      {
+        getToolNames: jest.fn().mockReturnValue([]),
+        getTools: jest.fn().mockReturnValue([]),
+        register: jest.fn(),
+        registerMultiple: jest.fn(),
+        getContext: jest.fn().mockReturnValue({})
+      } as any,
+      {
+        getAbortSignal: jest.fn().mockReturnValue(new AbortController().signal),
+        isInterrupted: jest.fn().mockReturnValue(false),
+        startTask: jest.fn(),
+        stopTask: jest.fn(),
+        interrupt: jest.fn(),
+        interrupted: false,
+        abortController: new AbortController()
+      } as any
+    );
   }
 
   override async initializeAsync(customContext?: string): Promise<void> {
@@ -90,8 +108,28 @@ export function createTestContainer(): Container {
   // Bind mock config loader
   container.bind<ConfigLoader>(TYPES.ConfigLoader).to(MockConfigLoader).inSingletonScope();
 
+  // Bind mock ToolRegistry
+  container.bind(TYPES.ToolRegistry).toDynamicValue(() => ({
+    getToolNames: jest.fn().mockReturnValue([]),
+    getTools: jest.fn().mockReturnValue([]),
+    register: jest.fn(),
+    registerMultiple: jest.fn(),
+    getContext: jest.fn().mockReturnValue({})
+  })).inSingletonScope();
+
+  // Bind mock InterruptService
+  container.bind(TYPES.InterruptService).toDynamicValue(() => ({
+    getAbortSignal: jest.fn().mockReturnValue(new AbortController().signal),
+    isInterrupted: jest.fn().mockReturnValue(false),
+    startTask: jest.fn(),
+    stopTask: jest.fn(),
+    interrupt: jest.fn(),
+    interrupted: false,
+    abortController: new AbortController()
+  })).inSingletonScope();
+
   // Bind mock agent
-  container.bind<SimpleAgent>(TYPES.SimpleAgent).to(MockSimpleAgent).inSingletonScope();
+  container.bind<ToolAgent>(TYPES.ToolAgent).to(MockToolAgent).inSingletonScope();
 
   // Bind file watcher service
   container.bind<FileWatcherService>(TYPES.FileWatcherService).to(FileWatcherService).inSingletonScope();
@@ -125,35 +163,25 @@ export function createTestContainer(): Container {
     }) as any;
   });
 
-  container.bind(TYPES.ReActAgentFactory).toDynamicValue(() => {
-    return async (agent: SimpleAgent) => ({
-      runTask: jest.fn().mockResolvedValue({
-        success: true,
-        duration: 1000,
-        iterations: 3,
-        summary: 'Mock task completed successfully',
-        error: undefined
-      })
-    });
-  });
-
   // SessionService factory
   container.bind(TYPES.InitializedSessionService).toDynamicValue(() => {
     return async () => {
-      const agent = container.get<SimpleAgent>(TYPES.SimpleAgent);
+      const agent = container.get<ToolAgent>(TYPES.ToolAgent);
       const fileWatcher = container.get<FileWatcherService>(TYPES.FileWatcherService);
       const config = container.get<any>(TYPES.Config);
       const snapshotManagerFactory = container.get(TYPES.SnapshotManagerFactory) as any;
-      const reactAgentFactory = container.get(TYPES.ReActAgentFactory) as any;
       const eventEmitter = container.get<UIEventEmitter>(TYPES.UIEventEmitter);
+      const interruptService = container.get(TYPES.InterruptService) as any;
+      const toolRegistry = container.get(TYPES.ToolRegistry) as any;
 
       const sessionService = new SessionService(
         agent,
         fileWatcher,
         config,
         snapshotManagerFactory,
-        reactAgentFactory,
-        eventEmitter
+        eventEmitter,
+        interruptService,
+        toolRegistry
       );
 
       // Initialize the agent

@@ -1,7 +1,20 @@
-import { saveMemoryTool } from '../tools/MemoryTools.js';
+import { createSaveMemoryTool } from '../tools/MemoryTools.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { EventEmitter } from 'events';
+
+// Mock ToolContext
+const mockContext = {
+  hitlManager: {
+    requestConfirmation: jest.fn().mockResolvedValue(true)
+  },
+  eventEmitter: {
+    emit: jest.fn()
+  }
+};
+
+const saveMemoryTool = createSaveMemoryTool(mockContext as any);
 
 describe('Memory Tools', () => {
   const testDir = path.join(os.tmpdir(), 'tempurai-memory-test');
@@ -38,8 +51,7 @@ describe('Memory Tools', () => {
     test('should create new memory file with first entry', async () => {
       const result = await (saveMemoryTool as any).execute({
         content: 'Our test command is npm run test:ci',
-        category: 'Commands',
-        ask_permission: false // Skip permission for testing
+        category: 'Commands'
       }, {}) as any;
 
       expect(result.success).toBe(true);
@@ -79,8 +91,7 @@ Previous command info
       // Add new memory
       const result = await (saveMemoryTool as any).execute({
         content: 'New important information about build process',
-        category: 'Build',
-        ask_permission: false
+        category: 'Build'
       }, {}) as any;
 
       expect(result.success).toBe(true);
@@ -96,8 +107,7 @@ Previous command info
 
     test('should handle memory without category', async () => {
       const result = await (saveMemoryTool as any).execute({
-        content: 'General important fact',
-        ask_permission: false
+        content: 'General important fact'
       }, {}) as any;
 
       expect(result.success).toBe(true);
@@ -116,8 +126,7 @@ Previous command info
       expect(fs.existsSync(testDir)).toBe(false);
 
       const result = await (saveMemoryTool as any).execute({
-        content: 'Test content',
-        ask_permission: false
+        content: 'Test content'
       }, {}) as any;
 
       expect(result.success).toBe(true);
@@ -132,8 +141,7 @@ Previous command info
       });
 
       const result = await (saveMemoryTool as any).execute({
-        content: 'Test content',
-        ask_permission: false
+        content: 'Test content'
       }, {}) as any;
 
       expect(result.success).toBe(false);
@@ -156,8 +164,7 @@ Previous command info
       fs.mkdirSync(projectTempuraiDir, { recursive: true });
 
       const result = await (saveMemoryTool as any).execute({
-        content: 'Project-specific memory',
-        ask_permission: false
+        content: 'Project-specific memory'
       }, {}) as any;
 
       expect(result.success).toBe(true);
@@ -173,8 +180,7 @@ Previous command info
 
     test('should include timestamp in memory entry', async () => {
       const result = await (saveMemoryTool as any).execute({
-        content: 'Timestamped memory',
-        ask_permission: false
+        content: 'Timestamped memory'
       }, {}) as any;
 
       expect(result.success).toBe(true);
@@ -207,8 +213,7 @@ Previous command info
       for (const cmd of commands) {
         const result = await (saveMemoryTool as any).execute({
           content: cmd.content,
-          category: cmd.category,
-          ask_permission: false
+          category: cmd.category
         }, {}) as any;
         expect(result.success).toBe(true);
       }

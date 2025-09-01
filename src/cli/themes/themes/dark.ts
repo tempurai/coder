@@ -2,7 +2,7 @@ import { ThemeConfig } from '../ThemeTypes.js';
 
 export const darkTheme: ThemeConfig = {
   name: 'dark',
-  displayName: 'VS Code Dark+',
+  displayName: 'VS Code Dark+ (CLI tuned)',
   type: 'dark',
   colors: {
     primary: '#4FC1FF',
@@ -15,24 +15,24 @@ export const darkTheme: ThemeConfig = {
     info: '#75BEFF',
 
     text: {
-      primary: '#CCCCCC',
-      secondary: '#9CDCFE',
-      muted: '#6A9955',
-      inverse: '#1E1E1E',
+      primary: '#FAFAFA', // 主文字，接近白
+      secondary: '#E9E9E9', // 次级文字，冷灰蓝
+      muted: '#A0A0A0', // 中性灰
+      inverse: '#1E1E1E', // 反转用
     },
 
     background: {
       primary: '#1E1E1E',
-      secondary: '#252526',
-      tertiary: '#2D2D30',
+      secondary: '#242526',
+      tertiary: '#2B2B2F',
     },
 
     ui: {
-      border: '#3C3C3C',
-      separator: '#2D2D30',
-      highlight: '#264F78',
-      selection: '#264F78',
-      progress: '#0E639C',
+      border: '#5A5A5A',
+      separator: '#464646',
+      highlight: '#347FD1',
+      selection: '#347FD1',
+      progress: '#1292E5',
     },
 
     tools: {
@@ -56,32 +56,29 @@ export const darkTheme: ThemeConfig = {
       function: '#DCDCAA',
       property: '#9CDCFE',
       punctuation: '#D4D4D4',
-      comment: '#6A9955',
+      comment: '#7F8C8D',
       number: '#B5CEA8',
       operator: '#D4D4D4',
     },
 
     diff: {
-      added: '#28A745',
-      removed: '#DC3545',
-      modified: '#FFC107',
-      context: '#6C757D',
-      lineNumber: '#858585',
+      added: '#2FBF71',
+      removed: '#E24A4A',
+      modified: '#FFC83A',
+      context: '#8A8F98',
+      lineNumber: '#909090',
     },
 
     semantic: {
-      functionCall: '#4FC1FF',
+      functionCall: '#e7f8f2',
       parameter: '#9CDCFE',
-      result: '#D4D4D4',
-      metadata: '#6A9955',
-      indicator: '#858585',
+      result: '#E0E0E0',
+      metadata: '#8A8A8A',
+      indicator: '#8D8D8D',
     },
   },
 
-  fonts: {
-    mono: true,
-    size: 'medium',
-  },
+  fonts: { mono: true, size: 'medium' },
 
   layout: {
     compact: false,
@@ -89,8 +86,5 @@ export const darkTheme: ThemeConfig = {
     showProgress: true,
   },
 
-  animation: {
-    enabled: true,
-    speed: 'normal',
-  },
+  animation: { enabled: true, speed: 'normal' },
 };

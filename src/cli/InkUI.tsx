@@ -8,6 +8,7 @@ import { DynamicInput } from './components/DynamicInput.js';
 import { useSessionEvents } from './hooks/useSessionEvents.js';
 import { EventItem } from './components/EventItem.js';
 import { ProgressIndicator } from './components/ProgressIndicator.js';
+import { UIEvent, UIEventType } from '../events/index.js';
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
 
@@ -22,7 +23,7 @@ interface MainUIProps {
 
 const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
   const { currentTheme } = useTheme();
-  const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation } = useSessionEvents(sessionService);
+  const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions } = useSessionEvents(sessionService);
 
   const handleSubmit = useCallback(
     async (userInput: string) => {
@@ -32,24 +33,47 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
     [sessionService, isProcessing, pendingConfirmation],
   );
 
-  const mask = (val?: string) => (val ? `${val.slice(0, 6)}…${val.slice(-4)}` : 'not set');
+  // 分离静态和动态内容
+  const { staticEvents, dynamicEvents } = React.useMemo(() => {
+    const dynamic: UIEvent[] = [];
+    const static_events: UIEvent[] = [];
 
-  // 将静态内容定义为JSX元素数组，供<Static>组件使用
+    events.forEach((event) => {
+      // 检查是否是正在进行的工具执行
+      if (event.type === UIEventType.ToolExecutionStarted) {
+        const toolEvent = event as any;
+        const executionStatus = toolEvent.executionStatus || 'started';
+
+        if (executionStatus === 'started' || executionStatus === 'executing') {
+          dynamic.push(event);
+        } else {
+          static_events.push(event);
+        }
+      } else {
+        // 其他事件直接放入静态区域
+        static_events.push(event);
+      }
+    });
+
+    return {
+      staticEvents: static_events,
+      dynamicEvents: dynamic,
+    };
+  }, [events]);
+
   const staticItems = [
-    // 1. 静态的欢迎和环境信息Box
-    <Box key='header' flexDirection='column' marginY={1} paddingX={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
+    // Header
+    <Box key='header' flexDirection='column' marginBottom={1} paddingX={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
       <Text color={currentTheme.colors.info}>Welcome to Tempurai Code Assistant</Text>
       <Text> </Text>
       <Text>Type /help for help, /status for your current setup</Text>
       <Text color={currentTheme.colors.text.muted}>cwd: {process.cwd()}</Text>
       <Text color={currentTheme.colors.text.muted}>Detail mode: {detailMode ? 'enabled' : 'disabled'} (Ctrl+R to toggle)</Text>
       <Text> </Text>
-      <Text>Environment:</Text>
-      <Text color={currentTheme.colors.text.muted}>API Key: {mask(process.env.API_KEY || process.env.OPENAI_API_KEY)}</Text>
-      <Text color={currentTheme.colors.text.muted}>API Base URL: {process.env.API_BASE_URL || process.env.OPENAI_BASE_URL || 'not set'}</Text>
+      <Text color={currentTheme.colors.text.muted}>AI Can make mistake, please make sure to check the output carefully.</Text>
     </Box>,
 
-    // 2. 静态的任务标题
+    // Title
     <Box key='title'>
       <Text color={currentTheme.colors.ui.highlight}>{'⚡'} </Text>
       <Text color={currentTheme.colors.primary} bold>
@@ -57,9 +81,9 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
       </Text>
     </Box>,
 
-    // 3. 将所有历史事件映射为EventItem组件
-    ...events.map((event, index) => (
-      <Box key={event.id} marginY={1}>
+    // Static events
+    ...staticEvents.map((event, index) => (
+      <Box key={event.id || `static-${index}`}>
         <EventItem event={event} index={index} detailMode={detailMode} />
       </Box>
     )),
@@ -67,16 +91,24 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, detailMode }) => {
 
   return (
     <Box flexDirection='column'>
-      {/* <Static>区域：渲染所有历史内容，永不重绘 */}
+      {/* Static content */}
       <Static items={staticItems}>{(item) => item}</Static>
 
-      {/* 动态区域：只在需要时渲染，位于所有静态内容下方 */}
+      {/* Dynamic content */}
+      {dynamicEvents.map((event, index) => (
+        <Box key={event.id || `dynamic-${index}`}>
+          <EventItem event={event} index={index} detailMode={detailMode} />
+        </Box>
+      ))}
+
+      {/* Processing indicator */}
       {isProcessing && (
-        <Box marginY={1}>
+        <Box>
           <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
         </Box>
       )}
 
+      {/* Input */}
       <Box marginTop={1} paddingTop={1}>
         <DynamicInput onSubmit={handleSubmit} isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} />
       </Box>
@@ -158,8 +190,8 @@ export const startInkUI = async (sessionService: SessionService) => {
     warn: console.warn,
     info: console.info,
   };
-  const silentConsole = () => {};
 
+  const silentConsole = () => {};
   console.log = silentConsole;
   console.info = silentConsole;
   console.warn = silentConsole;

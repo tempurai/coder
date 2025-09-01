@@ -3,8 +3,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { z } from 'zod';
 import { tool } from 'ai';
-import { ToolContext, ToolNames } from './ToolRegistry.js';
-import { ToolOutputEvent } from '../events/EventTypes.js';
+import { ToolContext, ToolExecutionResult, ToolNames } from './ToolRegistry.js';
+
 
 export const createSaveMemoryTool = (context: ToolContext) => tool({
   description: `Save important information to long-term memory. Use this tool when you need to remember critical facts, preferences, or instructions that should persist across conversations. 
@@ -17,7 +17,7 @@ Examples of when to use this:
     content: z.string().describe('The important information to save to memory'),
     category: z.string().optional().describe('Optional category/section for organizing the memory (e.g., "Commands", "Preferences", "Project Info")'),
   }),
-  execute: async ({ content, category }) => {
+  execute: async ({ content, category }): Promise<ToolExecutionResult> => {
     try {
       const previewContent = content.substring(0, 150);
       const categoryInfo = category ? ` (Category: ${category})` : '';
@@ -31,9 +31,8 @@ Examples of when to use this:
 
       if (!confirmed) {
         return {
-          success: false,
           error: 'Memory save cancelled by user',
-          message: 'Memory save operation was cancelled'
+          displayDetails: 'Memory save operation was cancelled',
         };
       }
 
@@ -67,25 +66,19 @@ Examples of when to use this:
 
       fs.writeFileSync(contextFilePath, updatedContent, 'utf8');
 
-      context.eventEmitter.emit({
-        type: 'tool_output',
-        toolName: ToolNames.SAVE_MEMORY,
-        content: `Memory saved to ${path.basename(contextFilePath)} in category: ${category || 'General'}`
-      } as ToolOutputEvent);
-
       return {
-        success: true,
-        message: 'Information successfully saved to long-term memory',
-        file_path: contextFilePath,
-        category: category || 'General',
-        content: content,
-        timestamp: timestamp
+        result: {
+          file_path: contextFilePath,
+          category: category || 'General',
+          content: content,
+          timestamp: timestamp,
+        },
+        displayDetails: `Memory saved to ${path.basename(contextFilePath)} in category: ${category || 'General'}`,
       };
     } catch (error) {
       return {
-        success: false,
         error: `Failed to save memory: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        message: 'Could not save information to long-term memory'
+        displayDetails: 'Could not save information to long-term memory',
       };
     }
   }
@@ -111,6 +104,5 @@ function getContextFilePath(): string {
 
 export const registerMemoryTools = (registry: any) => {
   const context = registry.getContext();
-
   registry.register({ name: ToolNames.SAVE_MEMORY, tool: createSaveMemoryTool(context), category: 'memory' });
 };

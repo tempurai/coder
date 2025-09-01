@@ -124,7 +124,7 @@ export class MCPToolLoader {
       }),
       execute: async (params: any): Promise<any> => {
         const { toolExecutionId, ...actualParams } = params;
-        const displayTitle = `${serverName}.${toolInfo.name}(${Object.keys(actualParams).length} params)`;
+        const displayTitle = `${serverName}.${toolInfo.name}(...${Object.keys(actualParams).length} params)`;
 
         // Create context if available (for event emission)
         let context: ToolContext | null = null;
@@ -146,7 +146,6 @@ export class MCPToolLoader {
             args: actualParams,
             toolExecutionId: toolExecutionId!,
             displayTitle,
-            displayStatus: 'Executing MCP tool...',
           } as ToolExecutionStartedEvent);
         }
 

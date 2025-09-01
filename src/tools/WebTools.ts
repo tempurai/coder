@@ -4,27 +4,24 @@ import { URL } from 'url';
 import { z } from 'zod';
 import { tool } from 'ai';
 import { ToolContext, ToolNames } from './ToolRegistry.js';
-import { ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../events/EventTypes.js';
+import { ToolExecutionStartedEvent, ToolExecutionOutputEvent } from '../events/EventTypes.js';
+import { ToolExecutionResult } from './ToolRegistry.js';
+
+interface WebSearchResult extends ToolExecutionResult {
+  summary: string;
+  sources: WebSearchSource[];
+}
+
+interface UrlFetchResult extends ToolExecutionResult {
+  content: string;
+  title?: string;
+  truncated: boolean;
+}
 
 interface WebSearchSource {
   title: string;
   url: string;
   content?: string;
-}
-
-interface WebSearchResult {
-  summary: string;
-  sources: WebSearchSource[];
-  success: boolean;
-  error?: string;
-}
-
-interface UrlFetchResult {
-  content: string;
-  title?: string;
-  truncated: boolean;
-  success: boolean;
-  error?: string;
 }
 
 interface TavilyResponse {
@@ -46,6 +43,7 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
       return true;
     }
+
     const hostname = parsedUrl.hostname.toLowerCase();
     const localHostnames = [
       'localhost',
@@ -55,9 +53,11 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
       'ip6-localhost',
       'ip6-loopback'
     ];
+
     if (localHostnames.includes(hostname)) {
       return true;
     }
+
     const privateIpPatterns = [
       /^10\./,
       /^172\.(1[6-9]|2[0-9]|3[01])\./,
@@ -73,11 +73,13 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
       /^fc00:/i,
       /^fd00:/i
     ];
+
     for (const pattern of privateIpPatterns) {
       if (pattern.test(hostname)) {
         return true;
       }
     }
+
     if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
       const parts = hostname.split('.').map(Number);
       if (parts.some(part => part > 255 || part < 0)) {
@@ -90,6 +92,7 @@ const isPrivateOrLocalUrl = (url: string): boolean => {
         return true;
       }
     }
+
     return false;
   } catch (error) {
     return true;
@@ -113,56 +116,42 @@ export const createWebSearchTool = (context: ToolContext) => tool({
     toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
   }),
   execute: async ({ query, toolExecutionId }): Promise<WebSearchResult> => {
-    const displayTitle = `Search(${query})`;
+    const displayTitle = `WebSearch(${query})`;
 
-    // Emit start event
     context.eventEmitter.emit({
       type: 'tool_execution_started',
       toolName: ToolNames.WEB_SEARCH,
       toolExecutionId: toolExecutionId!,
       displayTitle,
-      displayStatus: 'Searching...',
     } as ToolExecutionStartedEvent);
 
     try {
       if (!query || typeof query !== 'string' || query.trim().length === 0) {
-        context.eventEmitter.emit({
-          type: 'tool_execution_completed',
-          toolName: ToolNames.WEB_SEARCH,
-          success: false,
-          error: 'Search query cannot be empty',
-          toolExecutionId: toolExecutionId!,
-          displayTitle,
-          displaySummary: 'Empty query provided',
-        } as ToolExecutionCompletedEvent);
-
         return {
+          error: 'Search query cannot be empty',
           summary: '',
           sources: [],
-          success: false,
-          error: 'Search query cannot be empty'
+          displayDetails: 'Empty query provided',
         };
       }
 
       const tavilyApiKey = context.configLoader.getConfig().tools.tavilyApiKey;
       if (!tavilyApiKey) {
-        context.eventEmitter.emit({
-          type: 'tool_execution_completed',
-          toolName: ToolNames.WEB_SEARCH,
-          success: false,
-          error: 'Web search functionality is disabled',
-          toolExecutionId: toolExecutionId!,
-          displayTitle,
-          displaySummary: 'Web search disabled (no API key)',
-        } as ToolExecutionCompletedEvent);
-
         return {
+          error: 'Web search functionality is disabled. Please add "tavilyApiKey" field to config file ~/.tempurai/config.json to enable this functionality. You can get a free API Key at https://tavily.com.',
           summary: '',
           sources: [],
-          success: false,
-          error: 'Web search functionality is disabled. Please add "tavilyApiKey" field to config file ~/.tempurai/config.json to enable this functionality. You can get a free API Key at https://tavily.com.'
+          displayDetails: 'Web search disabled (no API key)',
         };
       }
+
+      // Send progress update
+      context.eventEmitter.emit({
+        type: 'tool_execution_output',
+        toolExecutionId: toolExecutionId!,
+        content: `Searching for: ${query}`,
+        phase: 'searching',
+      } as ToolExecutionOutputEvent);
 
       const response = await request('https://api.tavily.com/search', {
         method: 'POST',
@@ -181,21 +170,11 @@ export const createWebSearchTool = (context: ToolContext) => tool({
       });
 
       if (response.statusCode !== 200) {
-        context.eventEmitter.emit({
-          type: 'tool_execution_completed',
-          toolName: ToolNames.WEB_SEARCH,
-          success: false,
-          error: `Tavily API request failed: HTTP ${response.statusCode}`,
-          toolExecutionId: toolExecutionId!,
-          displayTitle,
-          displaySummary: `API request failed (${response.statusCode})`,
-        } as ToolExecutionCompletedEvent);
-
         return {
+          error: `Tavily API request failed: HTTP ${response.statusCode}`,
           summary: '',
           sources: [],
-          success: false,
-          error: `Tavily API request failed: HTTP ${response.statusCode}`
+          displayDetails: `API request failed (${response.statusCode})`,
         };
       }
 
@@ -206,38 +185,21 @@ export const createWebSearchTool = (context: ToolContext) => tool({
         content: result.content
       }));
 
-      context.eventEmitter.emit({
-        type: 'tool_execution_completed',
-        toolName: ToolNames.WEB_SEARCH,
-        success: true,
-        result: { summary: data.answer, sources },
-        toolExecutionId: toolExecutionId!,
-        displayTitle,
-        displaySummary: `Found ${sources.length} sources`,
-        displayDetails: sources.map((s, i) => `${i + 1}. ${s.title} - ${s.url}`).join('\n'),
-      } as ToolExecutionCompletedEvent);
+      const sourcesList = sources.map((s, i) => `${i + 1}. ${s.title} - ${s.url}`).join('\n');
 
       return {
+        result: { summary: data.answer, sources },
         summary: data.answer || 'No relevant information found',
         sources,
-        success: true
+        displayDetails: `Found ${sources.length} sources:\n${sourcesList}`,
       };
-    } catch (error) {
-      context.eventEmitter.emit({
-        type: 'tool_execution_completed',
-        toolName: ToolNames.WEB_SEARCH,
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        toolExecutionId: toolExecutionId!,
-        displayTitle,
-        displaySummary: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      } as ToolExecutionCompletedEvent);
 
+    } catch (error) {
       return {
+        error: `Search error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         summary: '',
         sources: [],
-        success: false,
-        error: `Search error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        displayDetails: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -254,56 +216,41 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
     const requestTimeout = webToolsConfig.requestTimeout ?? 15000;
     const maxContentLength = webToolsConfig.maxContentLength ?? 10000;
     const userAgent = webToolsConfig.userAgent ?? 'Tempurai-Bot/1.0 (Security-Enhanced)';
+    const displayTitle = `UrlFetch(${url})`;
 
-    const displayTitle = `Fetch(${url})`;
-
-    // Emit start event
     context.eventEmitter.emit({
       type: 'tool_execution_started',
       toolName: ToolNames.URL_FETCH,
       toolExecutionId: toolExecutionId!,
       displayTitle,
-      displayStatus: 'Fetching...',
     } as ToolExecutionStartedEvent);
 
     try {
       if (!url || typeof url !== 'string') {
-        context.eventEmitter.emit({
-          type: 'tool_execution_completed',
-          toolName: ToolNames.URL_FETCH,
-          success: false,
-          error: 'Invalid URL parameter',
-          toolExecutionId: toolExecutionId!,
-          displayTitle,
-          displaySummary: 'Invalid URL provided',
-        } as ToolExecutionCompletedEvent);
-
         return {
+          error: 'Invalid URL parameter',
           content: '',
-          success: false,
           truncated: false,
-          error: 'Invalid URL parameter'
+          displayDetails: 'Invalid URL provided',
         };
       }
 
       if (isPrivateOrLocalUrl(url)) {
-        context.eventEmitter.emit({
-          type: 'tool_execution_completed',
-          toolName: ToolNames.URL_FETCH,
-          success: false,
-          error: 'Access to local or private network addresses is prohibited for security reasons',
-          toolExecutionId: toolExecutionId!,
-          displayTitle,
-          displaySummary: 'Security blocked (private network)',
-        } as ToolExecutionCompletedEvent);
-
         return {
+          error: 'Access to local or private network addresses is prohibited for security reasons. This restriction prevents Server-Side Request Forgery (SSRF) attacks.',
           content: '',
-          success: false,
           truncated: false,
-          error: 'Access to local or private network addresses is prohibited for security reasons. This restriction prevents Server-Side Request Forgery (SSRF) attacks.'
+          displayDetails: 'Security blocked (private network)',
         };
       }
+
+      // Send progress update
+      context.eventEmitter.emit({
+        type: 'tool_execution_output',
+        toolExecutionId: toolExecutionId!,
+        content: `Fetching: ${url}`,
+        phase: 'fetching',
+      } as ToolExecutionOutputEvent);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
@@ -330,82 +277,42 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
         clearTimeout(timeoutId);
 
         if (response.statusCode !== 200) {
-          context.eventEmitter.emit({
-            type: 'tool_execution_completed',
-            toolName: ToolNames.URL_FETCH,
-            success: false,
-            error: `HTTP request failed: ${response.statusCode}`,
-            toolExecutionId: toolExecutionId!,
-            displayTitle,
-            displaySummary: `HTTP ${response.statusCode} error`,
-          } as ToolExecutionCompletedEvent);
-
           return {
+            error: `HTTP request failed: ${response.statusCode} - ${response.statusCode === 403 ? 'Access denied' : response.statusCode === 404 ? 'Page not found' : response.statusCode === 500 ? 'Internal server error' : 'Request failed'}`,
             content: '',
-            success: false,
             truncated: false,
-            error: `HTTP request failed: ${response.statusCode} - ${response.statusCode === 403 ? 'Access denied' : response.statusCode === 404 ? 'Page not found' : response.statusCode === 500 ? 'Internal server error' : 'Request failed'}`
+            displayDetails: `HTTP ${response.statusCode} error`,
           };
         }
 
         const contentLength = response.headers['content-length'];
         if (contentLength && parseInt(contentLength as string) > maxContentLength * 2) {
-          context.eventEmitter.emit({
-            type: 'tool_execution_completed',
-            toolName: ToolNames.URL_FETCH,
-            success: false,
-            error: `Response content too large (${contentLength} bytes)`,
-            toolExecutionId: toolExecutionId!,
-            displayTitle,
-            displaySummary: `Content too large (${contentLength} bytes)`,
-          } as ToolExecutionCompletedEvent);
-
           return {
+            error: `Response content too large (${contentLength} bytes), exceeds safety limit. Please try accessing a smaller page.`,
             content: '',
-            success: false,
             truncated: false,
-            error: `Response content too large (${contentLength} bytes), exceeds safety limit. Please try accessing a smaller page.`
+            displayDetails: `Content too large (${contentLength} bytes)`,
           };
         }
 
         html = await response.body.text();
-
         if (html.length > maxContentLength * 3) {
-          context.eventEmitter.emit({
-            type: 'tool_execution_completed',
-            toolName: ToolNames.URL_FETCH,
-            success: false,
-            error: `Web page content too large (${html.length} characters)`,
-            toolExecutionId: toolExecutionId!,
-            displayTitle,
-            displaySummary: `Content too large (${html.length} chars)`,
-          } as ToolExecutionCompletedEvent);
-
           return {
+            error: `Web page content too large (${html.length} characters), exceeds processing limit. Please try accessing a smaller page.`,
             content: '',
-            success: false,
             truncated: false,
-            error: `Web page content too large (${html.length} characters), exceeds processing limit. Please try accessing a smaller page.`
+            displayDetails: `Content too large (${html.length} chars)`,
           };
         }
+
       } catch (requestError) {
         clearTimeout(timeoutId);
         if (controller.signal.aborted) {
-          context.eventEmitter.emit({
-            type: 'tool_execution_completed',
-            toolName: ToolNames.URL_FETCH,
-            success: false,
-            error: `Request timeout (${requestTimeout}ms)`,
-            toolExecutionId: toolExecutionId!,
-            displayTitle,
-            displaySummary: 'Request timeout',
-          } as ToolExecutionCompletedEvent);
-
           return {
+            error: `Request timeout (${requestTimeout}ms). Website response time too long, please try again later.`,
             content: '',
-            success: false,
             truncated: false,
-            error: `Request timeout (${requestTimeout}ms). Website response time too long, please try again later.`
+            displayDetails: 'Request timeout',
           };
         }
 
@@ -416,17 +323,6 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
         } else if (error.message.includes('ECONNREFUSED')) {
           errorMsg = 'Connection refused';
         }
-
-        context.eventEmitter.emit({
-          type: 'tool_execution_completed',
-          toolName: ToolNames.URL_FETCH,
-          success: false,
-          error: errorMsg,
-          toolExecutionId: toolExecutionId!,
-          displayTitle,
-          displaySummary: errorMsg,
-        } as ToolExecutionCompletedEvent);
-
         throw requestError;
       }
 
@@ -459,39 +355,20 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
 
       const { content: finalContent, truncated } = truncateContent(textContent, maxContentLength);
 
-      context.eventEmitter.emit({
-        type: 'tool_execution_completed',
-        toolName: ToolNames.URL_FETCH,
-        success: true,
-        result: { content: finalContent, title, truncated },
-        toolExecutionId: toolExecutionId!,
-        displayTitle,
-        displaySummary: `Fetched ${finalContent.length} characters${truncated ? ' (truncated)' : ''}${title ? ` - ${title}` : ''}`,
-        displayDetails: finalContent.substring(0, 500) + (finalContent.length > 500 ? '...' : ''),
-      } as ToolExecutionCompletedEvent);
-
       return {
+        result: { content: finalContent, title, truncated },
         content: finalContent,
         title,
-        success: true,
-        truncated
+        truncated,
+        displayDetails: finalContent.substring(0, 500) + (finalContent.length > 500 ? '...' : ''),
       };
-    } catch (error) {
-      context.eventEmitter.emit({
-        type: 'tool_execution_completed',
-        toolName: ToolNames.URL_FETCH,
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        toolExecutionId: toolExecutionId!,
-        displayTitle,
-        displaySummary: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      } as ToolExecutionCompletedEvent);
 
+    } catch (error) {
       return {
+        error: `Failed to fetch URL content: ${error instanceof Error ? error.message : 'Unknown error'}`,
         content: '',
-        success: false,
         truncated: false,
-        error: `Failed to fetch URL content: ${error instanceof Error ? error.message : 'Unknown error'}`
+        displayDetails: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   }
@@ -499,7 +376,6 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
 
 export const registerWebTools = (registry: any) => {
   const context = registry.getContext();
-
   registry.registerMultiple([
     { name: ToolNames.WEB_SEARCH, tool: createWebSearchTool(context), category: 'web' },
     { name: ToolNames.URL_FETCH, tool: createUrlFetchTool(context), category: 'web' }

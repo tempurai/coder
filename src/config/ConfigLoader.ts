@@ -4,7 +4,8 @@ import * as os from 'os';
 import { injectable } from 'inversify';
 import { McpServerConfig } from '../tools/McpToolLoader.js';
 import deepmergeFactory from '@fastify/deepmerge';
-import { ModelProvider, ModelConfig } from '../models/index.js';
+import { ConfigInitializer } from './ConfigInitializer.js';
+import { ModelConfig } from '../models/index.js';
 
 
 interface ShellExecutorSecurityConfig {
@@ -167,27 +168,7 @@ export class ConfigLoader {
     let globalConfig: Partial<Config> | null = null;
     let projectConfig: Partial<Config> | null = null;
 
-    // Skip initializer in test environment to avoid import.meta issues
-    let initializer: any = null;
-    if (process.env.NODE_ENV !== 'test') {
-      try {
-        const ConfigInitializerModule = require('./ConfigInitializer.js');
-        initializer = new ConfigInitializerModule.ConfigInitializer();
-      } catch (error) {
-        console.warn('Could not load ConfigInitializer:', error);
-        // Create a minimal mock for production use
-        initializer = {
-          globalConfigExists: () => fs.existsSync(this.globalConfigFilePath),
-          projectConfigExists: () => fs.existsSync(this.projectConfigFilePath)
-        };
-      }
-    } else {
-      // In test environment, use simple existence checks
-      initializer = {
-        globalConfigExists: () => fs.existsSync(this.globalConfigFilePath),
-        projectConfigExists: () => fs.existsSync(this.projectConfigFilePath)
-      };
-    }
+    const initializer = new ConfigInitializer();
 
     // 加载全局配置
     if (initializer.globalConfigExists()) {

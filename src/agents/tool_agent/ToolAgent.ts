@@ -12,6 +12,7 @@ import { registerGitTools } from '../../tools/GitTools.js';
 import { registerMemoryTools } from '../../tools/MemoryTools.js';
 import { registerMcpTools } from '../../tools/McpToolLoader.js';
 import { InterruptService } from '../../services/InterruptService.js';
+import { ToolExecutionCompletedEvent } from '../../events/EventTypes.js';
 
 export type Message = { role: 'system' | 'user' | 'assistant', content: string };
 export type Messages = Message[];
@@ -156,20 +157,49 @@ export class ToolAgent {
             throw new Error('Tool execution interrupted by user');
         }
 
+        const toolExecutionId = generateToolExecutionId(toolName);
+        const argsWithId = { ...args, toolExecutionId };
+        const startTime = Date.now();
+
         try {
-            // Generate unique tool execution ID
-            const toolExecutionId = generateToolExecutionId(toolName);
-
-            // Add toolExecutionId to args
-            const argsWithId = { ...args, toolExecutionId };
-
             const result = await (tool as any).execute(argsWithId);
+            const duration = Date.now() - startTime;
+
+            this.toolRegistry.getContext().eventEmitter.emit({
+                type: 'tool_execution_completed',
+                toolName,
+                success: !result?.error,
+                error: result?.error,
+                result: result?.result,
+                duration,
+                toolExecutionId,
+                displayDetails: result?.displayDetails || result?.error,
+            } as ToolExecutionCompletedEvent);
+
+            if (result?.error) {
+                throw new Error(result.error);
+            }
+
             console.log(`Tool executed successfully: ${toolName}`);
-            return result;
+            return result?.result || result;
+
         } catch (error) {
-            const errorMessage = `Tool '${toolName}' execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-            console.error(errorMessage);
-            throw new Error(errorMessage);
+            const duration = Date.now() - startTime;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+            // 外层异常捕获
+            this.toolRegistry.getContext().eventEmitter.emit({
+                type: 'tool_execution_completed',
+                toolName,
+                success: false,
+                error: errorMessage,
+                duration,
+                toolExecutionId,
+                displayDetails: errorMessage,
+            } as ToolExecutionCompletedEvent);
+
+            console.error(`Tool '${toolName}' execution failed: ${errorMessage}`);
+            throw error;
         }
     }
 

@@ -5,7 +5,8 @@ import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
 import { ToolContext, ToolNames } from './ToolRegistry.js';
-import { ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../events/EventTypes.js';
+import { ToolExecutionStartedEvent } from '../events/EventTypes.js';
+import { ToolExecutionResult } from './ToolRegistry.js';
 
 const execAsync = util.promisify(exec);
 
@@ -18,17 +19,15 @@ export const createWriteFileTool = (context: ToolContext) => tool({
         content: z.string().describe('Content to write to the file'),
         toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
     }),
-    execute: async ({ filePath, content, toolExecutionId }) => {
+    execute: async ({ filePath, content, toolExecutionId }): Promise<ToolExecutionResult> => {
         const displayTitle = `Write(${filePath})`;
 
-        // Emit start event
         context.eventEmitter.emit({
             type: 'tool_execution_started',
             toolName: ToolNames.WRITE_FILE,
             args: { filePath, content },
             toolExecutionId: toolExecutionId!,
             displayTitle,
-            displayStatus: 'Writing file...',
         } as ToolExecutionStartedEvent);
 
         try {
@@ -41,37 +40,14 @@ export const createWriteFileTool = (context: ToolContext) => tool({
 
             await fs.promises.writeFile(absolutePath, content, 'utf-8');
 
-            context.eventEmitter.emit({
-                type: 'tool_execution_completed',
-                toolName: ToolNames.WRITE_FILE,
-                success: true,
-                result: { filePath: absolutePath, size: content.length },
-                toolExecutionId: toolExecutionId!,
-                displayTitle,
-                displaySummary: `File written successfully (${content.length} characters)`,
-            } as ToolExecutionCompletedEvent);
-
             return {
-                success: true,
-                filePath: absolutePath,
-                size: content.length,
-                message: `File '${filePath}' written successfully`
+                result: { filePath: absolutePath, size: content.length },
+                displayDetails: `File written successfully (${content.length} characters)`,
             };
         } catch (error) {
-            context.eventEmitter.emit({
-                type: 'tool_execution_completed',
-                toolName: ToolNames.WRITE_FILE,
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
-                toolExecutionId: toolExecutionId!,
-                displayTitle,
-                displaySummary: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            } as ToolExecutionCompletedEvent);
-
             return {
-                success: false,
-                filePath,
-                error: error instanceof Error ? error.message : 'Unknown error'
+                error: error instanceof Error ? error.message : 'Unknown error',
+                displayDetails: `Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
     }
@@ -87,36 +63,24 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
         backup: z.boolean().default(true).describe('Create backup before applying patch'),
         toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
     }),
-    execute: async ({ filePath, patchContent, backup, toolExecutionId }) => {
+    execute: async ({ filePath, patchContent, backup, toolExecutionId }): Promise<ToolExecutionResult> => {
         const displayTitle = `Update(${filePath})`;
 
-        // Emit start event
         context.eventEmitter.emit({
             type: 'tool_execution_started',
             toolName: ToolNames.APPLY_PATCH,
             args: { filePath, patchContent, backup },
             toolExecutionId: toolExecutionId!,
             displayTitle,
-            displayStatus: 'Applying patch...',
         } as ToolExecutionStartedEvent);
 
         try {
             const absolutePath = path.resolve(filePath);
-            if (!fs.existsSync(absolutePath)) {
-                context.eventEmitter.emit({
-                    type: 'tool_execution_completed',
-                    toolName: ToolNames.APPLY_PATCH,
-                    success: false,
-                    error: `File not found: ${filePath}`,
-                    toolExecutionId: toolExecutionId!,
-                    displayTitle,
-                    displaySummary: `File not found: ${filePath}`,
-                } as ToolExecutionCompletedEvent);
 
+            if (!fs.existsSync(absolutePath)) {
                 return {
-                    success: false,
-                    filePath,
-                    error: `File not found: ${filePath}`
+                    error: `File not found: ${filePath}`,
+                    displayDetails: `File not found: ${filePath}`,
                 };
             }
 
@@ -134,70 +98,34 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
                 const { stdout, stderr } = await execAsync(patchCmd);
                 await fs.promises.unlink(tempPatchFile);
 
-                // Count changes in patch
                 const addedLines = (patchContent.match(/^\+[^+]/gm) || []).length;
                 const removedLines = (patchContent.match(/^-[^-]/gm) || []).length;
 
-                context.eventEmitter.emit({
-                    type: 'tool_execution_completed',
-                    toolName: ToolNames.APPLY_PATCH,
-                    success: true,
-                    result: { stdout: stdout.trim(), stderr: stderr.trim(), changesApplied: addedLines + removedLines },
-                    toolExecutionId: toolExecutionId!,
-                    displayTitle,
-                    displaySummary: `Updated ${filePath} with ${addedLines} additions and ${removedLines} removals`,
-                    displayDetails: patchContent,
-                } as ToolExecutionCompletedEvent);
-
                 return {
-                    success: true,
-                    filePath: absolutePath,
-                    stdout: stdout.trim(),
-                    stderr: stderr.trim(),
-                    changesApplied: addedLines + removedLines,
-                    message: `Patch applied successfully`,
-                };
-            } catch (patchError) {
-                const result = await applyPatchManually(absolutePath, patchContent, backup, context);
-                await fs.promises.unlink(tempPatchFile);
-
-                context.eventEmitter.emit({
-                    type: 'tool_execution_completed',
-                    toolName: ToolNames.APPLY_PATCH,
-                    success: result.success,
-                    result,
-                    error: result.success ? undefined : "error",
-                    toolExecutionId: toolExecutionId!,
-                    displayTitle,
-                    displaySummary: result.success
-                        ? `Updated ${filePath} with ${result.changesApplied} changes (manual parser)`
-                        : `Failed`,
+                    result: {
+                        stdout: stdout.trim(),
+                        stderr: stderr.trim(),
+                        changesApplied: addedLines + removedLines,
+                    },
                     displayDetails: patchContent,
-                } as ToolExecutionCompletedEvent);
+                };
 
+            } catch (patchError) {
+                const result = await applyPatchManually(absolutePath, patchContent, backup);
+                await fs.promises.unlink(tempPatchFile);
                 return result;
             }
-        } catch (error) {
-            context.eventEmitter.emit({
-                type: 'tool_execution_completed',
-                toolName: ToolNames.APPLY_PATCH,
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
-                toolExecutionId: toolExecutionId!,
-                displayTitle,
-                displaySummary: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            } as ToolExecutionCompletedEvent);
 
+        } catch (error) {
             return {
-                success: false,
-                filePath,
-                error: error instanceof Error ? error.message : 'Unknown error'
+                error: error instanceof Error ? error.message : 'Unknown error',
+                displayDetails: `Failed to apply patch: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
     }
 });
 
-async function applyPatchManually(filePath: string, patchContent: string, backup: boolean, context: ToolContext) {
+async function applyPatchManually(filePath: string, patchContent: string, backup: boolean): Promise<ToolExecutionResult> {
     function detectNewline(text: string): '\n' | '\r\n' {
         const idx = text.indexOf('\r\n');
         return idx !== -1 ? '\r\n' : '\n';
@@ -212,76 +140,84 @@ async function applyPatchManually(filePath: string, patchContent: string, backup
         changes: Change[];
     }
 
-    const originalContent = await fs.promises.readFile(filePath, 'utf-8');
-    const eol = detectNewline(originalContent);
-    const originalLines = originalContent.split(/\r?\n/);
-    const patchLines = patchContent.split(/\r?\n/);
+    try {
+        const originalContent = await fs.promises.readFile(filePath, 'utf-8');
+        const eol = detectNewline(originalContent);
+        const originalLines = originalContent.split(/\r?\n/);
+        const patchLines = patchContent.split(/\r?\n/);
 
-    const hunks: Hunk[] = [];
-    let currentHunk: Hunk | null = null;
+        const hunks: Hunk[] = [];
+        let currentHunk: Hunk | null = null;
 
-    for (const line of patchLines) {
-        if (line.startsWith('@@')) {
-            const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/);
-            if (match) {
-                currentHunk = {
-                    oldStart: parseInt(match[1], 10) - 1,
-                    oldCount: parseInt(match[2] || '1', 10),
-                    newStart: parseInt(match[3], 10) - 1,
-                    newCount: parseInt(match[4] || '1', 10),
-                    changes: [],
-                };
-                hunks.push(currentHunk);
-            } else {
-                currentHunk = null;
-            }
-        } else if (currentHunk && (line.startsWith('+') || line.startsWith('-') || line.startsWith(' '))) {
-            currentHunk.changes.push({
-                type: line[0] === '+' ? 'add' : line[0] === '-' ? 'delete' : 'context',
-                content: line.substring(1),
-            });
-        }
-    }
-
-    let modifiedLines = [...originalLines];
-    let lineOffset = 0;
-
-    for (const hunk of hunks) {
-        let pos = hunk.oldStart + lineOffset;
-
-        for (const change of hunk.changes) {
-            if (change.type === 'context') {
-                if (modifiedLines[pos] !== change.content) {
-                    throw new Error(`Context mismatch near line ${pos + 1}: expected "${change.content}" but got "${modifiedLines[pos]}"`);
+        for (const line of patchLines) {
+            if (line.startsWith('@@')) {
+                const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/);
+                if (match) {
+                    currentHunk = {
+                        oldStart: parseInt(match[1], 10) - 1,
+                        oldCount: parseInt(match[2] || '1', 10),
+                        newStart: parseInt(match[3], 10) - 1,
+                        newCount: parseInt(match[4] || '1', 10),
+                        changes: [],
+                    };
+                    hunks.push(currentHunk);
+                } else {
+                    currentHunk = null;
                 }
-                pos++;
-            } else if (change.type === 'delete') {
-                if (modifiedLines[pos] !== change.content) {
-                    throw new Error(`Delete mismatch near line ${pos + 1}: expected "${change.content}" but got "${modifiedLines[pos]}"`);
-                }
-                modifiedLines.splice(pos, 1);
-                lineOffset--;
-            } else if (change.type === 'add') {
-                modifiedLines.splice(pos, 0, change.content);
-                lineOffset++;
-                pos++;
+            } else if (currentHunk && (line.startsWith('+') || line.startsWith('-') || line.startsWith(' '))) {
+                currentHunk.changes.push({
+                    type: line[0] === '+' ? 'add' : line[0] === '-' ? 'delete' : 'context',
+                    content: line.substring(1),
+                });
             }
         }
+
+        let modifiedLines = [...originalLines];
+        let lineOffset = 0;
+
+        for (const hunk of hunks) {
+            let pos = hunk.oldStart + lineOffset;
+
+            for (const change of hunk.changes) {
+                if (change.type === 'context') {
+                    if (modifiedLines[pos] !== change.content) {
+                        throw new Error(`Context mismatch near line ${pos + 1}: expected "${change.content}" but got "${modifiedLines[pos]}"`);
+                    }
+                    pos++;
+                } else if (change.type === 'delete') {
+                    if (modifiedLines[pos] !== change.content) {
+                        throw new Error(`Delete mismatch near line ${pos + 1}: expected "${change.content}" but got "${modifiedLines[pos]}"`);
+                    }
+                    modifiedLines.splice(pos, 1);
+                    lineOffset--;
+                } else if (change.type === 'add') {
+                    modifiedLines.splice(pos, 0, change.content);
+                    lineOffset++;
+                    pos++;
+                }
+            }
+        }
+
+        if (backup) {
+            const backupPath = `${filePath}.backup.${Date.now()}`;
+            await fs.promises.copyFile(filePath, backupPath);
+        }
+
+        await fs.promises.writeFile(filePath, modifiedLines.join(eol), 'utf-8');
+
+        return {
+            result: {
+                changesApplied: hunks.length,
+            },
+            displayDetails: patchContent,
+        };
+
+    } catch (error) {
+        return {
+            error: error instanceof Error ? error.message : 'Manual patch application failed',
+            displayDetails: `Manual patch failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        };
     }
-
-    if (backup) {
-        const backupPath = `${filePath}.backup.${Date.now()}`;
-        await fs.promises.copyFile(filePath, backupPath);
-    }
-
-    await fs.promises.writeFile(filePath, modifiedLines.join(eol), 'utf-8');
-
-    return {
-        success: true,
-        filePath,
-        message: 'Patch applied successfully (manual parser)',
-        changesApplied: hunks.length,
-    };
 }
 
 export const createFindFilesTool = (context: ToolContext) => tool({
@@ -290,58 +226,29 @@ export const createFindFilesTool = (context: ToolContext) => tool({
         pattern: z.string().describe('File name pattern to search for'),
         toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
     }),
-    execute: async ({ pattern, toolExecutionId }) => {
-        const displayTitle = `Search(pattern: "${pattern}")`;
+    execute: async ({ pattern, toolExecutionId }): Promise<ToolExecutionResult> => {
+        const displayTitle = `SearchFile(pattern: "${pattern}")`;
 
-        // Emit start event
         context.eventEmitter.emit({
             type: 'tool_execution_started',
             toolName: ToolNames.FIND_FILES,
             args: { pattern },
             toolExecutionId: toolExecutionId!,
             displayTitle,
-            displayStatus: 'Searching...',
         } as ToolExecutionStartedEvent);
 
         try {
             const { stdout } = await execAsync(`find . -name "*${pattern}*" -type f`);
             const files = stdout.trim().split('\n').filter(f => f.length > 0);
 
-            context.eventEmitter.emit({
-                type: 'tool_execution_completed',
-                toolName: ToolNames.FIND_FILES,
-                success: true,
-                result: { files, count: files.length, pattern },
-                toolExecutionId: toolExecutionId!,
-                displayTitle,
-                displaySummary: `Found ${files.length} files matching '${pattern}'`,
-                displayDetails: files.join('\n'),
-            } as ToolExecutionCompletedEvent);
-
             return {
-                success: true,
-                files,
-                count: files.length,
-                pattern,
-                message: `Found ${files.length} files matching '${pattern}'`
+                result: { files, count: files.length, pattern },
+                displayDetails: files.join('\n') || 'No files found',
             };
         } catch (error) {
-            context.eventEmitter.emit({
-                type: 'tool_execution_completed',
-                toolName: ToolNames.FIND_FILES,
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
-                toolExecutionId: toolExecutionId!,
-                displayTitle,
-                displaySummary: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            } as ToolExecutionCompletedEvent);
-
             return {
-                success: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
-                files: [],
-                count: 0,
-                pattern
+                displayDetails: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
     },
@@ -349,7 +256,6 @@ export const createFindFilesTool = (context: ToolContext) => tool({
 
 export const registerFileTools = (registry: any) => {
     const context = registry.getContext();
-
     registry.registerMultiple([
         { name: ToolNames.WRITE_FILE, tool: createWriteFileTool(context), category: 'file' },
         { name: ToolNames.APPLY_PATCH, tool: createApplyPatchTool(context), category: 'file' },

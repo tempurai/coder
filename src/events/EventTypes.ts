@@ -37,7 +37,6 @@ export interface ToolExecutionStartedEvent extends BaseEvent {
   iteration?: number;
   toolExecutionId: string;
   displayTitle: string;
-  displayStatus: string;
 }
 
 export interface ToolExecutionCompletedEvent extends BaseEvent {
@@ -49,16 +48,14 @@ export interface ToolExecutionCompletedEvent extends BaseEvent {
   duration?: number;
   iteration?: number;
   toolExecutionId: string;
-  displayTitle: string;
-  displaySummary: string;
   displayDetails?: string;
 }
 
-export interface ToolOutputEvent extends BaseEvent {
-  type: 'tool_output';
-  toolName: string;
+export interface ToolExecutionOutputEvent extends BaseEvent {
+  type: 'tool_execution_output';
+  toolExecutionId: string;
   content: string;
-  iteration?: number;
+  phase?: string;
 }
 
 export interface SystemInfoEvent extends BaseEvent {
@@ -120,7 +117,7 @@ export type UIEvent =
   | ThoughtGeneratedEvent
   | ToolExecutionStartedEvent
   | ToolExecutionCompletedEvent
-  | ToolOutputEvent
+  | ToolExecutionOutputEvent
   | SystemInfoEvent
   | UserInputEvent
   | SessionStatsEvent
@@ -132,17 +129,22 @@ export type UIEventType = UIEvent['type'];
 export const UIEventType = {
   TaskStart: 'task_started' as const,
   TaskComplete: 'task_completed' as const,
+
   ThoughtGenerated: 'thought_generated' as const,
+  TextGenerated: 'text_generated' as const,
+
   ToolExecutionStarted: 'tool_execution_started' as const,
   ToolExecutionCompleted: 'tool_execution_completed' as const,
-  ToolOutput: 'tool_output' as const,
+  ToolExecutionOutput: 'tool_execution_output' as const,
+
   SystemInfo: 'system_info' as const,
   UserInput: 'user_input' as const,
+
   SessionStats: 'session_stats' as const,
   SnapshotCreated: 'snapshot_created' as const,
+
   ToolConfirmationRequest: 'tool_confirmation_request' as const,
   ToolConfirmationResponse: 'tool_confirmation_response' as const,
-  TextGenerated: 'text_generated' as const,
 } as const;
 
 export interface EventListener<T extends UIEvent = UIEvent> {

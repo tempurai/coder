@@ -21,7 +21,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ type, isActive
         };
       case 'assistant':
         return {
-          symbol: '*',
+          symbol: '●',
           color: currentTheme.colors.info,
         };
       case 'tool':
@@ -36,12 +36,12 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ type, isActive
         };
       case 'system':
         return {
-          symbol: '•',
+          symbol: '●',
           color: currentTheme.colors.semantic.indicator,
         };
       default:
         return {
-          symbol: '•',
+          symbol: '●',
           color: currentTheme.colors.text.muted,
         };
     }

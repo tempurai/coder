@@ -38,6 +38,12 @@ export interface ToolDefinition {
     description?: string;
 }
 
+export interface ToolExecutionResult {
+    result?: any;
+    error?: string;
+    displayDetails?: string;
+}
+
 @injectable()
 export class ToolRegistry {
     private tools = new Map<string, ToolDefinition>();

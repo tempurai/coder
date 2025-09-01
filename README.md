@@ -283,14 +283,6 @@ We welcome contributions! Here's how to get started:
 
 5. **Submit Pull Request**
 
-### Code Standards
-
-- ✅ TypeScript strict mode
-- ✅ ESLint + Prettier formatting
-- ✅ Comprehensive test coverage
-- ✅ Dependency injection patterns
-- ✅ Event-driven architecture
-
 ### Bug Reports
 
 Please use GitHub Issues with:
@@ -300,20 +292,9 @@ Please use GitHub Issues with:
 - Expected vs actual behavior
 - Error logs/screenshots
 
-## 📈 Roadmap
-
-### Upcoming Features
-
-- 🔮 **Visual Studio Code Extension**
-- 🧪 **Advanced Testing Tools**
-- 🌐 **Web Interface Option**
-- 🔄 **Git Workflow Automation**
-- 🎯 **Project Template Generation**
-- 🤖 **Custom Agent Development**
-
 ## 📄 License
 
-Apache-2.0 License - see [LICENSE](LICENSE) for details.
+Apache-2.0 License with amendments - see [LICENSE](LICENSE) for details.
 
 ## 🙏 Acknowledgments
 

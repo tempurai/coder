@@ -18,28 +18,37 @@ const saveMemoryTool = createSaveMemoryTool(mockContext as any);
 
 describe('Memory Tools', () => {
   const testDir = path.join(os.tmpdir(), 'tempurai-memory-test');
-  const testContextFile = path.join(testDir, '.tempurai', '.tempurai.md');
+  const testGlobalContextFile = path.join(testDir, '.tempurai', '.tempurai.md');
+  const testProjectDir = '/tmp/fake-project';
+  const testProjectTempuraiDir = path.join(testProjectDir, '.tempurai');
+  const testProjectContextFile = path.join(testProjectTempuraiDir, 'directives.md');
 
   beforeEach(() => {
-    // Clean up test directory
+    // Clean up test directories
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
+    if (fs.existsSync(testProjectTempuraiDir)) {
+      fs.rmSync(testProjectTempuraiDir, { recursive: true, force: true });
+    }
     
-    // Mock os.homedir to use test directory
+    // Mock os.homedir to use test directory  
     jest.spyOn(os, 'homedir').mockReturnValue(testDir);
     
-    // Mock process.cwd to avoid project-local context interference
-    jest.spyOn(process, 'cwd').mockReturnValue('/tmp/fake-project');
+    // Mock process.cwd to use a directory where .tempurai doesn't exist initially
+    jest.spyOn(process, 'cwd').mockReturnValue(testProjectDir);
     
     // Ensure the test directory exists
     fs.mkdirSync(testDir, { recursive: true });
   });
 
   afterEach(() => {
-    // Clean up test directory
+    // Clean up test directories
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    if (fs.existsSync(testProjectTempuraiDir)) {
+      fs.rmSync(testProjectTempuraiDir, { recursive: true, force: true });
     }
     
     // Restore mocks
@@ -54,14 +63,15 @@ describe('Memory Tools', () => {
         category: 'Commands'
       }, {}) as any;
 
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Information successfully saved to long-term memory');
-      expect(result.category).toBe('Commands');
-      expect(result.content).toBe('Our test command is npm run test:ci');
+      expect(result.error).toBeUndefined();
+      expect(result.result).toBeDefined();
+      expect(result.displayDetails).toBe('Memory saved to .tempurai.md in category: Commands');
+      expect(result.result.category).toBe('Commands');
+      expect(result.result.content).toBe('Our test command is npm run test:ci');
 
       // Check file was created with correct content
-      expect(fs.existsSync(testContextFile)).toBe(true);
-      const content = fs.readFileSync(testContextFile, 'utf8');
+      expect(fs.existsSync(testGlobalContextFile)).toBe(true);
+      const content = fs.readFileSync(testGlobalContextFile, 'utf8');
       
       expect(content).toContain('## Long-term Memory');
       expect(content).toContain('### Commands');
@@ -85,8 +95,8 @@ This section contains important information.
 Previous command info
 `;
       
-      fs.mkdirSync(path.dirname(testContextFile), { recursive: true });
-      fs.writeFileSync(testContextFile, initialContent, 'utf8');
+      fs.mkdirSync(path.dirname(testGlobalContextFile), { recursive: true });
+      fs.writeFileSync(testGlobalContextFile, initialContent, 'utf8');
 
       // Add new memory
       const result = await (saveMemoryTool as any).execute({
@@ -94,10 +104,11 @@ Previous command info
         category: 'Build'
       }, {}) as any;
 
-      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.result).toBeDefined();
 
       // Check content was appended correctly
-      const updatedContent = fs.readFileSync(testContextFile, 'utf8');
+      const updatedContent = fs.readFileSync(testGlobalContextFile, 'utf8');
       
       expect(updatedContent).toContain('This is existing content.'); // Original content preserved
       expect(updatedContent).toContain('Previous command info'); // Original memory preserved
@@ -110,10 +121,11 @@ Previous command info
         content: 'General important fact'
       }, {}) as any;
 
-      expect(result.success).toBe(true);
-      expect(result.category).toBe('General');
+      expect(result.error).toBeUndefined();
+      expect(result.result).toBeDefined();
+      expect(result.result.category).toBe('General');
 
-      const content = fs.readFileSync(testContextFile, 'utf8');
+      const content = fs.readFileSync(testGlobalContextFile, 'utf8');
       expect(content).toContain('### Saved Memories'); // Default category
       expect(content).toContain('General important fact');
     });
@@ -129,9 +141,10 @@ Previous command info
         content: 'Test content'
       }, {}) as any;
 
-      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.result).toBeDefined();
       expect(fs.existsSync(path.join(testDir, '.tempurai'))).toBe(true);
-      expect(fs.existsSync(testContextFile)).toBe(true);
+      expect(fs.existsSync(testGlobalContextFile)).toBe(true);
     });
 
     test('should handle file system errors gracefully', async () => {
@@ -144,38 +157,29 @@ Previous command info
         content: 'Test content'
       }, {}) as any;
 
-      expect(result.success).toBe(false);
       expect(result.error).toContain('Permission denied');
-      expect(result.message).toBe('Could not save information to long-term memory');
+      expect(result.displayDetails).toBe('Could not save information to long-term memory');
 
       // Restore mock
       writeFileSyncSpy.mockRestore();
     });
 
     test('should prefer project-local context file when available', async () => {
-      const projectDir = '/tmp/fake-project';
-      const projectTempuraiDir = path.join(projectDir, '.tempurai');
-      const projectContextFile = path.join(projectTempuraiDir, 'directives.md');
-
-      // Mock process.cwd to return our test project directory
-      (process.cwd as jest.Mock).mockReturnValue(projectDir);
-
-      // Create project .tempurai directory
-      fs.mkdirSync(projectTempuraiDir, { recursive: true });
+      // Create project .tempurai directory (this makes it prefer project file)
+      fs.mkdirSync(testProjectTempuraiDir, { recursive: true });
 
       const result = await (saveMemoryTool as any).execute({
         content: 'Project-specific memory'
       }, {}) as any;
 
-      expect(result.success).toBe(true);
-      expect(result.file_path).toBe(projectContextFile);
-      expect(fs.existsSync(projectContextFile)).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.result).toBeDefined();
+      expect(result.result.file_path).toBe(testProjectContextFile);
+      expect(result.displayDetails).toBe('Memory saved to directives.md in category: General');
+      expect(fs.existsSync(testProjectContextFile)).toBe(true);
       
-      const content = fs.readFileSync(projectContextFile, 'utf8');
+      const content = fs.readFileSync(testProjectContextFile, 'utf8');
       expect(content).toContain('Project-specific memory');
-
-      // Clean up project directory
-      fs.rmSync(projectTempuraiDir, { recursive: true, force: true });
     });
 
     test('should include timestamp in memory entry', async () => {
@@ -183,11 +187,12 @@ Previous command info
         content: 'Timestamped memory'
       }, {}) as any;
 
-      expect(result.success).toBe(true);
-      expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(result.error).toBeUndefined();
+      expect(result.result).toBeDefined();
+      expect(result.result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-      const content = fs.readFileSync(testContextFile, 'utf8');
-      expect(content).toContain(`**Added on ${result.timestamp}:**`);
+      const content = fs.readFileSync(testGlobalContextFile, 'utf8');
+      expect(content).toContain(`**Added on ${result.result.timestamp}:**`);
     });
   });
 
@@ -215,11 +220,12 @@ Previous command info
           content: cmd.content,
           category: cmd.category
         }, {}) as any;
-        expect(result.success).toBe(true);
+        expect(result.error).toBeUndefined();
+        expect(result.result).toBeDefined();
       }
 
       // Verify all memories are saved correctly
-      const content = fs.readFileSync(testContextFile, 'utf8');
+      const content = fs.readFileSync(testGlobalContextFile, 'utf8');
       
       expect(content).toContain('## Long-term Memory');
       expect(content).toContain('### Commands');

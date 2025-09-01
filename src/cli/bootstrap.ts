@@ -86,9 +86,8 @@ export class ApplicationBootstrap {
     }
 
     try {
-      // 使用新的初始化工厂模式获取SessionService（会自动初始化所有依赖）
-      const sessionServiceFactory = this.container.get<() => Promise<SessionService>>(TYPES.InitializedSessionService);
-      const sessionService = await sessionServiceFactory();
+      // 使用新的异步单例模式获取SessionService（会自动初始化所有依赖）
+      const sessionService = await this.container.getAsync<SessionService>(TYPES.InitializedSessionService);
 
       console.log('✅ 新的依赖注入架构已初始化');
 

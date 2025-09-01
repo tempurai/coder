@@ -95,60 +95,42 @@ export function createContainer(): Container {
       };
     });
 
-  // 创建工厂来确保 ToolAgent 完成异步初始化
-  container.bind<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent)
-    .toFactory(() => {
-      let initializedAgent: ToolAgent | null = null;
-      return async () => {
-        if (initializedAgent) return initializedAgent;
+  // 创建异步单例来确保 ToolAgent 完成异步初始化
+  container.bind<Promise<ToolAgent>>(TYPES.InitializedToolAgent)
+    .toDynamicValue(async () => {
+      const agent = container.get<ToolAgent>(TYPES.ToolAgent);
+      await agent.initializeAsync();
+      console.log('✅ ToolAgent异步初始化完成');
+      return agent;
+    })
+    .inSingletonScope();
 
-        const agent = container.get<ToolAgent>(TYPES.ToolAgent);
-        await agent.initializeAsync();
+  // 创建异步单例来确保 SmartAgent 完成异步初始化
+  container.bind<Promise<SmartAgent>>(TYPES.InitializedSmartAgent)
+    .toDynamicValue(async () => {
+      // 首先确保 ToolAgent 已初始化
+      await container.getAsync<ToolAgent>(TYPES.InitializedToolAgent);
+      
+      const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
+      smartAgent.initializeTools();
+      
+      console.log('✅ SmartAgent工具初始化完成');
+      return smartAgent;
+    })
+    .inSingletonScope();
 
-        console.log('✅ ToolAgent异步初始化完成');
-        initializedAgent = agent;
-        return agent;
-      };
-    });
-
-  // 创建工厂来确保 SmartAgent 完成异步初始化
-  container.bind<() => Promise<SmartAgent>>(TYPES.InitializedSmartAgent)
-    .toFactory(() => {
-      let initializedAgent: SmartAgent | null = null;
-      return async () => {
-        if (initializedAgent) return initializedAgent;
-
-        // 首先确保 ToolAgent 已初始化
-        const toolAgentFactory = container.get<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent);
-        await toolAgentFactory();
-
-        const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
-        smartAgent.initializeTools();
-
-        console.log('✅ SmartAgent工具初始化完成');
-        initializedAgent = smartAgent;
-        return smartAgent;
-      };
-    });
-
-  // 创建工厂来获取完全初始化好的 SessionService
-  container.bind<() => Promise<SessionService>>(TYPES.InitializedSessionService)
-    .toFactory(() => {
-      return async () => {
-        // 确保所有依赖的 Agent 都已初始化
-        const toolAgentFactory = container.get<() => Promise<ToolAgent>>(TYPES.InitializedToolAgent);
-        const smartAgentFactory = container.get<() => Promise<SmartAgent>>(TYPES.InitializedSmartAgent);
-
-        await Promise.all([
-          toolAgentFactory(),
-          smartAgentFactory()
-        ]);
-
-        const sessionService = container.get<SessionService>(TYPES.SessionService);
-        console.log('✅ 会话管理服务已初始化');
-        return sessionService;
-      };
-    });
+  // 创建异步单例来获取完全初始化好的 SessionService
+  container.bind<Promise<SessionService>>(TYPES.InitializedSessionService)
+    .toDynamicValue(async () => {
+      // 确保所有依赖的 Agent 都已初始化
+      await container.getAsync<ToolAgent>(TYPES.InitializedToolAgent);
+      await container.getAsync<SmartAgent>(TYPES.InitializedSmartAgent);
+      
+      const sessionService = container.get<SessionService>(TYPES.SessionService);
+      console.log('✅ 会话管理服务已初始化');
+      return sessionService;
+    })
+    .inSingletonScope();
 
   console.log('🏗️ 依赖注入容器已配置完成');
   return container;

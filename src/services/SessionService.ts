@@ -43,7 +43,6 @@ export class SessionService {
     ) {
         this.sessionStartTime = new Date();
         this.compressedAgent = new CompressedAgent(_agent);
-        console.log('✅ 会话管理服务已初始化');
     }
 
     get agent(): ToolAgent {

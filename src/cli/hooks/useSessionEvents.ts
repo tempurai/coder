@@ -35,21 +35,21 @@ export const useSessionEvents = (sessionService: SessionService) => {
         if (!state || !state.startEvent) return null;
 
         // 创建合并后的事件
-        const mergedEvent: UIEvent = {
+        const mergedEvent: any = {
             ...state.startEvent,
             type: state.startEvent.type,
         };
 
         // 根据状态添加额外信息
         if (state.completedEvent) {
-            (mergedEvent as any).completedData = state.completedEvent;
+            mergedEvent.completedData = state.completedEvent;
         }
 
         if (state.outputEvents.length > 0) {
-            (mergedEvent as any).outputData = state.outputEvents;
+            mergedEvent.outputData = state.outputEvents;
         }
 
-        (mergedEvent as any).executionStatus = state.currentStatus;
+        mergedEvent.executionStatus = state.currentStatus;
 
         return mergedEvent;
     }, [toolExecutions]);

@@ -47,7 +47,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onDismiss }) => {
           </Box>
         </Box>
 
-        {/* 文案区 */}
         <Box flexDirection='column' alignItems='center' width='100%' borderStyle='round' borderColor={border} paddingX={2} paddingY={1}>
           <Text color={textSecondary}>Initializing enhanced interface...</Text>
           <Text color={textMuted}>Press any key to continue</Text>

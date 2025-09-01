@@ -1,6 +1,6 @@
 export interface BaseEvent {
-  id: string;
-  timestamp: Date;
+  id?: string;
+  timestamp?: Date;
   sessionId?: string;
 }
 
@@ -34,8 +34,10 @@ export interface ThoughtGeneratedEvent extends BaseEvent {
 export interface ToolExecutionStartedEvent extends BaseEvent {
   type: 'tool_execution_started';
   toolName: string;
-  args: any;
   iteration?: number;
+  toolExecutionId: string;
+  displayTitle: string;
+  displayStatus: string;
 }
 
 export interface ToolExecutionCompletedEvent extends BaseEvent {
@@ -46,6 +48,10 @@ export interface ToolExecutionCompletedEvent extends BaseEvent {
   error?: string;
   duration?: number;
   iteration?: number;
+  toolExecutionId: string;
+  displayTitle: string;
+  displaySummary: string;
+  displayDetails?: string;
 }
 
 export interface ToolOutputEvent extends BaseEvent {
@@ -86,7 +92,6 @@ export interface SnapshotCreatedEvent extends BaseEvent {
   filesCount: number;
 }
 
-// HITL Events
 export interface ToolConfirmationRequestEvent extends BaseEvent {
   type: 'tool_confirmation_request';
   confirmationId: string;

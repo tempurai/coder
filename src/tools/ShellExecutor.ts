@@ -3,8 +3,7 @@ import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
 import { ToolContext, ToolNames } from './ToolRegistry.js';
-import { ToolOutputEvent } from '../events/EventTypes.js';
-import type { CommandClassification } from '../security/SecurityPolicyEngine.js';
+import { ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../events/EventTypes.js';
 
 const execAsync = util.promisify(exec);
 
@@ -15,7 +14,7 @@ export interface ShellExecutionResult {
     command: string;
     description: string;
     cancelled: boolean;
-    commandClassification?: CommandClassification;
+    commandClassification?: any;
     error?: string;
     exitCode?: number;
     workingDirectory?: string;
@@ -32,7 +31,7 @@ export interface MultiCommandResult {
     cancelled: boolean;
     error?: string;
     exitCode?: number;
-    commandClassification?: CommandClassification;
+    commandClassification?: any;
 }
 
 export interface MultiCommandExecutionResult {
@@ -60,6 +59,7 @@ IMPORTANT: Always explain what command you're running and why.`,
             workingDirectory: z.string().optional().describe('Directory to execute command in (default: current)'),
             timeout: z.number().default(30000).describe('Timeout in milliseconds'),
             captureError: z.boolean().default(true).describe('Whether to capture and return stderr'),
+            toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
         }),
         execute: async ({
             command,
@@ -67,10 +67,23 @@ IMPORTANT: Always explain what command you're running and why.`,
             workingDirectory,
             timeout,
             captureError,
+            toolExecutionId,
         }): Promise<ShellExecutionResult> => {
+            const displayTitle = `Bash(${command})`;
+
             try {
                 const validationResult = context.securityEngine.validateCommand(command);
                 const classification = context.securityEngine.classifyCommand(command);
+
+                // Emit start event
+                context.eventEmitter.emit({
+                    type: 'tool_execution_started',
+                    toolName: ToolNames.SHELL_EXECUTOR,
+                    args: { command, description, workingDirectory },
+                    toolExecutionId: toolExecutionId!,
+                    displayTitle,
+                    displayStatus: 'Executing...',
+                } as ToolExecutionStartedEvent);
 
                 if (!validationResult.allowed) {
                     if (validationResult.requiresConfirmation) {
@@ -82,6 +95,15 @@ IMPORTANT: Always explain what command you're running and why.`,
                         );
 
                         if (!confirmed) {
+                            context.eventEmitter.emit({
+                                type: 'tool_execution_completed',
+                                toolName: ToolNames.SHELL_EXECUTOR,
+                                success: false,
+                                error: 'Command execution cancelled by user',
+                                toolExecutionId: toolExecutionId!,
+                                displayTitle,
+                                displaySummary: 'Cancelled by user',
+                            } as ToolExecutionCompletedEvent);
                             return {
                                 success: false,
                                 error: 'Command execution cancelled by user',
@@ -92,6 +114,15 @@ IMPORTANT: Always explain what command you're running and why.`,
                             };
                         }
                     } else {
+                        context.eventEmitter.emit({
+                            type: 'tool_execution_completed',
+                            toolName: ToolNames.SHELL_EXECUTOR,
+                            success: false,
+                            error: validationResult.reason,
+                            toolExecutionId: toolExecutionId!,
+                            displayTitle,
+                            displaySummary: `Security blocked: ${validationResult.reason}`,
+                        } as ToolExecutionCompletedEvent);
                         return {
                             success: false,
                             error: `Security policy violation: ${validationResult.reason}`,
@@ -103,31 +134,7 @@ IMPORTANT: Always explain what command you're running and why.`,
                             commandClassification: classification,
                         };
                     }
-                } else if (validationResult.requiresConfirmation) {
-                    const confirmed = await context.hitlManager.requestConfirmation(
-                        ToolNames.SHELL_EXECUTOR,
-                        { command, description, workingDirectory },
-                        `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`,
-                        { showRememberOption: true }
-                    );
-
-                    if (!confirmed) {
-                        return {
-                            success: false,
-                            error: 'Command execution cancelled by user',
-                            command,
-                            description,
-                            cancelled: true,
-                            commandClassification: classification,
-                        };
-                    }
                 }
-
-                context.eventEmitter.emit({
-                    type: 'tool_output',
-                    toolName: ToolNames.SHELL_EXECUTOR,
-                    content: `Executing: ${command}\nPurpose: ${description}`
-                } as ToolOutputEvent);
 
                 const options: ExecOptions = { timeout };
                 if (workingDirectory) options.cwd = workingDirectory;
@@ -136,18 +143,26 @@ IMPORTANT: Always explain what command you're running and why.`,
                 stdout = stdout.toString();
                 stderr = stderr.toString();
 
-                const outputContent = [
-                    `Command: ${command}`,
-                    workingDirectory ? `Directory: ${workingDirectory}` : '',
-                    stdout ? `Output:\n${stdout.trim()}` : '',
-                    (stderr && captureError) ? `Errors:\n${stderr.trim()}` : ''
-                ].filter(Boolean).join('\n');
+                // Generate display summary
+                let summary = 'Executed successfully';
+                if (stdout) {
+                    const lines = stdout.trim().split('\n').length;
+                    summary = `Executed successfully (${lines} lines output)`;
+                }
+                if (stderr && captureError) {
+                    summary += ' with warnings';
+                }
 
                 context.eventEmitter.emit({
-                    type: 'tool_output',
+                    type: 'tool_execution_completed',
                     toolName: ToolNames.SHELL_EXECUTOR,
-                    content: outputContent
-                } as ToolOutputEvent);
+                    success: true,
+                    result: { stdout: stdout?.toString()?.trim(), stderr: stderr?.toString()?.trim() },
+                    toolExecutionId: toolExecutionId!,
+                    displayTitle,
+                    displaySummary: summary,
+                    displayDetails: stdout?.toString()?.trim(),
+                } as ToolExecutionCompletedEvent);
 
                 return {
                     success: true,
@@ -161,18 +176,17 @@ IMPORTANT: Always explain what command you're running and why.`,
                 };
             } catch (error: any) {
                 const classification = context.securityEngine.classifyCommand(command);
-                const errorContent = [
-                    `Command failed: ${command}`,
-                    `Error: ${error?.message ?? String(error)}`,
-                    error?.stdout ? `Stdout: ${error.stdout.toString().trim()}` : '',
-                    error?.stderr ? `Stderr: ${error.stderr.toString().trim()}` : ''
-                ].filter(Boolean).join('\n');
 
                 context.eventEmitter.emit({
-                    type: 'tool_output',
+                    type: 'tool_execution_completed',
                     toolName: ToolNames.SHELL_EXECUTOR,
-                    content: errorContent
-                } as ToolOutputEvent);
+                    success: false,
+                    error: error?.message ?? String(error),
+                    toolExecutionId: toolExecutionId!,
+                    displayTitle,
+                    displaySummary: `Failed: ${error?.message ?? String(error)}`,
+                    displayDetails: error?.stdout?.toString()?.trim() || error?.stderr?.toString()?.trim(),
+                } as ToolExecutionCompletedEvent);
 
                 return {
                     success: false,
@@ -205,27 +219,53 @@ Examples:
             ).describe('Array of commands to execute in sequence'),
             workingDirectory: z.string().optional().describe('Directory to execute commands in'),
             stopOnFirstError: z.boolean().default(true).describe('Whether to stop execution on first error'),
+            toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
         }),
         execute: async ({
             commands,
             workingDirectory,
             stopOnFirstError,
+            toolExecutionId,
         }): Promise<MultiCommandExecutionResult> => {
+            const displayTitle = `MultiCommand(${commands.length} commands)`;
+
             const validationResults = commands.map(c => context.securityEngine.validateCommand(c.command));
             const blockedCommands = validationResults
                 .map((res, idx) => ({ res, idx, original: commands[idx] }))
                 .filter((item) => !item.res.allowed && !item.res.requiresConfirmation);
 
+            // Emit start event
+            context.eventEmitter.emit({
+                type: 'tool_execution_started',
+                toolName: ToolNames.MULTI_COMMAND,
+                args: { commands, workingDirectory, stopOnFirstError },
+                toolExecutionId: toolExecutionId!,
+                displayTitle,
+                displayStatus: 'Starting batch execution...',
+            } as ToolExecutionStartedEvent);
+
             if (blockedCommands.length > 0) {
                 const blockedList = blockedCommands
                     .map((item) =>
-                        `- ${item.original.command}: ${item.res.reason}${item.res.suggestion ? ` (Suggestion: ${item.res.suggestion})` : ''}`
+                        `${item.original.command}: ${item.res.reason}${item.res.suggestion ? ` (Suggestion: ${item.res.suggestion})` : ''}`
                     )
-                    .join('\n');
+                    .join(', ');
+
+                context.eventEmitter.emit({
+                    type: 'tool_execution_completed',
+                    toolName: ToolNames.MULTI_COMMAND,
+                    success: false,
+                    error: 'Security policy violations detected',
+                    toolExecutionId: toolExecutionId!,
+                    displayTitle,
+                    displaySummary: `Security blocked: ${blockedCommands.length} commands`,
+                    displayDetails: blockedList,
+                } as ToolExecutionCompletedEvent);
+
                 return {
                     success: false,
                     results: [],
-                    summary: `Security policy violations detected:\n${blockedList}`,
+                    summary: `Security policy violations detected: ${blockedList}`,
                     workingDirectory: workingDirectory || process.cwd(),
                     cancelled: false,
                     securityBlocked: true,
@@ -244,6 +284,16 @@ Examples:
             );
 
             if (!confirmed) {
+                context.eventEmitter.emit({
+                    type: 'tool_execution_completed',
+                    toolName: ToolNames.MULTI_COMMAND,
+                    success: false,
+                    error: 'Multi-command execution cancelled by user',
+                    toolExecutionId: toolExecutionId!,
+                    displayTitle,
+                    displaySummary: 'Cancelled by user',
+                } as ToolExecutionCompletedEvent);
+
                 return {
                     success: false,
                     results: [],
@@ -254,19 +304,9 @@ Examples:
             }
 
             const results: MultiCommandResult[] = [];
-            context.eventEmitter.emit({
-                type: 'tool_output',
-                toolName: ToolNames.MULTI_COMMAND,
-                content: `Executing ${commands.length} commands in sequence${workingDirectory ? ` in ${workingDirectory}` : ''}`
-            } as ToolOutputEvent);
 
             for (let i = 0; i < commands.length; i++) {
                 const { command, description, continueOnError } = commands[i];
-                context.eventEmitter.emit({
-                    type: 'tool_output',
-                    toolName: ToolNames.MULTI_COMMAND,
-                    content: `[${i + 1}/${commands.length}] ${command}\n${description}`
-                } as ToolOutputEvent);
 
                 try {
                     const options: ExecOptions = { timeout: 30000 };
@@ -288,23 +328,9 @@ Examples:
                         commandClassification: classification,
                     });
 
-                    if (stdout) {
-                        context.eventEmitter.emit({
-                            type: 'tool_output',
-                            toolName: ToolNames.MULTI_COMMAND,
-                            content: `[${i + 1}/${commands.length}] Output:\n${stdout.trim()}`
-                        } as ToolOutputEvent);
-                    }
-
-                    if (stderr && !continueOnError) {
-                        context.eventEmitter.emit({
-                            type: 'tool_output',
-                            toolName: ToolNames.MULTI_COMMAND,
-                            content: `[${i + 1}/${commands.length}] Stderr: ${stderr.trim()}`
-                        } as ToolOutputEvent);
-                    }
                 } catch (error: any) {
                     const classification = context.securityEngine.classifyCommand(command);
+
                     results.push({
                         command,
                         description,
@@ -317,18 +343,7 @@ Examples:
                         commandClassification: classification,
                     });
 
-                    context.eventEmitter.emit({
-                        type: 'tool_output',
-                        toolName: ToolNames.MULTI_COMMAND,
-                        content: `[${i + 1}/${commands.length}] Failed: ${error?.message ?? error}`
-                    } as ToolOutputEvent);
-
                     if (stopOnFirstError && !continueOnError) {
-                        context.eventEmitter.emit({
-                            type: 'tool_output',
-                            toolName: ToolNames.MULTI_COMMAND,
-                            content: 'Stopping execution due to error'
-                        } as ToolOutputEvent);
                         break;
                     }
                 }
@@ -336,15 +351,17 @@ Examples:
 
             const successCount = results.filter((r) => r.success).length;
             const totalCount = results.length;
-            const summaryContent = `Multi-command execution completed:
-- ${successCount}/${totalCount} commands successful
-- ${totalCount - successCount} commands failed`;
 
             context.eventEmitter.emit({
-                type: 'tool_output',
+                type: 'tool_execution_completed',
                 toolName: ToolNames.MULTI_COMMAND,
-                content: summaryContent
-            } as ToolOutputEvent);
+                success: successCount === totalCount,
+                result: { results, successCount, totalCount },
+                toolExecutionId: toolExecutionId!,
+                displayTitle,
+                displaySummary: `Executed ${totalCount} commands, ${successCount} successful, ${totalCount - successCount} failed`,
+                displayDetails: results.map(r => `${r.command}: ${r.success ? 'OK' : r.error}`).join('\n'),
+            } as ToolExecutionCompletedEvent);
 
             return {
                 success: successCount === totalCount,

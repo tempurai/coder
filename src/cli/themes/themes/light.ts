@@ -1,90 +1,94 @@
 import { ThemeConfig } from '../ThemeTypes.js';
 
-/**
- * Light theme for daytime coding
- * Clean whites and subtle colors
- */
 export const lightTheme: ThemeConfig = {
   name: 'light',
-  displayName: 'Light Clean',
+  displayName: 'VS Code Light+',
   type: 'light',
   colors: {
-    primary: '#2563EB',      // Blue
-    secondary: '#7C3AED',    // Purple
-    accent: '#059669',       // Emerald
-    
-    success: '#16A34A',      // Green
-    warning: '#D97706',      // Amber
-    error: '#DC2626',        // Red
-    info: '#2563EB',         // Blue
-    
+    primary: '#0066CC',
+    secondary: '#AF00DB',
+    accent: '#267F99',
+
+    success: '#28A745',
+    warning: '#F57C00',
+    error: '#D32F2F',
+    info: '#1976D2',
+
     text: {
-      primary: '#0F172A',    // Dark
-      secondary: '#475569',  // Gray
-      muted: '#94A3B8',      // Light gray
-      inverse: '#F8FAFC',    // Light
+      primary: '#000000',
+      secondary: '#0066CC',
+      muted: '#008000',
+      inverse: '#FFFFFF',
     },
-    
+
     background: {
-      primary: '#FFFFFF',    // White
-      secondary: '#F8FAFC',  // Off white
-      tertiary: '#F1F5F9',   // Light gray
+      primary: '#FFFFFF',
+      secondary: '#F8F8F8',
+      tertiary: '#F0F0F0',
     },
-    
+
     ui: {
-      border: '#E2E8F0',     // Border gray
-      separator: '#CBD5E1',  // Separator
-      highlight: '#DBEAFE',  // Highlight blue
-      selection: '#BFDBFE',  // Selection blue
-      progress: '#2563EB',   // Progress blue
+      border: '#E5E5E5',
+      separator: '#CCCCCC',
+      highlight: '#0066CC20',
+      selection: '#0066CC40',
+      progress: '#0066CC',
     },
-    
+
     tools: {
-      shell: '#16A34A',      // Green for shell
-      file: '#D97706',       // Amber for files  
-      git: '#EA580C',        // Orange for git
-      web: '#7C3AED',        // Purple for web
-      code: '#059669',       // Emerald for code
+      shell: '#28A745',
+      file: '#F57C00',
+      git: '#FF6B35',
+      web: '#AF00DB',
+      code: '#267F99',
     },
-    
+
     react: {
-      thought: '#2563EB',    // Blue for thoughts
-      plan: '#16A34A',       // Green for plans
-      action: '#D97706',     // Amber for actions
-      observation: '#7C3AED', // Purple for observations
+      thought: '#1976D2',
+      plan: '#28A745',
+      action: '#F57C00',
+      observation: '#AF00DB',
     },
-    
-    // Syntax highlighting colors
+
     syntax: {
-      keyword: '#DC2626',     // Red for keywords
-      string: '#16A34A',      // Green for strings
-      function: '#2563EB',    // Blue for functions
-      property: '#7C3AED',    // Purple for properties
-      punctuation: '#64748B', // Slate for punctuation
-      comment: '#94A3B8',     // Light gray for comments
-      number: '#EA580C',      // Orange for numbers
-      operator: '#059669',    // Emerald for operators
+      keyword: '#0000FF',
+      string: '#A31515',
+      function: '#795E26',
+      property: '#001080',
+      punctuation: '#000000',
+      comment: '#008000',
+      number: '#098658',
+      operator: '#000000',
     },
-    
-    // Diff colors
+
     diff: {
-      added: '#16A34A',       // Green for added lines
-      removed: '#DC2626',     // Red for removed lines
-      modified: '#D97706',    // Amber for modified lines
+      added: '#28A745',
+      removed: '#DC3545',
+      modified: '#FFC107',
+      context: '#6C757D',
+      lineNumber: '#6C757D',
+    },
+
+    semantic: {
+      functionCall: '#0066CC',
+      parameter: '#001080',
+      result: '#000000',
+      metadata: '#008000',
+      indicator: '#6C757D',
     },
   },
-  
+
   fonts: {
     mono: true,
     size: 'medium',
   },
-  
+
   layout: {
     compact: false,
     showTimestamps: true,
     showProgress: true,
   },
-  
+
   animation: {
     enabled: true,
     speed: 'normal',

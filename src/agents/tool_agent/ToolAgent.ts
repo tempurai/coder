@@ -44,6 +44,10 @@ export interface ToolAgentObjectProps<T> {
     allowTools?: boolean;
 }
 
+const generateToolExecutionId = (toolName: string): string => {
+    return `${toolName}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
 @injectable()
 export class ToolAgent {
     private isInitialized = false;
@@ -57,21 +61,17 @@ export class ToolAgent {
 
     async initializeAsync(): Promise<void> {
         if (this.isInitialized) return;
-
         await this.loadAllTools();
         console.log(`ToolAgent initialized with ${this.toolRegistry.getToolNames().length} tools`);
         this.isInitialized = true;
     }
 
     private async loadAllTools(): Promise<void> {
-        // Register built-in tools
         registerShellExecutorTools(this.toolRegistry);
         registerFileTools(this.toolRegistry);
         registerWebTools(this.toolRegistry);
         registerGitTools(this.toolRegistry);
         registerMemoryTools(this.toolRegistry);
-
-        // Register MCP tools
         await registerMcpTools(this.toolRegistry, this.config);
     }
 
@@ -157,7 +157,13 @@ export class ToolAgent {
         }
 
         try {
-            const result = await (tool as any).execute(args);
+            // Generate unique tool execution ID
+            const toolExecutionId = generateToolExecutionId(toolName);
+
+            // Add toolExecutionId to args
+            const argsWithId = { ...args, toolExecutionId };
+
+            const result = await (tool as any).execute(argsWithId);
             console.log(`Tool executed successfully: ${toolName}`);
             return result;
         } catch (error) {
@@ -176,6 +182,6 @@ export class ToolAgent {
     }
 
     async cleanup(): Promise<void> {
-        // Cleanup handled by individual tool loaders
+        // Cleanup logic if needed
     }
 }

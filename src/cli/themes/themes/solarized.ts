@@ -1,90 +1,94 @@
 import { ThemeConfig } from '../ThemeTypes.js';
 
-/**
- * Solarized Dark theme - eye-friendly coding
- * Carefully selected colors for reduced eye strain
- */
 export const solarizedTheme: ThemeConfig = {
   name: 'solarized',
   displayName: 'Solarized Dark',
   type: 'dark',
   colors: {
-    primary: '#268BD2',      // Blue
-    secondary: '#6C71C4',    // Violet  
-    accent: '#2AA198',       // Cyan
-    
-    success: '#859900',      // Green
-    warning: '#B58900',      // Yellow
-    error: '#DC322F',        // Red
-    info: '#268BD2',         // Blue
-    
+    primary: '#268BD2',
+    secondary: '#6C71C4',
+    accent: '#2AA198',
+
+    success: '#859900',
+    warning: '#B58900',
+    error: '#DC322F',
+    info: '#268BD2',
+
     text: {
-      primary: '#839496',    // Base0
-      secondary: '#586E75',  // Base01
-      muted: '#657B83',      // Base00
-      inverse: '#FDF6E3',    // Base3
+      primary: '#839496',
+      secondary: '#93A1A1',
+      muted: '#586E75',
+      inverse: '#FDF6E3',
     },
-    
+
     background: {
-      primary: '#002B36',    // Base03
-      secondary: '#073642',  // Base02
-      tertiary: '#586E75',   // Base01
+      primary: '#002B36',
+      secondary: '#073642',
+      tertiary: '#586E75',
     },
-    
+
     ui: {
-      border: '#586E75',     // Base01
-      separator: '#073642',  // Base02
-      highlight: '#268BD2',  // Blue
-      selection: '#073642',  // Base02
-      progress: '#2AA198',   // Cyan
+      border: '#586E75',
+      separator: '#073642',
+      highlight: '#268BD2',
+      selection: '#073642',
+      progress: '#2AA198',
     },
-    
+
     tools: {
-      shell: '#859900',      // Green
-      file: '#CB4B16',       // Orange
-      git: '#DC322F',        // Red
-      web: '#6C71C4',        // Violet
-      code: '#2AA198',       // Cyan
+      shell: '#859900',
+      file: '#CB4B16',
+      git: '#DC322F',
+      web: '#6C71C4',
+      code: '#2AA198',
     },
-    
+
     react: {
-      thought: '#268BD2',    // Blue
-      plan: '#859900',       // Green
-      action: '#B58900',     // Yellow
-      observation: '#6C71C4', // Violet
+      thought: '#268BD2',
+      plan: '#859900',
+      action: '#B58900',
+      observation: '#6C71C4',
     },
-    
-    // Syntax highlighting colors
+
     syntax: {
-      keyword: '#859900',     // Green for keywords
-      string: '#2AA198',      // Cyan for strings
-      function: '#268BD2',    // Blue for functions
-      property: '#CB4B16',    // Orange for properties
-      punctuation: '#93A1A1', // Base1 for punctuation
-      comment: '#586E75',     // Base01 for comments
-      number: '#D33682',      // Magenta for numbers
-      operator: '#6C71C4',    // Violet for operators
+      keyword: '#859900',
+      string: '#2AA198',
+      function: '#268BD2',
+      property: '#CB4B16',
+      punctuation: '#93A1A1',
+      comment: '#586E75',
+      number: '#D33682',
+      operator: '#6C71C4',
     },
-    
-    // Diff colors
+
     diff: {
-      added: '#859900',       // Green for added lines
-      removed: '#DC322F',     // Red for removed lines
-      modified: '#B58900',    // Yellow for modified lines
+      added: '#859900',
+      removed: '#DC322F',
+      modified: '#B58900',
+      context: '#586E75',
+      lineNumber: '#586E75',
+    },
+
+    semantic: {
+      functionCall: '#268BD2',
+      parameter: '#CB4B16',
+      result: '#839496',
+      metadata: '#586E75',
+      indicator: '#586E75',
     },
   },
-  
+
   fonts: {
     mono: true,
     size: 'medium',
   },
-  
+
   layout: {
     compact: false,
     showTimestamps: true,
     showProgress: true,
   },
-  
+
   animation: {
     enabled: true,
     speed: 'normal',

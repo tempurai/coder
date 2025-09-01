@@ -3,6 +3,9 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { Config } from '../config/ConfigLoader.js';
 import { tool, Tool } from 'ai';
 import * as childProcess from 'child_process';
+import { z } from 'zod';
+import { ToolContext } from './ToolRegistry.js';
+import { ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../events/EventTypes.js';
 
 export interface McpServerConfig {
   name: string;
@@ -30,27 +33,27 @@ export class MCPToolLoader {
       await this.cleanup();
 
       if (!config.mcpServers || Object.keys(config.mcpServers).length === 0) {
-        console.log('📦 No MCP servers configured');
+        console.log('No MCP servers configured');
         return [];
       }
 
-      console.log('🔌 Connecting to MCP servers...');
+      console.log('Connecting to MCP servers...');
       const allTools: { name: string; tool: any; category: string }[] = [];
 
       for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
         try {
           const tools = await this.connectToServer(serverName, serverConfig);
           allTools.push(...tools);
-          console.log(`✅ Loaded ${tools.length} tools from ${serverName}`);
+          console.log(`Loaded ${tools.length} tools from ${serverName}`);
         } catch (error) {
-          console.error(`❌ Failed to connect to ${serverName}:`, error instanceof Error ? error.message : 'Unknown error');
+          console.error(`Failed to connect to ${serverName}:`, error instanceof Error ? error.message : 'Unknown error');
         }
       }
 
-      console.log(`🎉 Total loaded ${allTools.length} MCP tools`);
+      console.log(`Total loaded ${allTools.length} MCP tools`);
       return allTools;
     } catch (error) {
-      console.error('❌ Failed to load MCP tools:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Failed to load MCP tools:', error instanceof Error ? error.message : 'Unknown error');
       return [];
     }
   }
@@ -80,6 +83,7 @@ export class MCPToolLoader {
 
     try {
       await client.connect(transport);
+
       this.connections.push({
         client,
         transport,
@@ -87,8 +91,9 @@ export class MCPToolLoader {
       });
 
       const toolsResponse = await client.listTools();
+
       if (!toolsResponse.tools || toolsResponse.tools.length === 0) {
-        console.log(`⚠️ MCP server ${serverName} provides no tools`);
+        console.log(`MCP server ${serverName} provides no tools`);
         return [];
       }
 
@@ -113,38 +118,87 @@ export class MCPToolLoader {
   private createToolProxy(client: Client, serverName: string, toolInfo: any): any {
     return tool({
       description: toolInfo.description || `Tool from MCP server ${serverName}`,
-      inputSchema: toolInfo.inputSchema || {
-        type: 'object',
-        properties: {},
-        required: []
-      },
+      inputSchema: z.object({
+        ...toolInfo.inputSchema?.properties || {},
+        toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
+      }),
       execute: async (params: any): Promise<any> => {
+        const { toolExecutionId, ...actualParams } = params;
+        const displayTitle = `${serverName}.${toolInfo.name}(${Object.keys(actualParams).length} params)`;
+
+        // Create context if available (for event emission)
+        let context: ToolContext | null = null;
+        try {
+          // Try to get context from global registry
+          const registry = (global as any).__tempurai_tool_registry;
+          if (registry) {
+            context = registry.getContext();
+          }
+        } catch {
+          // Context not available, continue without events
+        }
+
+        // Emit start event if context available
+        if (context) {
+          context.eventEmitter.emit({
+            type: 'tool_execution_started',
+            toolName: `mcp_${serverName}_${toolInfo.name}`,
+            args: actualParams,
+            toolExecutionId: toolExecutionId!,
+            displayTitle,
+            displayStatus: 'Executing MCP tool...',
+          } as ToolExecutionStartedEvent);
+        }
+
         try {
           const result = await client.callTool({
             name: toolInfo.name,
-            arguments: params || {}
+            arguments: actualParams || {}
           });
 
+          let content = 'Tool executed but returned no content';
           if (result.content && Array.isArray(result.content) && result.content.length > 0) {
-            const textContent = result.content
+            content = result.content
               .filter((content: any) => content.type === 'text')
               .map((content: any) => content.text)
               .join('\n');
+          }
 
-            return {
+          // Emit completion event if context available
+          if (context) {
+            context.eventEmitter.emit({
+              type: 'tool_execution_completed',
+              toolName: `mcp_${serverName}_${toolInfo.name}`,
               success: true,
-              content: textContent,
-              raw: result
-            };
+              result: { content, raw: result },
+              toolExecutionId: toolExecutionId!,
+              displayTitle,
+              displaySummary: `MCP tool executed successfully`,
+              displayDetails: content,
+            } as ToolExecutionCompletedEvent);
           }
 
           return {
             success: true,
-            content: 'Tool executed but returned no content',
+            content,
             raw: result
           };
         } catch (error) {
-          console.error(`❌ MCP tool ${toolInfo.name} execution failed:`, error);
+          console.error(`MCP tool ${toolInfo.name} execution failed:`, error);
+
+          // Emit error event if context available
+          if (context) {
+            context.eventEmitter.emit({
+              type: 'tool_execution_completed',
+              toolName: `mcp_${serverName}_${toolInfo.name}`,
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              toolExecutionId: toolExecutionId!,
+              displayTitle,
+              displaySummary: `MCP tool failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            } as ToolExecutionCompletedEvent);
+          }
+
           return {
             success: false,
             error: error instanceof Error ? error.message : 'Unknown error',
@@ -156,7 +210,8 @@ export class MCPToolLoader {
   }
 
   async cleanup(): Promise<void> {
-    console.log('🧹 Cleaning up MCP connections...');
+    console.log('Cleaning up MCP connections...');
+
     for (const connection of this.connections) {
       try {
         await connection.client.close();
@@ -165,6 +220,7 @@ export class MCPToolLoader {
         console.error(`Error cleaning up MCP connection ${connection.serverName}:`, error);
       }
     }
+
     this.connections = [];
   }
 }
@@ -173,5 +229,9 @@ export const mcpToolLoader = new MCPToolLoader();
 
 export const registerMcpTools = async (registry: any, config: Config) => {
   const mcpTools = await mcpToolLoader.loadMCPTools(config);
+
+  // Store registry reference for MCP tools to access context
+  (global as any).__tempurai_tool_registry = registry;
+
   registry.registerMultiple(mcpTools);
 };

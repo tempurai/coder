@@ -11,46 +11,56 @@ interface ProgressIndicatorProps {
   showSpinner?: boolean;
 }
 
-export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
-  phase,
-  message,
-  progress,
-  isActive = true,
-  showSpinner = true,
-}) => {
+export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ phase, message, progress, isActive = true, showSpinner = true }) => {
   const { currentTheme } = useTheme();
-  
-  const getPhaseIcon = (phase: string) => {
+
+  const getPhaseSymbol = (phase: string) => {
     switch (phase.toLowerCase()) {
-      case 'searching': case 'finding': return '🔍';
-      case 'reading': case 'loading': return '📖';
-      case 'writing': case 'saving': return '💾';
-      case 'executing': case 'running': return '⚡';
-      case 'analyzing': case 'processing': return '🔬';
-      case 'connecting': case 'fetching': return '🌐';
-      case 'completed': case 'done': return '✅';
-      case 'failed': case 'error': return '❌';
-      default: return '📋';
+      case 'searching':
+      case 'finding':
+        return '?';
+      case 'reading':
+      case 'loading':
+        return '>';
+      case 'writing':
+      case 'saving':
+        return '<';
+      case 'executing':
+      case 'running':
+        return '~';
+      case 'analyzing':
+      case 'processing':
+        return '*';
+      case 'connecting':
+      case 'fetching':
+        return '^';
+      case 'completed':
+      case 'done':
+        return '✓';
+      case 'failed':
+      case 'error':
+        return '!';
+      default:
+        return '•';
     }
   };
 
-  const phaseIcon = getPhaseIcon(phase);
+  const phaseSymbol = getPhaseSymbol(phase);
   const showProgress = typeof progress === 'number' && progress >= 0 && progress <= 100;
 
   return (
     <Box>
       {isActive && showSpinner ? (
         <Text color={currentTheme.colors.info}>
-          <Spinner type="dots" />
+          <Spinner type='dots' />
         </Text>
       ) : (
-        <Text>{phaseIcon}</Text>
+        <Text color={currentTheme.colors.semantic.indicator}>{phaseSymbol}</Text>
       )}
-      
       <Box marginLeft={1}>
-        <Text color={currentTheme.colors.text.primary}>
+        <Text color={currentTheme.colors.semantic.result}>
           {message}
-          {showProgress && <Text color={currentTheme.colors.text.muted}> ({progress}%)</Text>}
+          {showProgress && <Text color={currentTheme.colors.semantic.metadata}> ({progress}%)</Text>}
         </Text>
       </Box>
     </Box>

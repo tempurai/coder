@@ -1,7 +1,7 @@
 {
   "name": "@tempurai/coder",
   "version": "0.1.0",
-  "description": "A next-generation intelligent code assistant built with TypeScript, featuring ReAct (Reason + Act) methodology and advanced CLI interface",
+  "description": "A next-generation intelligent code assistant built with TypeScript, featuring Multi Agent methodology and advanced CLI interface",
   "type": "module",
   "main": "dist/cli/index.js",
   "bin": {

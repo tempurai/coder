@@ -255,50 +255,20 @@ export class SmartAgent {
     return smartAgentMessages.map(m => ({ role: m.role, content: m.content }));
   }
 
-  private async executeToolSafely(iteration: number, action: { tool: string, args: any }): Promise<{
-    result?: any,
-    error?: string,
-    duration?: number
-  }> {
+  private async executeToolSafely(
+    iteration: number,
+    action: { tool: string, args: any }
+  ): Promise<{ result?: any, error?: string, duration?: number }> {
     if (this.interruptService.isInterrupted()) {
       return { error: 'Tool execution interrupted by user' };
     }
 
-    this.eventEmitter.emit({
-      type: 'tool_execution_started',
-      iteration,
-      toolName: action.tool,
-      args: action.args,
-    } as ToolExecutionStartedEvent);
-
+    const startTime = Date.now();
     try {
-      const toolStartTime = Date.now();
-      const toolResult = await this.toolAgent.executeTool(action.tool, action.args);
-      const toolDuration = Date.now() - toolStartTime;
-
-      this.eventEmitter.emit({
-        type: 'tool_execution_completed',
-        iteration,
-        toolName: action.tool,
-        success: true,
-        result: toolResult,
-        duration: toolDuration,
-      } as ToolExecutionCompletedEvent);
-
-      return { result: toolResult, duration: toolDuration };
-    } catch (toolError) {
-      const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
-
-      this.eventEmitter.emit({
-        type: 'tool_execution_completed',
-        iteration,
-        toolName: action.tool,
-        success: false,
-        error: errorMessage,
-        duration: 0,
-      } as ToolExecutionCompletedEvent);
-
-      return { error: errorMessage };
+      const result = await this.toolAgent.executeTool(action.tool, action.args);
+      return { result, duration: Date.now() - startTime };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Unknown tool error' };
     }
   }
 

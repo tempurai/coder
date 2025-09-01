@@ -1,35 +1,22 @@
-/**
- * Comprehensive theme system for Tempurai CLI
- */
-
 export interface ThemeColors {
-  // Primary colors
   primary: string;
   secondary: string;
   accent: string;
-  
-  // Status colors
   success: string;
   warning: string;
   error: string;
   info: string;
-  
-  // Text colors
   text: {
     primary: string;
     secondary: string;
     muted: string;
     inverse: string;
   };
-  
-  // Background colors  
   background: {
     primary: string;
     secondary: string;
     tertiary: string;
   };
-  
-  // Specific UI element colors
   ui: {
     border: string;
     separator: string;
@@ -37,8 +24,6 @@ export interface ThemeColors {
     selection: string;
     progress: string;
   };
-  
-  // Tool-specific colors
   tools: {
     shell: string;
     file: string;
@@ -46,16 +31,12 @@ export interface ThemeColors {
     web: string;
     code: string;
   };
-  
-  // ReAct flow colors
   react: {
     thought: string;
     plan: string;
     action: string;
     observation: string;
   };
-  
-  // Syntax highlighting colors
   syntax: {
     keyword: string;
     string: string;
@@ -66,12 +47,19 @@ export interface ThemeColors {
     number: string;
     operator: string;
   };
-  
-  // Diff colors
   diff: {
     added: string;
     removed: string;
     modified: string;
+    context: string;
+    lineNumber: string;
+  };
+  semantic: {
+    functionCall: string;
+    parameter: string;
+    result: string;
+    metadata: string;
+    indicator: string;
   };
 }
 
@@ -80,21 +68,15 @@ export interface ThemeConfig {
   displayName: string;
   type: 'dark' | 'light';
   colors: ThemeColors;
-  
-  // Typography
   fonts: {
     mono: boolean;
     size: 'small' | 'medium' | 'large';
   };
-  
-  // Layout preferences
   layout: {
     compact: boolean;
     showTimestamps: boolean;
     showProgress: boolean;
   };
-  
-  // Animation settings
   animation: {
     enabled: boolean;
     speed: 'slow' | 'normal' | 'fast';

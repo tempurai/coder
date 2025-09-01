@@ -16,32 +16,32 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ type, isActive
     switch (type) {
       case 'user':
         return {
-          symbol: '▶',
-          color: currentTheme.colors.text.primary,
+          symbol: '>',
+          color: currentTheme.colors.semantic.functionCall,
         };
       case 'assistant':
         return {
-          symbol: '●',
+          symbol: '*',
           color: currentTheme.colors.info,
         };
       case 'tool':
         return {
-          symbol: '●',
+          symbol: isActive ? '~' : '•',
           color: isActive ? currentTheme.colors.warning : currentTheme.colors.success,
         };
       case 'error':
         return {
-          symbol: '●',
+          symbol: '!',
           color: currentTheme.colors.error,
         };
       case 'system':
         return {
-          symbol: '●',
-          color: currentTheme.colors.text.muted,
+          symbol: '•',
+          color: currentTheme.colors.semantic.indicator,
         };
       default:
         return {
-          symbol: '●',
+          symbol: '•',
           color: currentTheme.colors.text.muted,
         };
     }

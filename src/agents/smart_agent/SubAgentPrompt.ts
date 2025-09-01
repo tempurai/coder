@@ -1,20 +1,21 @@
 import z from "zod";
 import { ToolNames } from "../../tools/ToolRegistry.js";
+import { compressSystemPrompt } from "../tool_agent/ToolAgent.js";
 
 export const SubAgentResponseSchema = z.object({
-    reasoning: z.string().describe("Detailed explanation of current analysis and planned approach"),
-    action: z.object({
-        tool: z.string().describe("Tool name"),
-        args: z.record(z.any()).default({})
-    }),
-    completed: z.boolean().default(false).describe("Whether the task has been completed"),
-    output: z.any().optional().describe("Final result when completed"),
-    criticalInfo: z.boolean().default(false).describe("Whether this turn contains critical information that must be preserved")
+  reasoning: z.string().describe("Detailed explanation of current analysis and planned approach"),
+  action: z.object({
+    tool: z.string().describe("Tool name"),
+    args: z.record(z.any()).default({})
+  }),
+  completed: z.boolean().default(false).describe("Whether the task has been completed"),
+  output: z.any().optional().describe("Final result when completed"),
+  criticalInfo: z.boolean().default(false).describe("Whether this turn contains critical information that must be preserved")
 });
 
 export type SubAgentResponse = z.infer<typeof SubAgentResponseSchema>;
 
-export const SUB_AGENT_PROMPT = `You are a specialized SubAgent designed to complete a specific focused task autonomously. You operate in non-interactive mode, meaning you cannot ask the user for input or clarification.
+export const SUB_AGENT_PROMPT = compressSystemPrompt(`You are a specialized SubAgent designed to complete a specific focused task autonomously. You operate in non-interactive mode, meaning you cannot ask the user for input or clarification.
 
 # Operating Principles
 - **Goal-Oriented**: Focus solely on completing the specified task efficiently
@@ -83,4 +84,4 @@ Always respond with valid JSON:
 - Use "tool": "think" for pure reasoning when no tool execution is needed
 - Use "tool": "finish" to explicitly signal task completion
 
-Remember: You are operating independently to accomplish a specific goal. Focus on delivering results efficiently and effectively while maintaining high quality standards. Use shell commands as your primary exploration and verification tool.`;
+Remember: You are operating independently to accomplish a specific goal. Focus on delivering results efficiently and effectively while maintaining high quality standards. Use shell commands as your primary exploration and verification tool.`);

@@ -51,6 +51,22 @@ const generateToolExecutionId = (toolName: string): string => {
     return `${toolName}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
+export const compressSystemPrompt = (prompt: string) => {
+    return prompt
+        .split('\n')
+        .map(line => line.trimEnd()) // 只去除行尾空格
+        .filter((line, index, arr) => {
+            // 保留标题行前的空行，移除多余的连续空行
+            if (line.trim() === '') {
+                const nextLine = arr[index + 1];
+                return nextLine && (nextLine.startsWith('#') || nextLine.startsWith('-') || nextLine.startsWith('*'));
+            }
+            return true;
+        })
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n');
+}
+
 @injectable()
 export class ToolAgent {
     private isInitialized = false;
@@ -191,6 +207,8 @@ export class ToolAgent {
         const toolExecutionId = generateToolExecutionId(toolName);
         const argsWithId = { ...args, toolExecutionId };
         const startTime = Date.now();
+
+        console.log(`Tool executing: ${toolName}, args: ${JSON.stringify(argsWithId, null, 0)}`);
 
         try {
             const result = await (tool as any).execute(argsWithId);

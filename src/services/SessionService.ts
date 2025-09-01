@@ -4,7 +4,7 @@ import { Config } from '../config/ConfigLoader.js';
 import { injectable, inject } from 'inversify';
 import { TYPES } from '../di/types.js';
 import { ISnapshotManagerFactory } from '../di/interfaces.js';
-import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent, TextGeneratedEvent } from '../events/index.js';
+import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent, TextGeneratedEvent, UserInputEvent } from '../events/index.js';
 import { ToolAgent, Messages } from '../agents/tool_agent/ToolAgent.js';
 import { InterruptService } from './InterruptService.js';
 import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
@@ -68,6 +68,11 @@ export class SessionService {
 
         console.log('\n🚀 开始处理任务...');
 
+        this.eventEmitter.emit({
+            type: 'user_input',
+            input: query,
+        } as UserInputEvent);
+
         this.recentHistory.push({ role: 'user', content: query });
         await this.compressContextIfNeeded();
 
@@ -81,7 +86,6 @@ export class SessionService {
         try {
             const snapshotManager = await this.createSnapshotManager(process.cwd());
             console.log('📸 创建任务开始前的快照...');
-
             const snapshotResult = await snapshotManager.createSnapshot(
                 `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
             );
@@ -89,12 +93,10 @@ export class SessionService {
             if (!snapshotResult.success) {
                 console.error('❌ 快照创建失败:', snapshotResult.error);
                 const errorMessage = 'Failed to create safety snapshot: ' + snapshotResult.error;
-
                 this.eventEmitter.emit({
                     type: 'text_generated',
                     text: errorMessage,
                 } as TextGeneratedEvent);
-
                 return {
                     terminateReason: 'ERROR',
                     history: [],
@@ -114,15 +116,13 @@ export class SessionService {
             smartAgent.initializeTools();
 
             console.log('🔄 开始SmartAgent推理循环...');
-
             const fullHistory = this.buildFullHistory();
             const taskResult = await smartAgent.runTask(query, fullHistory);
 
             this.recentHistory.push(...taskResult.history);
-
             this.interactionCount++;
-            console.log(`\n✅ 任务处理完成: ${taskResult.terminateReason === 'FINISHED' ? '成功' : '失败'}`);
 
+            console.log(`\n✅ 任务处理完成: ${taskResult.terminateReason === 'FINISHED' ? '成功' : '失败'}`);
             this.eventEmitter.emit({
                 type: 'task_completed',
                 displayTitle: "Finished",
@@ -134,16 +134,13 @@ export class SessionService {
             } as TaskCompletedEvent);
 
             return taskResult;
-
         } catch (error) {
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
             console.error(`💥 ${errorMessage}`);
-
             this.eventEmitter.emit({
                 type: 'text_generated',
                 text: errorMessage,
             } as TextGeneratedEvent);
-
             return {
                 terminateReason: 'ERROR',
                 history: [],
@@ -157,7 +154,6 @@ export class SessionService {
 
     private async compressContextIfNeeded(): Promise<void> {
         const totalTokens = this.compressedAgent.calculateTokens(this.recentHistory);
-
         if (totalTokens <= this.maxTokens || this.recentHistory.length <= this.preserveRecentCount) {
             return;
         }
@@ -213,6 +209,7 @@ export class SessionService {
 
     async getSessionStats(): Promise<SessionStats> {
         const sessionDuration = Date.now() - this.sessionStartTime.getTime();
+
         const snapshotManager = await this.createSnapshotManager();
         const snapshotStatus = await snapshotManager.getStatus();
 

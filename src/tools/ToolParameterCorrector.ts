@@ -156,7 +156,7 @@ export class ToolParameterCorrector {
     // 解析AI响应
     try {
       const result = this.parseAIResponse(text);
-      
+
       // 验证结果
       if (result.found && result.correctedValue && result.confidence >= options.minConfidence) {
         // 双重验证：确保修正后的值确实存在于文件中
@@ -199,20 +199,16 @@ export class ToolParameterCorrector {
     confidence: number;
   } {
     // 尝试解析JSON响应
-    try {
-      // 查找JSON块
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return {
-          found: !!parsed.found,
-          correctedValue: parsed.correctedValue || undefined,
-          explanation: parsed.explanation || 'No explanation provided',
-          confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0
-        };
-      }
-    } catch (error) {
-      // JSON解析失败，尝试解析结构化文本
+    // 查找JSON块
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        found: !!parsed.found,
+        correctedValue: parsed.correctedValue || undefined,
+        explanation: parsed.explanation || 'No explanation provided',
+        confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0
+      };
     }
 
     // 回退到文本解析
@@ -355,7 +351,7 @@ Find the exact text in the file that this parameter is trying to reference, acco
     options: CorrectionOptions = {}
   ): Promise<ParameterCorrectionResult[]> {
     const results: ParameterCorrectionResult[] = [];
-    
+
     for (const param of parameters) {
       const result = await this.correctStringParameter(param, fileContent, model, options);
       results.push(result);

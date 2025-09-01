@@ -24,42 +24,40 @@ interface McpConnection {
 
 export class MCPToolLoader {
   private connections: McpConnection[] = [];
-  private loadedTools: MCPTool[] = [];
 
-  async loadMCPTools(config: Config): Promise<MCPTool[]> {
+  async loadMCPTools(config: Config): Promise<{ name: string; tool: any; category: string }[]> {
     try {
       await this.cleanup();
 
       if (!config.mcpServers || Object.keys(config.mcpServers).length === 0) {
-        console.log('📦 未配置 MCP 服务器');
+        console.log('📦 No MCP servers configured');
         return [];
       }
 
-      console.log('🔌 正在连接到 MCP 服务器...');
-      const allTools: MCPTool[] = [];
+      console.log('🔌 Connecting to MCP servers...');
+      const allTools: { name: string; tool: any; category: string }[] = [];
 
       for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
         try {
           const tools = await this.connectToServer(serverName, serverConfig);
           allTools.push(...tools);
-          console.log(`✅ 已从 ${serverName} 加载 ${tools.length} 个工具`);
+          console.log(`✅ Loaded ${tools.length} tools from ${serverName}`);
         } catch (error) {
-          console.error(`❌ 连接到 ${serverName} 失败:`, error instanceof Error ? error.message : '未知错误');
+          console.error(`❌ Failed to connect to ${serverName}:`, error instanceof Error ? error.message : 'Unknown error');
         }
       }
 
-      this.loadedTools = allTools;
-      console.log(`🎉 总共加载了 ${allTools.length} 个 MCP 工具`);
+      console.log(`🎉 Total loaded ${allTools.length} MCP tools`);
       return allTools;
     } catch (error) {
-      console.error('❌ 加载 MCP 工具失败:', error instanceof Error ? error.message : '未知错误');
+      console.error('❌ Failed to load MCP tools:', error instanceof Error ? error.message : 'Unknown error');
       return [];
     }
   }
 
-  private async connectToServer(serverName: string, serverConfig: McpServerConfig): Promise<MCPTool[]> {
+  private async connectToServer(serverName: string, serverConfig: McpServerConfig): Promise<{ name: string; tool: any; category: string }[]> {
     if (!serverConfig.command) {
-      throw new Error(`MCP 服务器 ${serverName} 需要配置 command 字段`);
+      throw new Error(`MCP server ${serverName} requires command field`);
     }
 
     const transport = new StdioClientTransport({
@@ -82,7 +80,6 @@ export class MCPToolLoader {
 
     try {
       await client.connect(transport);
-
       this.connections.push({
         client,
         transport,
@@ -91,13 +88,15 @@ export class MCPToolLoader {
 
       const toolsResponse = await client.listTools();
       if (!toolsResponse.tools || toolsResponse.tools.length === 0) {
-        console.log(`⚠️ MCP 服务器 ${serverName} 没有提供任何工具`);
+        console.log(`⚠️ MCP server ${serverName} provides no tools`);
         return [];
       }
 
-      const tools: MCPTool[] = toolsResponse.tools.map(toolInfo => {
-        return this.createToolProxy(client, serverName, toolInfo);
-      });
+      const tools = toolsResponse.tools.map(toolInfo => ({
+        name: `mcp_${serverName}_${toolInfo.name}`,
+        tool: this.createToolProxy(client, serverName, toolInfo),
+        category: 'mcp'
+      }));
 
       return tools;
     } catch (error) {
@@ -111,10 +110,9 @@ export class MCPToolLoader {
     }
   }
 
-  private createToolProxy(client: Client, serverName: string, toolInfo: any): MCPTool {
-    // Create MCP tool in AI SDK format directly
-    let t = tool({
-      description: toolInfo.description || `从 MCP 服务器 ${serverName} 加载的工具`,
+  private createToolProxy(client: Client, serverName: string, toolInfo: any): any {
+    return tool({
+      description: toolInfo.description || `Tool from MCP server ${serverName}`,
       inputSchema: toolInfo.inputSchema || {
         type: 'object',
         properties: {},
@@ -142,52 +140,38 @@ export class MCPToolLoader {
 
           return {
             success: true,
-            content: '工具执行完成，但没有返回内容',
+            content: 'Tool executed but returned no content',
             raw: result
           };
         } catch (error) {
-          console.error(`❌ MCP 工具 ${toolInfo.name} 执行失败:`, error);
+          console.error(`❌ MCP tool ${toolInfo.name} execution failed:`, error);
           return {
             success: false,
-            error: error instanceof Error ? error.message : '未知错误',
-            content: `执行 MCP 工具 ${toolInfo.name} 时出错`
+            error: error instanceof Error ? error.message : 'Unknown error',
+            content: `Error executing MCP tool ${toolInfo.name}`
           };
         }
       }
     });
-
-    (t as MCPTool).name = `mcp_${serverName}_${toolInfo.name}`;
-    return t as MCPTool;
-  }
-
-  getLoadedTools(): MCPTool[] {
-    return [...this.loadedTools];
-  }
-
-  getConnectionStatus(): { connected: number; tools: number } {
-    return {
-      connected: this.connections.length,
-      tools: this.loadedTools.length
-    };
   }
 
   async cleanup(): Promise<void> {
-    console.log('🧹 清理 MCP 连接...');
+    console.log('🧹 Cleaning up MCP connections...');
     for (const connection of this.connections) {
       try {
         await connection.client.close();
         await connection.transport.close();
       } catch (error) {
-        console.error(`清理 MCP 连接 ${connection.serverName} 时出错:`, error);
+        console.error(`Error cleaning up MCP connection ${connection.serverName}:`, error);
       }
     }
     this.connections = [];
-    this.loadedTools = [];
   }
 }
 
 export const mcpToolLoader = new MCPToolLoader();
 
-export async function loadMCPTools(config: Config): Promise<MCPTool[]> {
-  return mcpToolLoader.loadMCPTools(config);
-}
+export const registerMcpTools = async (registry: any, config: Config) => {
+  const mcpTools = await mcpToolLoader.loadMCPTools(config);
+  registry.registerMultiple(mcpTools);
+};

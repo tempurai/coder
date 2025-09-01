@@ -4,7 +4,7 @@ import { exec } from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
-import { ToolContext } from './base.js';
+import { ToolContext, ToolNames } from './ToolRegistry.js';
 import { ToolOutputEvent } from '../events/EventTypes.js';
 
 const execAsync = util.promisify(exec);
@@ -25,7 +25,7 @@ export const createWriteFileTool = (context: ToolContext) => tool({
             if (!fs.existsSync(dir)) {
                 context.eventEmitter.emit({
                     type: 'tool_output',
-                    toolName: 'write_file',
+                    toolName: ToolNames.WRITE_FILE,
                     content: `Creating directory: ${dir}`
                 } as ToolOutputEvent);
                 fs.mkdirSync(dir, { recursive: true });
@@ -35,7 +35,7 @@ export const createWriteFileTool = (context: ToolContext) => tool({
 
             context.eventEmitter.emit({
                 type: 'tool_output',
-                toolName: 'write_file',
+                toolName: ToolNames.WRITE_FILE,
                 content: `File written: ${filePath} (${content.length} characters)`
             } as ToolOutputEvent);
 
@@ -54,7 +54,6 @@ export const createWriteFileTool = (context: ToolContext) => tool({
         }
     }
 });
-
 
 export const createApplyPatchTool = (context: ToolContext) => tool({
     description: `Apply a unified diff patch to a file. 
@@ -78,7 +77,7 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
 
             context.eventEmitter.emit({
                 type: 'tool_output',
-                toolName: 'apply_patch',
+                toolName: ToolNames.APPLY_PATCH,
                 content: `Applying patch to: ${filePath}`
             } as ToolOutputEvent);
 
@@ -87,12 +86,13 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
 
             try {
                 const patchCmd = `patch "${absolutePath}" < "${tempPatchFile}"`;
+
                 if (backup) {
                     const backupPath = `${absolutePath}.backup.${Date.now()}`;
                     await fs.promises.copyFile(absolutePath, backupPath);
                     context.eventEmitter.emit({
                         type: 'tool_output',
-                        toolName: 'apply_patch',
+                        toolName: ToolNames.APPLY_PATCH,
                         content: `Backup created: ${backupPath}`
                     } as ToolOutputEvent);
                 }
@@ -102,7 +102,7 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
 
                 context.eventEmitter.emit({
                     type: 'tool_output',
-                    toolName: 'apply_patch',
+                    toolName: ToolNames.APPLY_PATCH,
                     content: `Patch applied successfully\n${stdout}`
                 } as ToolOutputEvent);
 
@@ -116,7 +116,7 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
             } catch (patchError) {
                 context.eventEmitter.emit({
                     type: 'tool_output',
-                    toolName: 'apply_patch',
+                    toolName: ToolNames.APPLY_PATCH,
                     content: 'System patch failed, attempting manual application...'
                 } as ToolOutputEvent);
 
@@ -214,7 +214,7 @@ async function applyPatchManually(filePath: string, patchContent: string, backup
 
     context.eventEmitter.emit({
         type: 'tool_output',
-        toolName: 'apply_patch',
+        toolName: ToolNames.APPLY_PATCH,
         content: `Patch applied successfully (manual parser) - ${hunks.length} changes applied`
     } as ToolOutputEvent);
 
@@ -238,7 +238,7 @@ export const createFindFilesTool = (context: ToolContext) => tool({
 
             context.eventEmitter.emit({
                 type: 'tool_output',
-                toolName: 'find_files',
+                toolName: ToolNames.FIND_FILES,
                 content: `Found ${files.length} files matching '${pattern}':\n${files.join('\n')}`
             } as ToolOutputEvent);
 
@@ -260,3 +260,13 @@ export const createFindFilesTool = (context: ToolContext) => tool({
         }
     },
 });
+
+export const registerFileTools = (registry: any) => {
+    const context = registry.getContext();
+
+    registry.registerMultiple([
+        { name: ToolNames.WRITE_FILE, tool: createWriteFileTool(context), category: 'file' },
+        { name: ToolNames.APPLY_PATCH, tool: createApplyPatchTool(context), category: 'file' },
+        { name: ToolNames.FIND_FILES, tool: createFindFilesTool(context), category: 'file' }
+    ]);
+};

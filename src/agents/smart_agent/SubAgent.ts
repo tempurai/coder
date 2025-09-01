@@ -1,5 +1,6 @@
 import { ToolAgent, Messages } from '../tool_agent/ToolAgent.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
+import { ToolNames } from '../../tools/ToolRegistry.js';
 import { z } from "zod";
 import { SystemInfoEvent } from '../../events/EventTypes.js';
 import { inject } from 'inversify';
@@ -44,7 +45,7 @@ const SUB_AGENT_PROMPT = `You are a specialized SubAgent designed to complete a 
 6. **Complete Thoroughly**: Don't finish until the objective is fully met
 
 # Tool Usage Strategy
-- **Shell Commands First**: For common operations like listing files (ls), checking status (git status), finding files (find), prefer shell_executor over specialized tools
+- **Shell Commands First**: For common operations like listing files (ls), checking status (git status), finding files (find), prefer ${ToolNames.SHELL_EXECUTOR} over specialized tools
 - **Shell for Exploration**: Use shell commands to explore project structure, check file existence, run builds/tests
 - **Shell for Testing and Validation**: Use shell commands to run tests, check code quality, and validate changes
 - Handle tool errors by trying alternative approaches or modified parameters
@@ -80,115 +81,6 @@ Always respond with valid JSON:
 **Special Actions:**
 - Use "tool": "think" for pure reasoning when no tool execution is needed
 - Use "tool": "finish" to explicitly signal task completion
-
-
-# Examples
-
-**Example 1: Code Analysis Task**
-Task: "Analyze the authentication system and identify security issues"
-
-{
-  "reasoning": "I need to understand the project structure and locate authentication-related files. I'll start with basic exploration.",
-  "action": {
-    "tool": "shell_executor",
-    "args": {
-      "command": "find . -name '*auth*' -o -name '*login*' -o -name '*security*' | head -10",
-      "description": "Find authentication-related files"
-    }
-  },
-  "completed": false,
-  "output": null,
-  "criticalInfo": null
-}
-
-{
-  "reasoning": "Found auth files. Now I need to examine them for security issues.",
-  "action": {
-    "tool": "shell_executor",
-    "args": {
-      "command": "cat src/auth.js | head -50",
-      "description": "Read authentication implementation"
-    }
-  },
-  "completed": false,
-  "output": null,
-  "criticalInfo": null
-}
-
-{
-  "reasoning": "Analysis complete. Found several security concerns that need attention.",
-  "action": {
-    "tool": "finish",
-    "args": {}
-  },
-  "completed": true,
-  "output": {
-    "summary": "Security analysis completed",
-    "issues_found": ["Hardcoded secrets", "Missing input validation", "Weak password policy"],
-    "files_analyzed": ["src/auth.js", "middleware/security.js"]
-  },
-  "criticalInfo": "Security analysis found 3 critical vulnerabilities in authentication system"
-}
-
-**Example 2: File Refactoring Task**
-Task: "Convert callback functions to async/await"
-
-{
-  "reasoning": "I need to find the target files and understand the current callback patterns.",
-  "action": {
-    "tool": "shell_executor",
-    "args": {
-      "command": "find . -name '*.js' | grep -v node_modules | xargs grep -l 'callback\\|cb)'",
-      "description": "Find JavaScript files using callbacks"
-    }
-  },
-  "completed": false,
-  "output": null,
-  "criticalInfo": null
-}
-
-{
-  "reasoning": "Found files with callbacks. I'll refactor the main service file to use async/await patterns.",
-  "action": {
-    "tool": "apply_patch",
-    "args": {
-      "filePath": "services/userService.js",
-      "patchContent": "--- a/services/userService.js\n+++ b/services/userService.js\n@@ -1,8 +1,10 @@\n-function getUser(id, callback) {\n-  db.findById(id, (err, user) => {\n-    if (err) return callback(err);\n-    callback(null, user);\n-  });\n+async function getUser(id) {\n+  try {\n+    const user = await db.findById(id);\n+    return user;\n+  } catch (error) {\n+    throw error;\n+  }\n }"
-    }
-  },
-  "completed": false,
-  "output": null,
-  "criticalInfo": "Applied patch to services/userService.js - converted callback to async/await"
-}
-
-{
-  "reasoning": "Refactoring complete. Running tests to verify the changes work correctly.",
-  "action": {
-    "tool": "shell_executor",
-    "args": {
-      "command": "npm test",
-      "description": "Run tests to verify refactored code"
-    }
-  },
-  "completed": false,
-  "output": null,
-  "criticalInfo": null
-}
-
-{
-  "reasoning": "Tests pass. Refactoring from callbacks to async/await is complete and verified.",
-  "action": {
-    "tool": "finish",
-    "args": {}
-  },
-  "completed": true,
-  "output": {
-    "summary": "Successfully converted callbacks to async/await",
-    "files_modified": ["services/userService.js", "utils/database.js"],
-    "verification": "All tests passing"
-  },
-  "criticalInfo": "Refactoring completed - 2 files modified, all tests passing"
-}
 
 Remember: You are operating independently to accomplish a specific goal. Focus on delivering results efficiently and effectively while maintaining high quality standards. Use shell commands as your primary exploration and verification tool.`;
 
@@ -290,7 +182,6 @@ export class SubAgent {
 Context: ${JSON.stringify(task.context, null, 2)}
 Complete this task efficiently.`
           + (task.contextGuidance ? `
-
 Context Guidance: ${JSON.stringify(task.contextGuidance, null, 2)}` : '')
       }
     ];
@@ -346,17 +237,14 @@ Context Guidance: ${JSON.stringify(task.contextGuidance, null, 2)}` : '')
           const toolResult = await this.toolAgent.executeTool(response.action.tool, response.action.args);
           currentObservation = `Previous: ${response.action.tool}\nResult: ${JSON.stringify(toolResult, null, 2)}`;
 
-          // Auto-preserve based on command classification
           if (this.shouldPreserveTool(response.action.tool, toolResult)) {
             const info = this.summarizeResult(response.action.tool, toolResult);
             criticalInfoList.push(info);
           }
-
         } catch (toolError) {
           const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
           currentObservation = `Previous: ${response.action.tool}\nError: ${errorMessage}`;
 
-          // Always preserve errors
           criticalInfoList.push(`ERROR ${response.action.tool}: ${errorMessage}`);
         }
       } catch (error) {
@@ -388,18 +276,15 @@ Context Guidance: ${JSON.stringify(task.contextGuidance, null, 2)}` : '')
   }
 
   private shouldPreserveTool(toolName: string, result: any): boolean {
-    // Always preserve write operations
-    if (['write_file', 'apply_patch'].includes(toolName)) {
+    if ([ToolNames.WRITE_FILE, ToolNames.APPLY_PATCH].includes(toolName)) {
       return true;
     }
 
-    // Always preserve errors
     if (!result.success) {
       return true;
     }
 
-    // For shell commands, check if it's a write operation
-    if (toolName === 'shell_executor' || toolName === 'multi_command') {
+    if (toolName === ToolNames.SHELL_EXECUTOR || toolName === ToolNames.MULTI_COMMAND) {
       return result.commandClassification && !result.commandClassification.isReadOnly;
     }
 
@@ -412,11 +297,11 @@ Context Guidance: ${JSON.stringify(task.contextGuidance, null, 2)}` : '')
     }
 
     switch (toolName) {
-      case 'write_file':
+      case ToolNames.WRITE_FILE:
         return `Wrote file: ${result.filePath}`;
-      case 'apply_patch':
+      case ToolNames.APPLY_PATCH:
         return `Applied patch to: ${result.filePath}`;
-      case 'shell_executor':
+      case ToolNames.SHELL_EXECUTOR:
         return `Executed (${result.commandClassification?.category}): ${result.command}`;
       default:
         return `${toolName}: completed`;
@@ -434,7 +319,6 @@ export const createSubAgentTool = (toolAgent: ToolAgent, eventEmitter: UIEventEm
   const startSubAgent = async (args: any): Promise<any> => {
     console.log('Starting sub-agent for specialized task');
     const subAgent = new SubAgent(toolAgent, eventEmitter);
-
     return await subAgent.executeTask({
       ...args,
       contextGuidance: args.contextGuidance || {

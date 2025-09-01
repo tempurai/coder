@@ -3,6 +3,7 @@ import { TYPES } from '../di/types.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
 import { ToolConfirmationRequestEvent, ToolConfirmationResponseEvent } from '../events/EventTypes.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
+import { ToolNames } from '../tools/ToolRegistry.js';
 
 export type ConfirmationChoice = 'yes' | 'no' | 'yes_and_remember';
 
@@ -42,12 +43,10 @@ export class HITLManager {
         options: ConfirmationOptions = {}
     ): Promise<boolean> {
         const choice = await this.requestConfirmationWithChoice(toolName, args, description, options);
-
         if (choice === 'yes_and_remember') {
             await this.addToAllowlist(toolName, args);
             return true;
         }
-
         return choice === 'yes';
     }
 
@@ -107,14 +106,13 @@ export class HITLManager {
 
     private async addToAllowlist(toolName: string, args: any): Promise<void> {
         try {
-            if (toolName === 'shell_executor' && args.command) {
+            if (toolName === ToolNames.SHELL_EXECUTOR && args.command) {
                 const command = this.extractCommandName(args.command);
                 if (command) {
                     const config = this.configLoader.getConfig();
                     const currentAllowlist = config.tools.shellExecutor.security.allowlist;
 
                     if (!currentAllowlist.includes(command)) {
-                        // Create a proper partial config that matches the interface
                         const updatedConfig = {
                             tools: {
                                 ...config.tools,
@@ -149,7 +147,6 @@ export class HITLManager {
         const firstPart = parts[0];
         const pathSegments = firstPart.split(/[/\\]/);
         const commandName = pathSegments[pathSegments.length - 1];
-
         return commandName.replace(/\.(exe|cmd|bat)$/i, '').toLowerCase();
     }
 

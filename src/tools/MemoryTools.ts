@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { z } from 'zod';
 import { tool } from 'ai';
-import { ToolContext } from './base.js';
+import { ToolContext, ToolNames } from './ToolRegistry.js';
 import { ToolOutputEvent } from '../events/EventTypes.js';
 
 export const createSaveMemoryTool = (context: ToolContext) => tool({
@@ -24,7 +24,7 @@ Examples of when to use this:
       const confirmDescription = `Save to memory${categoryInfo}:\n${previewContent}${content.length > 150 ? '...' : ''}`;
 
       const confirmed = await context.hitlManager.requestConfirmation(
-        'save_memory',
+        ToolNames.SAVE_MEMORY,
         { content, category },
         confirmDescription
       );
@@ -69,7 +69,7 @@ Examples of when to use this:
 
       context.eventEmitter.emit({
         type: 'tool_output',
-        toolName: 'save_memory',
+        toolName: ToolNames.SAVE_MEMORY,
         content: `Memory saved to ${path.basename(contextFilePath)} in category: ${category || 'General'}`
       } as ToolOutputEvent);
 
@@ -94,14 +94,23 @@ Examples of when to use this:
 function getContextFilePath(): string {
   const projectContextPath = path.join(process.cwd(), '.tempurai', 'directives.md');
   const projectDir = path.dirname(projectContextPath);
+
   if (fs.existsSync(projectDir)) {
     return projectContextPath;
   }
 
   const globalContextPath = path.join(os.homedir(), '.tempurai', '.tempurai.md');
   const globalDir = path.dirname(globalContextPath);
+
   if (!fs.existsSync(globalDir)) {
     fs.mkdirSync(globalDir, { recursive: true });
   }
+
   return globalContextPath;
 }
+
+export const registerMemoryTools = (registry: any) => {
+  const context = registry.getContext();
+
+  registry.register({ name: ToolNames.SAVE_MEMORY, tool: createSaveMemoryTool(context), category: 'memory' });
+};

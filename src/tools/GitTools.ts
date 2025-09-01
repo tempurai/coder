@@ -2,7 +2,7 @@ import { exec } from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
-import { ToolContext } from './base.js';
+import { ToolContext, ToolNames } from './ToolRegistry.js';
 import { ToolOutputEvent } from '../events/EventTypes.js';
 
 const execAsync = util.promisify(exec);
@@ -18,7 +18,7 @@ export const createGitStatusTool = (context: ToolContext) => tool({
 
             context.eventEmitter.emit({
                 type: 'tool_output',
-                toolName: 'git_status',
+                toolName: ToolNames.GIT_STATUS,
                 content: `Repository status: ${files.length > 0 ? `${files.length} files changed` : 'working directory clean'}`
             } as ToolOutputEvent);
 
@@ -49,7 +49,7 @@ export const createGitLogTool = (context: ToolContext) => tool({
 
             context.eventEmitter.emit({
                 type: 'tool_output',
-                toolName: 'git_log',
+                toolName: ToolNames.GIT_LOG,
                 content: `Retrieved ${commits.length} recent commits`
             } as ToolOutputEvent);
 
@@ -78,12 +78,13 @@ export const createGitDiffTool = (context: ToolContext) => tool({
             const command = file ? `git diff ${file}` : 'git diff';
             const { stdout } = await execAsync(command);
             const diffOutput = stdout.trim() || 'No changes';
+
             const linesChanged = diffOutput === 'No changes' ? 0 :
                 diffOutput.split('\n').filter(line => line.startsWith('+') || line.startsWith('-')).length;
 
             context.eventEmitter.emit({
                 type: 'tool_output',
-                toolName: 'git_diff',
+                toolName: ToolNames.GIT_DIFF,
                 content: file
                     ? `Diff for ${file}: ${linesChanged > 0 ? `${linesChanged} lines changed` : 'no changes'}`
                     : `Working directory diff: ${linesChanged > 0 ? `${linesChanged} lines changed` : 'no changes'}`
@@ -104,3 +105,13 @@ export const createGitDiffTool = (context: ToolContext) => tool({
         }
     },
 });
+
+export const registerGitTools = (registry: any) => {
+    const context = registry.getContext();
+
+    registry.registerMultiple([
+        { name: ToolNames.GIT_STATUS, tool: createGitStatusTool(context), category: 'git' },
+        { name: ToolNames.GIT_LOG, tool: createGitLogTool(context), category: 'git' },
+        { name: ToolNames.GIT_DIFF, tool: createGitDiffTool(context), category: 'git' }
+    ]);
+};

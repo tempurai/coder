@@ -16,6 +16,8 @@ import type { LanguageModel } from 'ai';
 import { HITLManager } from '../services/HITLManager.js';
 import { InterruptService } from '../services/InterruptService.js';
 import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
+import { ToolRegistry } from '../tools/ToolRegistry.js';
+import { SecurityPolicyEngine } from '../security/SecurityPolicyEngine.js';
 
 export { TYPES } from './types.js';
 
@@ -79,6 +81,10 @@ export function createContainer(): Container {
   container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inSingletonScope();
 
   container.bind<InterruptService>(TYPES.InterruptService).to(InterruptService).inSingletonScope();
+
+  container.bind<SecurityPolicyEngine>(TYPES.SecurityPolicyEngine).to(SecurityPolicyEngine);
+
+  container.bind<ToolRegistry>(TYPES.ToolRegistry).to(ToolRegistry).inSingletonScope();
 
   // --- Factories ---
   container.bind<ISnapshotManagerFactory>(TYPES.SnapshotManagerFactory)

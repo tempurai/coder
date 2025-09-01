@@ -3,7 +3,7 @@ import { convert } from 'html-to-text';
 import { URL } from 'url';
 import { z } from 'zod';
 import { tool } from 'ai';
-import { ToolContext } from './base.js';
+import { ToolContext, ToolNames } from './ToolRegistry.js';
 import { ToolOutputEvent } from '../events/EventTypes.js';
 
 interface WebSearchSource {
@@ -128,7 +128,8 @@ export const createWebSearchTool = (context: ToolContext) => tool({
         };
       }
 
-      if (!context.config.tools.tavilyApiKey) {
+      const tavilyApiKey = context.configLoader.getConfig().tools.tavilyApiKey;
+      if (!tavilyApiKey) {
         return {
           summary: '',
           sources: [],
@@ -139,7 +140,7 @@ export const createWebSearchTool = (context: ToolContext) => tool({
 
       context.eventEmitter.emit({
         type: 'tool_output',
-        toolName: 'web_search',
+        toolName: ToolNames.WEB_SEARCH,
         content: `Searching the web for: "${query}"`
       } as ToolOutputEvent);
 
@@ -149,7 +150,7 @@ export const createWebSearchTool = (context: ToolContext) => tool({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          api_key: context.config.tools.tavilyApiKey,
+          api_key: tavilyApiKey,
           query: query.trim(),
           search_depth: 'basic',
           include_answer: true,
@@ -183,7 +184,7 @@ ${sources.map((source, i) => `${i + 1}. ${source.title} - ${source.url}`).join('
 
       context.eventEmitter.emit({
         type: 'tool_output',
-        toolName: 'web_search',
+        toolName: ToolNames.WEB_SEARCH,
         content: searchResults
       } as ToolOutputEvent);
 
@@ -209,7 +210,7 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
     url: z.string().describe('The URL to fetch content from')
   }),
   execute: async ({ url }): Promise<UrlFetchResult> => {
-    const webToolsConfig = context.config.tools.webTools;
+    const webToolsConfig = context.configLoader.getConfig().tools.webTools;
     const requestTimeout = webToolsConfig.requestTimeout ?? 15000;
     const maxContentLength = webToolsConfig.maxContentLength ?? 10000;
     const userAgent = webToolsConfig.userAgent ?? 'Tempurai-Bot/1.0 (Security-Enhanced)';
@@ -235,7 +236,7 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
 
       context.eventEmitter.emit({
         type: 'tool_output',
-        toolName: 'url_fetch',
+        toolName: ToolNames.URL_FETCH,
         content: `Fetching content from: ${url}`
       } as ToolOutputEvent);
 
@@ -358,7 +359,7 @@ ${finalContent.split('\n').slice(0, 10).join('\n')}${finalContent.split('\n').le
 
       context.eventEmitter.emit({
         type: 'tool_output',
-        toolName: 'url_fetch',
+        toolName: ToolNames.URL_FETCH,
         content: fetchResults
       } as ToolOutputEvent);
 
@@ -378,3 +379,12 @@ ${finalContent.split('\n').slice(0, 10).join('\n')}${finalContent.split('\n').le
     }
   }
 });
+
+export const registerWebTools = (registry: any) => {
+  const context = registry.getContext();
+
+  registry.registerMultiple([
+    { name: ToolNames.WEB_SEARCH, tool: createWebSearchTool(context), category: 'web' },
+    { name: ToolNames.URL_FETCH, tool: createUrlFetchTool(context), category: 'web' }
+  ]);
+};

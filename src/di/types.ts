@@ -22,6 +22,9 @@ export const TYPES = {
   HITLManager: Symbol.for('HITLManager'),
   InterruptService: Symbol.for('InterruptService'),
 
+  SecurityPolicyEngine: Symbol.for('SecurityPolicyEngine'),
+  ToolRegistry: Symbol.for('ToolRegistry'),
+
   // --- Factories for Async/On-demand Initialization ---
   InitializedToolAgent: Symbol.for('InitializedToolAgent'),
   InitializedSmartAgent: Symbol.for('InitializedSmartAgent'),

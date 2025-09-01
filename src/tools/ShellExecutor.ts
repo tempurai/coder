@@ -2,9 +2,9 @@ import { exec, type ExecOptions } from 'child_process';
 import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
-import { CommandValidator, CommandClassification } from '../security/CommandValidator.js';
-import { ToolContext } from './base.js';
+import { ToolContext, ToolNames } from './ToolRegistry.js';
 import { ToolOutputEvent } from '../events/EventTypes.js';
+import type { CommandClassification } from '../security/SecurityPolicyEngine.js';
 
 const execAsync = util.promisify(exec);
 
@@ -45,15 +45,6 @@ export interface MultiCommandExecutionResult {
 }
 
 export const createShellExecutorTools = (context: ToolContext) => {
-    const validator = new CommandValidator(context.configLoader);
-
-    const validateCommands = (
-        commands: string[],
-    ): any[] =>
-        (validator as any).validateCommands
-            ? (validator as any).validateCommands(commands)
-            : commands.map((c) => validator.validateCommand(c));
-
     const execute = tool({
         description: `Execute shell commands directly. This is the PRIMARY tool for most operations.
 Use this for:
@@ -78,17 +69,18 @@ IMPORTANT: Always explain what command you're running and why.`,
             captureError,
         }): Promise<ShellExecutionResult> => {
             try {
-                const validationResult = validator.validateCommand(command);
-                const classification = validator.classifyCommand(command);
+                const validationResult = context.securityEngine.validateCommand(command);
+                const classification = context.securityEngine.classifyCommand(command);
 
                 if (!validationResult.allowed) {
                     if (validationResult.requiresConfirmation) {
                         const confirmed = await context.hitlManager.requestConfirmation(
-                            'shell_executor',
+                            ToolNames.SHELL_EXECUTOR,
                             { command, description, workingDirectory },
                             `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`,
                             { showRememberOption: true }
                         );
+
                         if (!confirmed) {
                             return {
                                 success: false,
@@ -113,11 +105,12 @@ IMPORTANT: Always explain what command you're running and why.`,
                     }
                 } else if (validationResult.requiresConfirmation) {
                     const confirmed = await context.hitlManager.requestConfirmation(
-                        'shell_executor',
+                        ToolNames.SHELL_EXECUTOR,
                         { command, description, workingDirectory },
                         `Execute command: ${command}\n${description ? `Purpose: ${description}` : ''}`,
                         { showRememberOption: true }
                     );
+
                     if (!confirmed) {
                         return {
                             success: false,
@@ -132,7 +125,7 @@ IMPORTANT: Always explain what command you're running and why.`,
 
                 context.eventEmitter.emit({
                     type: 'tool_output',
-                    toolName: 'shell_executor',
+                    toolName: ToolNames.SHELL_EXECUTOR,
                     content: `Executing: ${command}\nPurpose: ${description}`
                 } as ToolOutputEvent);
 
@@ -140,7 +133,6 @@ IMPORTANT: Always explain what command you're running and why.`,
                 if (workingDirectory) options.cwd = workingDirectory;
 
                 let { stdout, stderr } = await execAsync(command, options);
-
                 stdout = stdout.toString();
                 stderr = stderr.toString();
 
@@ -153,7 +145,7 @@ IMPORTANT: Always explain what command you're running and why.`,
 
                 context.eventEmitter.emit({
                     type: 'tool_output',
-                    toolName: 'shell_executor',
+                    toolName: ToolNames.SHELL_EXECUTOR,
                     content: outputContent
                 } as ToolOutputEvent);
 
@@ -168,7 +160,7 @@ IMPORTANT: Always explain what command you're running and why.`,
                     commandClassification: classification,
                 };
             } catch (error: any) {
-                const classification = validator.classifyCommand(command);
+                const classification = context.securityEngine.classifyCommand(command);
                 const errorContent = [
                     `Command failed: ${command}`,
                     `Error: ${error?.message ?? String(error)}`,
@@ -178,7 +170,7 @@ IMPORTANT: Always explain what command you're running and why.`,
 
                 context.eventEmitter.emit({
                     type: 'tool_output',
-                    toolName: 'shell_executor',
+                    toolName: ToolNames.SHELL_EXECUTOR,
                     content: errorContent
                 } as ToolOutputEvent);
 
@@ -219,7 +211,7 @@ Examples:
             workingDirectory,
             stopOnFirstError,
         }): Promise<MultiCommandExecutionResult> => {
-            const validationResults = validateCommands(commands.map((c) => c.command));
+            const validationResults = commands.map(c => context.securityEngine.validateCommand(c.command));
             const blockedCommands = validationResults
                 .map((res, idx) => ({ res, idx, original: commands[idx] }))
                 .filter((item) => !item.res.allowed && !item.res.requiresConfirmation);
@@ -227,8 +219,7 @@ Examples:
             if (blockedCommands.length > 0) {
                 const blockedList = blockedCommands
                     .map((item) =>
-                        `- ${item.original.command}: ${item.res.reason}${item.res.suggestion ? ` (Suggestion: ${item.res.suggestion})` : ''
-                        }`,
+                        `- ${item.original.command}: ${item.res.reason}${item.res.suggestion ? ` (Suggestion: ${item.res.suggestion})` : ''}`
                     )
                     .join('\n');
                 return {
@@ -246,7 +237,7 @@ Examples:
             const confirmDescription = `Execute ${commands.length} commands: ${commandsList}${moreCount > 0 ? ` and ${moreCount} more` : ''}`;
 
             const confirmed = await context.hitlManager.requestConfirmation(
-                'multi_command',
+                ToolNames.MULTI_COMMAND,
                 { commands, workingDirectory, stopOnFirstError },
                 confirmDescription,
                 { showRememberOption: false }
@@ -263,19 +254,17 @@ Examples:
             }
 
             const results: MultiCommandResult[] = [];
-
             context.eventEmitter.emit({
                 type: 'tool_output',
-                toolName: 'multi_command',
+                toolName: ToolNames.MULTI_COMMAND,
                 content: `Executing ${commands.length} commands in sequence${workingDirectory ? ` in ${workingDirectory}` : ''}`
             } as ToolOutputEvent);
 
             for (let i = 0; i < commands.length; i++) {
                 const { command, description, continueOnError } = commands[i];
-
                 context.eventEmitter.emit({
                     type: 'tool_output',
-                    toolName: 'multi_command',
+                    toolName: ToolNames.MULTI_COMMAND,
                     content: `[${i + 1}/${commands.length}] ${command}\n${description}`
                 } as ToolOutputEvent);
 
@@ -284,7 +273,7 @@ Examples:
                     if (workingDirectory) options.cwd = workingDirectory;
 
                     let { stdout, stderr } = await execAsync(command, options);
-                    const classification = validator.classifyCommand(command);
+                    const classification = context.securityEngine.classifyCommand(command);
 
                     stdout = stdout.toString();
                     stderr = stderr.toString();
@@ -302,7 +291,7 @@ Examples:
                     if (stdout) {
                         context.eventEmitter.emit({
                             type: 'tool_output',
-                            toolName: 'multi_command',
+                            toolName: ToolNames.MULTI_COMMAND,
                             content: `[${i + 1}/${commands.length}] Output:\n${stdout.trim()}`
                         } as ToolOutputEvent);
                     }
@@ -310,13 +299,12 @@ Examples:
                     if (stderr && !continueOnError) {
                         context.eventEmitter.emit({
                             type: 'tool_output',
-                            toolName: 'multi_command',
+                            toolName: ToolNames.MULTI_COMMAND,
                             content: `[${i + 1}/${commands.length}] Stderr: ${stderr.trim()}`
                         } as ToolOutputEvent);
                     }
                 } catch (error: any) {
-                    const classification = validator.classifyCommand(command);
-
+                    const classification = context.securityEngine.classifyCommand(command);
                     results.push({
                         command,
                         description,
@@ -331,14 +319,14 @@ Examples:
 
                     context.eventEmitter.emit({
                         type: 'tool_output',
-                        toolName: 'multi_command',
+                        toolName: ToolNames.MULTI_COMMAND,
                         content: `[${i + 1}/${commands.length}] Failed: ${error?.message ?? error}`
                     } as ToolOutputEvent);
 
                     if (stopOnFirstError && !continueOnError) {
                         context.eventEmitter.emit({
                             type: 'tool_output',
-                            toolName: 'multi_command',
+                            toolName: ToolNames.MULTI_COMMAND,
                             content: 'Stopping execution due to error'
                         } as ToolOutputEvent);
                         break;
@@ -348,14 +336,13 @@ Examples:
 
             const successCount = results.filter((r) => r.success).length;
             const totalCount = results.length;
-
             const summaryContent = `Multi-command execution completed:
 - ${successCount}/${totalCount} commands successful
 - ${totalCount - successCount} commands failed`;
 
             context.eventEmitter.emit({
                 type: 'tool_output',
-                toolName: 'multi_command',
+                toolName: ToolNames.MULTI_COMMAND,
                 content: summaryContent
             } as ToolOutputEvent);
 
@@ -370,4 +357,14 @@ Examples:
     });
 
     return { execute, multiCommand };
+};
+
+export const registerShellExecutorTools = (registry: any) => {
+    const context = registry.getContext();
+    const { execute, multiCommand } = createShellExecutorTools(context);
+
+    registry.registerMultiple([
+        { name: ToolNames.SHELL_EXECUTOR, tool: execute, category: 'system' },
+        { name: ToolNames.MULTI_COMMAND, tool: multiCommand, category: 'system' }
+    ]);
 };

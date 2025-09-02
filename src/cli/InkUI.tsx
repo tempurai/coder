@@ -9,6 +9,7 @@ import { useSessionEvents } from './hooks/useSessionEvents.js';
 import { useEventSeparation } from './hooks/useEventSeparation.js';
 import { EventItem } from './components/EventItem.js';
 import { ProgressIndicator } from './components/ProgressIndicator.js';
+import { ExecutionMode } from '../services/ExecutionModeManager.js';
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
 
@@ -25,15 +26,15 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions } = useSessionEvents(sessionService);
   const { staticEvents, dynamicEvents } = useEventSeparation(events);
   const [editModeStatus, setEditModeStatus] = useState<string>('');
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(ExecutionMode.CODE);
 
-  // Update edit mode status periodically
   useEffect(() => {
-    const updateEditModeStatus = () => {
+    const updateStatus = () => {
       setEditModeStatus(sessionService.editModeManager.getStatusMessage());
+      setExecutionMode(sessionService.executionModeManager.getCurrentMode());
     };
-
-    updateEditModeStatus();
-    const interval = setInterval(updateEditModeStatus, 1000);
+    updateStatus();
+    const interval = setInterval(updateStatus, 1000);
     return () => clearInterval(interval);
   }, [sessionService]);
 
@@ -50,20 +51,21 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
     setEditModeStatus(sessionService.editModeManager.getStatusMessage());
   }, [sessionService]);
 
+  const handleExecutionModeChange = useCallback((mode: ExecutionMode) => {
+    setExecutionMode(mode);
+  }, []);
+
   const staticItems = [
-    // Header with edit mode status
     <Box key='header' flexDirection='column' marginBottom={1} paddingX={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
       <Text color={currentTheme.colors.info}>Welcome to Tempurai Code Assistant</Text>
       <Text> </Text>
       <Text>
-        Type /help for commands • <Text color={currentTheme.colors.accent}>Ctrl+R</Text> for detail mode • <Text color={currentTheme.colors.accent}>Shift+Tab</Text> cycle edit mode
+        Type <Text color={currentTheme.colors.accent}>:</Text> for execution mode • <Text color={currentTheme.colors.accent}>/help</Text> for commands • <Text color={currentTheme.colors.accent}>Shift+Tab</Text> cycle edit mode
       </Text>
       <Text color={currentTheme.colors.text.muted}>cwd: {process.cwd()}</Text>
       <Text> </Text>
       <Text color={currentTheme.colors.text.muted}>AI can make mistakes, please check output carefully.</Text>
     </Box>,
-
-    // Title with edit mode indicator
     <Box key='title' marginBottom={1}>
       <Text color={currentTheme.colors.ui.highlight}>{'⚡'} </Text>
       <Text color={currentTheme.colors.primary} bold>
@@ -75,9 +77,9 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
           <Text color={currentTheme.colors.accent}>{editModeStatus}</Text>
         </>
       )}
+      <Text color={currentTheme.colors.text.muted}> • </Text>
+      <Text color={currentTheme.colors.info}>{sessionService.executionModeManager.getStatusMessage()}</Text>
     </Box>,
-
-    // Static events
     ...staticEvents.map((event, index) => (
       <Box key={event.id || `static-${index}`} marginBottom={1}>
         <EventItem event={event} index={index} />
@@ -87,26 +89,31 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 
   return (
     <Box flexDirection='column'>
-      {/* Static items */}
       <Static items={staticItems}>{(item) => item}</Static>
 
-      {/* Dynamic events */}
       {dynamicEvents.map((event, index) => (
         <Box key={event.id || `dynamic-${index}`} marginBottom={0}>
           <EventItem event={event} index={index} />
         </Box>
       ))}
 
-      {/* Processing indicator */}
       {isProcessing && (
         <Box marginY={1}>
           <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
         </Box>
       )}
 
-      {/* Input area */}
       <Box marginTop={1} paddingTop={1}>
-        <DynamicInput onSubmit={handleSubmit} isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} editModeStatus={editModeStatus} onEditModeToggle={handleEditModeToggle} />
+        <DynamicInput
+          onSubmit={handleSubmit}
+          isProcessing={isProcessing}
+          confirmationData={pendingConfirmation}
+          onConfirm={handleConfirmation}
+          editModeStatus={editModeStatus}
+          onEditModeToggle={handleEditModeToggle}
+          executionMode={executionMode}
+          onExecutionModeChange={handleExecutionModeChange}
+        />
       </Box>
     </Box>
   );
@@ -142,9 +149,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       return;
     }
 
-    // Ctrl+R for detail mode (placeholder for future implementation)
     if (key.ctrl && inputChar === 'r') {
-      // Detail mode toggle - could be implemented later
       return;
     }
 
@@ -167,7 +172,6 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   if (appState === 'welcome') return <WelcomeScreen onDismiss={handleWelcomeDismiss} />;
   if (appState === 'theme-selection') return <ThemeSelector onThemeSelected={handleThemeSelected} />;
-
   return <MainUI sessionService={sessionService} />;
 };
 
@@ -179,7 +183,6 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => (
 
 export const startInkUI = async (sessionService: SessionService) => {
   console.log('Starting InkUI Interface...');
-
   const exitFn = () => {
     sessionService.interrupt();
     process.exit(0);

@@ -4,45 +4,43 @@ import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
 import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
 import { inject, injectable } from 'inversify';
 import { TYPES } from '../../di/types.js';
+import { ExecutionMode } from '../../services/ExecutionModeManager.js';
 
 @injectable()
 export class ToolInterceptor {
-    constructor(@inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
+    constructor(
+        @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
         @inject(TYPES.EditModeManager) private editModeManager: EditModeManager,
-        @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine) { }
+        @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine
+    ) { }
 
     async executeToolSafely(
         iteration: number,
-        action: { tool: string, args: any }
+        action: { tool: string, args: any },
+        executionMode: ExecutionMode
     ): Promise<{ result?: any, error?: string, duration?: number }> {
         const startTime = Date.now();
 
-        try {
-            const editMode = this.editModeManager.getCurrentMode();
+        if (executionMode === ExecutionMode.PLAN) {
+            const isWriteOp = this.isWriteOperation(action.tool, action.args);
 
-            // Plan Mode下的写操作拦截
-            if (editMode === EditMode.PLAN_ONLY) {
-                // 检查是否是写操作
-                const isWriteOp = this.isWriteOperation(action.tool, action.args);
-
-                if (isWriteOp) {
-                    return {
-                        result: {
-                            planMode: true,
-                            simulatedOperation: action.tool,
-                            parameters: action.args,
-                            message: `[PLAN MODE] Would execute ${action.tool} - execution blocked in plan mode`,
-                            estimatedImpact: this.estimateImpact(action.tool, action.args)
-                        },
-                        duration: Date.now() - startTime
-                    };
-                }
+            if (isWriteOp) {
+                return {
+                    result: {
+                        planMode: true,
+                        simulatedOperation: action.tool,
+                        parameters: action.args,
+                        message: `[PLAN MODE] Would execute ${action.tool} - execution blocked in plan mode`,
+                        estimatedImpact: this.estimateImpact(action.tool, action.args)
+                    },
+                    duration: Date.now() - startTime
+                };
             }
+        }
 
-            // 正常执行
+        try {
             const result = await this.toolAgent.executeTool(action.tool, action.args);
             return { result, duration: Date.now() - startTime };
-
         } catch (error) {
             return {
                 error: error instanceof Error ? error.message : 'Unknown tool error',
@@ -52,7 +50,6 @@ export class ToolInterceptor {
     }
 
     private isWriteOperation(toolName: string, args: any): boolean {
-        // 使用现有的安全引擎来判断写操作
         const writeTools = [
             ToolNames.WRITE_FILE,
             ToolNames.CREATE_FILE,
@@ -63,7 +60,6 @@ export class ToolInterceptor {
             return true;
         }
 
-        // 检查shell命令
         if (toolName === ToolNames.SHELL_EXECUTOR && args && args.command) {
             return this.securityEngine.isWriteOperation(args.command);
         }

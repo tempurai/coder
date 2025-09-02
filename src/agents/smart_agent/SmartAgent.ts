@@ -11,6 +11,7 @@ import { z, ZodSchema } from "zod";
 import { TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
 import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PLAN_PROMPT, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
 import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
+import { ExecutionMode } from '../../services/ExecutionModeManager.js';
 import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
 import { ToolInterceptor } from './ToolInterceptor.js';
 
@@ -40,15 +41,17 @@ export class SmartAgent {
     this.orchestrator = new AgentOrchestrator(toolAgent, eventEmitter);
   }
 
-  async executeTask(initialQuery: string, sessionHistory: Messages = []): Promise<TaskExecutionResult> {
+  async executeTask(initialQuery: string, sessionHistory: Messages = [], executionMode: ExecutionMode = ExecutionMode.CODE): Promise<TaskExecutionResult> {
     this.memory = [...sessionHistory.map((msg, i) => ({ ...msg, iteration: 0 }))];
-    console.log(`Starting intelligent task execution: ${initialQuery}`);
+    console.log(`Starting intelligent task execution: ${initialQuery} (mode: ${executionMode})`);
+
     const startTime = Date.now();
-
     try {
-      await this.initialPlanningExecution(initialQuery);
+      if (executionMode != ExecutionMode.PLAN) {
+        await this.initialPlanningExecution(initialQuery);
+      }
 
-      const result = await this.executeMainLoop(initialQuery);
+      const result = await this.executeMainLoop(initialQuery, executionMode);
       return {
         ...result,
         metadata: {
@@ -57,7 +60,6 @@ export class SmartAgent {
           duration: Date.now() - startTime,
         }
       }
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return {
@@ -70,12 +72,6 @@ export class SmartAgent {
 
   private async initialPlanningExecution(query: string): Promise<void> {
     console.log('Initializing task planning phase...');
-
-    const editMode = this.editModeManager.getCurrentMode();
-    if (editMode === EditMode.PLAN_ONLY) {
-      return;
-    }
-
     const planningMessages = [
       { role: 'system' as const, content: PLANNING_PROMPT },
       { role: 'user' as const, content: query }
@@ -99,15 +95,17 @@ export class SmartAgent {
     }
   }
 
-  private async executeMainLoop(initialQuery: string): Promise<TaskExecutionResult> {
+  private async executeMainLoop(initialQuery: string, executionMode: ExecutionMode): Promise<TaskExecutionResult> {
     let currentIteration = 0;
     let isCompleted = false;
     let recentErrorCount = 0;
 
+    const systemPrompt = executionMode === ExecutionMode.PLAN ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT;
+
     this.memory.push(
       {
         iteration: 0, role: 'system',
-        content: this.editModeManager.getCurrentMode() == EditMode.PLAN_ONLY ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT
+        content: systemPrompt
       },
       { iteration: 0, role: "user", content: `Task: ${initialQuery}` }
     );
@@ -127,7 +125,7 @@ export class SmartAgent {
       currentIteration++;
       console.log(`Smart Agent Iteration ${currentIteration}/${this.maxIterations}`);
 
-      const { response, error } = await this.executeSingleIteration(currentIteration);
+      const { response, error } = await this.executeSingleIteration(currentIteration, executionMode);
 
       if (currentIteration % 10 === 0) {
         const iterationHistory = this.processHistory(this.memory);
@@ -175,7 +173,7 @@ export class SmartAgent {
     };
   }
 
-  private async executeSingleIteration(currentIteration: number): Promise<{ response: SmartAgentResponse; error?: string }> {
+  private async executeSingleIteration(currentIteration: number, executionMode: ExecutionMode): Promise<{ response: SmartAgentResponse; error?: string }> {
     try {
       const response = await this.toolAgent.generateObject<SmartAgentResponse>({
         messages: this.processHistory(this.memory),
@@ -194,7 +192,7 @@ export class SmartAgent {
 
       const toolResults = [];
       for (const action of response.actions) {
-        const toolResult = await this.toolInterceptor.executeToolSafely(currentIteration, action);
+        const toolResult = await this.toolInterceptor.executeToolSafely(currentIteration, action, executionMode);
         toolResults.push(JSON.stringify(toolResult.result, null, 0) || toolResult.error);
       }
 
@@ -203,14 +201,11 @@ export class SmartAgent {
       );
 
       return { response };
-
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
       console.error(`Iteration ${currentIteration} failed: ${errorMessage}`);
-
       const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
       this.memory.push({ role: 'user', content: `Observation: ${response}`, iteration: currentIteration });
-
       return { response, error: errorMessage };
     }
   }

@@ -22,6 +22,7 @@ import { Logger } from '../utils/Logger.js';
 import { CompressorService } from '../services/CompressorService.js';
 import { EditModeManager } from '../services/EditModeManager.js';
 import { ToolInterceptor } from '../agents/smart_agent/ToolInterceptor.js';
+import { ExecutionModeManager } from '../services/ExecutionModeManager.js';
 
 export { TYPES } from './types.js';
 
@@ -67,6 +68,7 @@ export function createContainer(): Container {
   container.bind<EditModeManager>(TYPES.EditModeManager).to(EditModeManager).inRequestScope();
   container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inRequestScope();
   container.bind<CompressorService>(TYPES.CompressorService).to(CompressorService).inRequestScope();
+  container.bind<ExecutionModeManager>(TYPES.ExecutionModeManager).to(ExecutionModeManager).inRequestScope();
 
   // --- Per-Task Services (Transient) ---
   container.bind<ToolAgent>(TYPES.ToolAgent).to(ToolAgent);
@@ -93,6 +95,7 @@ export function createContainer(): Container {
         const toolRegistry = container.get<ToolRegistry>(TYPES.ToolRegistry);
         const compressorService = container.get<CompressorService>(TYPES.CompressorService);
         const editModeManager = container.get<EditModeManager>(TYPES.EditModeManager);
+        const executionModeManager = container.get<ExecutionModeManager>(TYPES.ExecutionModeManager);
 
         const sessionService = new SessionService(
           toolAgent,
@@ -102,7 +105,8 @@ export function createContainer(): Container {
           interruptService,
           toolRegistry,
           compressorService,
-          editModeManager
+          editModeManager,
+          executionModeManager
         );
 
         return {

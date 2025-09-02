@@ -4,6 +4,9 @@ import TextInput from 'ink-text-input';
 import { useTheme } from '../themes/index.js';
 import { MAX_FRAME_WIDTH } from './base.js';
 import { ConfirmationChoice } from '../../services/HITLManager.js';
+import { ExecutionModeSelector } from './ExecutionModeSelector.js';
+import { ExecutionMode } from '../../services/ExecutionModeManager.js';
+import { useCommandProcessor } from '../hooks/useCommandProcessor.js';
 
 interface ConfirmationData {
   confirmationId: string;
@@ -18,19 +21,27 @@ interface ConfirmationData {
   };
 }
 
+type InputMode = 'normal' | 'execution-mode' | 'command-help';
+
 interface DynamicInputProps {
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, executionMode: ExecutionMode) => void;
   isProcessing: boolean;
   confirmationData?: ConfirmationData | null;
   onConfirm?: (confirmationId: string, choice: ConfirmationChoice) => void;
   editModeStatus?: string;
   onEditModeToggle?: () => void;
+  executionMode?: ExecutionMode;
+  onExecutionModeChange?: (mode: ExecutionMode) => void;
 }
 
-export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessing, confirmationData, onConfirm, editModeStatus, onEditModeToggle }) => {
+export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessing, confirmationData, onConfirm, editModeStatus, onEditModeToggle, executionMode = ExecutionMode.CODE, onExecutionModeChange }) => {
   const { currentTheme } = useTheme();
   const [input, setInput] = useState('');
   const [selectedChoice, setSelectedChoice] = useState<ConfirmationChoice>(ConfirmationChoice.YES);
+  const [inputMode, setInputMode] = useState<InputMode>('normal');
+  const [commandHelp, setCommandHelp] = useState<string>('');
+
+  const { processCommand } = useCommandProcessor();
 
   const isConfirmationMode = !!confirmationData;
   const showRememberOption = confirmationData?.options?.showRememberOption !== false;
@@ -40,18 +51,60 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
 
   const handleInternalSubmit = useCallback(() => {
     if (input.trim()) {
-      onSubmit(input);
+      // 前端命令直接处理，不传后端
+      if (input.trim() === ':') {
+        setInputMode('execution-mode');
+        setInput('');
+        return; // 截断，不传给后端
+      }
+
+      if (input.startsWith('/')) {
+        const result = processCommand(input);
+        if (result.processed && result.helpContent) {
+          setCommandHelp(result.helpContent);
+          setInputMode('command-help');
+          setInput('');
+          return; // 截断，不传给后端
+        }
+      }
+
+      // 只有普通输入才传给后端，并传入当前执行模式
+      onSubmit(input, executionMode);
       setInput('');
     }
-  }, [input, onSubmit]);
+  }, [input, onSubmit, processCommand, executionMode]);
+
+  const handleExecutionModeSelected = useCallback(
+    (mode: ExecutionMode) => {
+      if (onExecutionModeChange) {
+        onExecutionModeChange(mode);
+      }
+      setInputMode('normal');
+    },
+    [onExecutionModeChange],
+  );
+
+  const handleExecutionModeCancel = useCallback(() => {
+    setInputMode('normal');
+  }, []);
+
+  const handleCommandHelpDismiss = useCallback(() => {
+    setInputMode('normal');
+    setCommandHelp('');
+  }, []);
 
   const getChoiceIndex = (choice: ConfirmationChoice) => choices.indexOf(choice);
   const getChoiceAtIndex = (index: number) => choices[index];
 
   useInput(
     (char, key) => {
-      if (key.shift && key.tab && !isConfirmationMode && onEditModeToggle) {
+      if (key.shift && key.tab && !isConfirmationMode && onEditModeToggle && inputMode === 'normal') {
         onEditModeToggle();
+        return;
+      }
+
+      if (inputMode === 'command-help') {
+        handleCommandHelpDismiss();
         return;
       }
 
@@ -97,7 +150,6 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
 
   const getChoiceColor = (choice: ConfirmationChoice, isSelected: boolean) => {
     if (!isSelected) return currentTheme.colors.text.secondary;
-
     switch (choice) {
       case ConfirmationChoice.YES:
         return currentTheme.colors.success;
@@ -111,9 +163,38 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
   const getEditModeIcon = (status?: string): string => {
     if (!status) return '?';
     if (status.includes('Always accept')) return '>>';
-    if (status.includes('plan mode on')) return 'plan mode on';
     return '?';
   };
+
+  // Show execution mode selector
+  if (inputMode === 'execution-mode') {
+    return (
+      <Box flexDirection='column'>
+        <ExecutionModeSelector currentMode={executionMode} onModeSelected={handleExecutionModeSelected} onCancel={handleExecutionModeCancel} />
+      </Box>
+    );
+  }
+
+  // Show command help
+  if (inputMode === 'command-help') {
+    return (
+      <Box flexDirection='column'>
+        <Box paddingX={1} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
+          <Box flexDirection='column'>
+            <Text color={currentTheme.colors.primary} bold>
+              Command Help
+            </Text>
+            <Box marginTop={1}>
+              <Text color={currentTheme.colors.text.primary}>{commandHelp}</Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color={currentTheme.colors.text.muted}>Press any key to continue</Text>
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection='column'>
@@ -164,6 +245,7 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
           </Text>
         </Box>
       )}
+
       {!isConfirmationMode && (
         <Box borderStyle='round' borderColor={currentTheme.colors.ui.border} paddingX={1} paddingY={0}>
           <Box alignItems='center' width='100%'>
@@ -173,6 +255,7 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
           </Box>
         </Box>
       )}
+
       <Box flexDirection='column'>
         {editModeStatus && !isConfirmationMode && (
           <Box marginBottom={0}>
@@ -188,11 +271,11 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
             </>
           ) : (
             <>
-              Type <Text color={currentTheme.colors.accent}>/help</Text> for commands •<Text color={currentTheme.colors.accent}>Ctrl+C</Text> to exit
+              Type <Text color={currentTheme.colors.accent}>:</Text> for execution mode • <Text color={currentTheme.colors.accent}>/help</Text> for commands •<Text color={currentTheme.colors.accent}>Ctrl+C</Text> to exit
               {!isConfirmationMode && editModeStatus && (
                 <>
                   {' '}
-                  • <Text color={currentTheme.colors.accent}>Shift+Tab</Text> cycle mode
+                  • <Text color={currentTheme.colors.accent}>Shift+Tab</Text> cycle edit mode
                 </>
               )}
             </>

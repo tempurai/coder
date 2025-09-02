@@ -5,8 +5,7 @@ import { SystemInfoEvent } from '../events/EventTypes.js';
 
 export enum EditMode {
     NORMAL = 'normal',
-    ALWAYS_ACCEPT = 'accept',
-    PLAN_ONLY = 'plan'
+    ALWAYS_ACCEPT = 'accept'
 }
 
 export interface EditModeInfo {
@@ -39,7 +38,6 @@ export class EditModeManager {
     setMode(mode: EditMode): void {
         const oldMode = this.currentMode;
         this.currentMode = mode;
-
         if (oldMode !== mode) {
             this.eventEmitter.emit({
                 type: 'system_info',
@@ -51,10 +49,7 @@ export class EditModeManager {
     }
 
     cycleMode(): EditMode {
-        const modes = [EditMode.NORMAL, EditMode.ALWAYS_ACCEPT, EditMode.PLAN_ONLY];
-        const currentIndex = modes.indexOf(this.currentMode);
-        const nextIndex = (currentIndex + 1) % modes.length;
-        const nextMode = modes[nextIndex];
+        const nextMode = this.currentMode === EditMode.NORMAL ? EditMode.ALWAYS_ACCEPT : EditMode.NORMAL;
         this.setMode(nextMode);
         return nextMode;
     }
@@ -72,16 +67,6 @@ export class EditModeManager {
             };
         }
 
-        if (targetMode === EditMode.PLAN_ONLY) {
-            return {
-                mode: EditMode.PLAN_ONLY,
-                displayName: 'Plan Mode',
-                description: 'Research and plan only, no file modifications',
-                icon: 'plan mode on',
-                shortcut: 'Shift+Tab'
-            };
-        }
-
         return {
             mode: EditMode.NORMAL,
             displayName: 'Normal',
@@ -91,20 +76,11 @@ export class EditModeManager {
         };
     }
 
-    // 统一的编辑权限检查
     checkEditPermission(toolName: string, args: any): EditPermissionResult {
         if (this.currentMode === EditMode.ALWAYS_ACCEPT) {
             return { allowed: true };
         }
 
-        if (this.currentMode === EditMode.PLAN_ONLY) {
-            return {
-                allowed: false,
-                reason: 'File modifications blocked in Plan Mode. Switch to Normal or Always Accept mode to execute changes.'
-            };
-        }
-
-        // Normal mode - check session memory
         const operationKey = this.generateOperationKey(toolName, args);
         if (this.sessionEditApprovals.has(operationKey)) {
             return { allowed: true };
@@ -125,29 +101,21 @@ export class EditModeManager {
         if (toolName === 'write_file' || toolName === 'create_file' || toolName === 'apply_patch') {
             return `${toolName}:${args.filePath || 'unknown'}`;
         }
-
         if (toolName === 'shell_executor' && args.command) {
             return `shell_write:${args.command}`;
         }
-
         return `${toolName}:general`;
     }
 
     getStatusMessage(): string {
         const modeInfo = this.getModeInfo();
-
         if (this.currentMode === EditMode.NORMAL) {
             const approvalCount = this.sessionEditApprovals.size;
             return approvalCount > 0
                 ? `${modeInfo.icon} Normal mode • ${approvalCount} edit(s) remembered`
                 : `${modeInfo.icon} Normal mode`;
         }
-
-        if (this.currentMode === EditMode.ALWAYS_ACCEPT) {
-            return `${modeInfo.icon} Always accept edits`;
-        }
-
-        return `${modeInfo.icon} (${modeInfo.shortcut} to cycle)`;
+        return `${modeInfo.icon} Always accept edits`;
     }
 
     clearSessionApprovals(): void {

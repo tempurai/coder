@@ -11,6 +11,7 @@ import { getContainer } from '../di/container.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SnapshotResult, SnapshotManager } from './SnapshotManager.js';
 import { EditModeManager } from './EditModeManager.js';
+import { ExecutionModeManager, ExecutionMode } from './ExecutionModeManager.js';
 
 export interface SessionStats {
     totalInteractions: number;
@@ -26,10 +27,10 @@ export class SessionService {
     private recentHistory: Messages = [];
     private sessionStartTime: Date;
     private interactionCount: number = 0;
-    private messageQueue: string[] = [];
+    private messageQueue: Array<{ query: string, executionMode: ExecutionMode }> = [];
     private isTaskRunning: boolean = false;
-
     public readonly editModeManager: EditModeManager;
+    public readonly executionModeManager: ExecutionModeManager;
 
     constructor(
         private _agent: ToolAgent,
@@ -40,9 +41,11 @@ export class SessionService {
         private toolRegistry: ToolRegistry,
         private compressorService: CompressorService,
         editModeManager: EditModeManager,
+        executionModeManager: ExecutionModeManager,
     ) {
         this.sessionStartTime = new Date();
         this.editModeManager = editModeManager;
+        this.executionModeManager = executionModeManager;
     }
 
     get agent(): ToolAgent {
@@ -53,9 +56,9 @@ export class SessionService {
         return this.eventEmitter;
     }
 
-    async processTask(query: string): Promise<TaskExecutionResult> {
+    async processTask(query: string, executionMode?: ExecutionMode): Promise<TaskExecutionResult> {
         if (this.isTaskRunning) {
-            this.queueMessage(query);
+            this.queueMessage(query, executionMode || this.executionModeManager.getCurrentMode());
             return {
                 terminateReason: 'ERROR',
                 history: [],
@@ -67,6 +70,7 @@ export class SessionService {
         this.interruptService.startTask();
 
         console.log('\n🚀 开始处理任务...');
+
         this.eventEmitter.emit({
             type: 'user_input',
             input: query,
@@ -82,13 +86,11 @@ export class SessionService {
         } as TaskStartedEvent);
 
         let snapshotResult: SnapshotResult | null = null;
-
         try {
             console.log('创建任务开始前的快照...');
             snapshotResult = await SnapshotManager.createSnapshot(
                 `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
             );
-
             if (!snapshotResult.success) {
                 throw new Error(snapshotResult.error);
             }
@@ -99,7 +101,6 @@ export class SessionService {
                 level: 'error',
                 message: 'Failed to create safety snapshot: ' + error,
             } as SystemInfoEvent);
-
             return {
                 terminateReason: 'ERROR',
                 history: [],
@@ -125,9 +126,10 @@ export class SessionService {
             await this.compressorService.compressContextIfNeeded(this.recentHistory);
 
             const fullHistory = this.buildFullHistory();
+            const currentMode = executionMode || this.executionModeManager.getCurrentMode();
 
-            console.log('🔄 开始SmartAgent推理循环...');
-            const taskResult = await smartAgent.runTask(query, fullHistory);
+            console.log(`🔄 开始SmartAgent推理循环... (mode: ${currentMode})`);
+            const taskResult = await smartAgent.executeTask(query, fullHistory, currentMode);
 
             taskResult.history = taskResult.history.filter(msg => msg.role !== 'system');
             this.recentHistory.push(...taskResult.history);
@@ -189,7 +191,6 @@ export class SessionService {
         console.log(`🔄 恢复快照: ${snapshotId}`);
         try {
             const restoreResult = await SnapshotManager.restoreSnapshot(snapshotId);
-
             if (restoreResult.success) {
                 console.log(`✅ 快照恢复成功`);
                 return { success: true };
@@ -236,6 +237,8 @@ export class SessionService {
         this.recentHistory = [];
         this.interactionCount = 0;
         this.sessionStartTime = new Date();
+        this.editModeManager.reset();
+        this.executionModeManager.reset();
     }
 
     interrupt(): void {
@@ -250,8 +253,8 @@ export class SessionService {
         this.interruptService.reset();
     }
 
-    private queueMessage(query: string): void {
-        this.messageQueue.push(query);
+    private queueMessage(query: string, executionMode: ExecutionMode): void {
+        this.messageQueue.push({ query, executionMode });
         this.eventEmitter.emit({
             type: 'system_info',
             level: 'info',
@@ -261,9 +264,9 @@ export class SessionService {
 
     private async processNextQueuedMessage(): Promise<void> {
         if (this.messageQueue.length > 0) {
-            const nextQuery = this.messageQueue.shift()!;
+            const { query, executionMode } = this.messageQueue.shift()!;
             setTimeout(() => {
-                this.processTask(nextQuery).catch(error => {
+                this.processTask(query, executionMode).catch(error => {
                     console.error('Error processing queued task:', error);
                 });
             }, 100);
@@ -274,5 +277,6 @@ export class SessionService {
         this.fileWatcherService.cleanup();
         await this._agent.cleanup();
         this.editModeManager.reset();
+        this.executionModeManager.reset();
     }
 }

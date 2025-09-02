@@ -8,7 +8,7 @@ import { createSubAgentTool, SubAgent } from './SubAgent.js';
 import { InterruptService } from '../../services/InterruptService.js';
 import { ToolRegistry, ToolNames } from '../../tools/ToolRegistry.js';
 import { z, ZodSchema } from "zod";
-import { TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
+import { SystemInfoEvent, TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
 import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PLAN_PROMPT, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
 import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
 import { ExecutionMode } from '../../services/ExecutionModeManager.js';
@@ -206,8 +206,11 @@ export class SmartAgent {
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
       console.error(`Iteration ${currentIteration} failed: ${errorMessage}`);
+      this.eventEmitter.emit({ type: 'system_info', level: 'error', message: errorMessage } as SystemInfoEvent);
+
       const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
       this.memory.push({ role: 'user', content: `Observation: ${response}`, iteration: currentIteration });
+
       return { response, error: errorMessage };
     }
   }

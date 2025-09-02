@@ -181,14 +181,12 @@ Complete this task efficiently.`
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`Sub Agent Iteration ${currentIteration} failed: ${errorMessage}`);
+      this.eventEmitter.emit({ type: 'system_info', level: 'error', message: errorMessage } as SystemInfoEvent);
 
       const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "", criticalInfo: true } as SubAgentResponseFinished;
       this.memory.push({ role: 'user', content: `Observation: ${response}` });
 
-      return {
-        response: { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as any,
-        error: errorMessage
-      };
+      return { response: response, error: errorMessage };
     }
   }
 

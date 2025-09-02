@@ -3,7 +3,7 @@ import { SessionService } from '../../services/SessionService.js';
 import { UIEvent, UIEventType, ToolConfirmationResponseEvent } from '../../events/index.js';
 import { ConfirmationChoice } from '../../services/HITLManager.js';
 
-interface PendingConfirmation {
+export interface PendingConfirmation {
     confirmationId: string;
     toolName: string;
     args: any;
@@ -15,11 +15,27 @@ interface PendingConfirmation {
     };
 }
 
-interface ToolExecutionState {
+export interface ToolExecutionState {
     startEvent?: UIEvent;
     outputEvents: UIEvent[];
     completedEvent?: UIEvent;
     currentStatus: 'started' | 'executing' | 'completed' | 'failed';
+}
+
+export interface TodoState {
+    current?: {
+        id: string;
+        title: string;
+    };
+    next?: {
+        id: string;
+        title: string;
+    };
+}
+
+export interface ErrorState {
+    errors: string[];
+    lastErrorTime?: Date;
 }
 
 export const useSessionEvents = (sessionService: SessionService) => {
@@ -27,33 +43,60 @@ export const useSessionEvents = (sessionService: SessionService) => {
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
     const [currentActivity, setCurrentActivity] = useState<string>('');
     const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
-
-    // 工具执行状态管理
     const [toolExecutions, setToolExecutions] = useState<Map<string, ToolExecutionState>>(new Map());
+    const [todoState, setTodoState] = useState<TodoState>({});
+    const [errorState, setErrorState] = useState<ErrorState>({ errors: [] });
 
     const mergeToolExecutionEvents = useCallback((toolExecutionId: string): UIEvent | null => {
         const state = toolExecutions.get(toolExecutionId);
         if (!state || !state.startEvent) return null;
 
-        // 创建合并后的事件
         const mergedEvent: any = {
             ...state.startEvent,
             type: state.startEvent.type,
         };
 
-        // 根据状态添加额外信息
         if (state.completedEvent) {
             mergedEvent.completedData = state.completedEvent;
         }
-
         if (state.outputEvents.length > 0) {
             mergedEvent.outputData = state.outputEvents;
         }
-
         mergedEvent.executionStatus = state.currentStatus;
-
         return mergedEvent;
     }, [toolExecutions]);
+
+    const extractTodoState = useCallback((events: UIEvent[]): TodoState => {
+        const todoEvents = events.filter(event =>
+            event.type === UIEventType.ToolExecutionCompleted &&
+            (event as any).toolName === 'todo_manager'
+        );
+
+        let current: { id: string; title: string } | undefined;
+        let next: { id: string; title: string } | undefined;
+
+        for (const event of todoEvents.reverse()) {
+            const result = (event as any).result;
+            if (result && result.nextTodo) {
+                current = result.nextTodo;
+                break;
+            }
+        }
+
+        // Find next todo from the same events
+        for (const event of todoEvents.reverse()) {
+            const result = (event as any).result;
+            if (result && result.todos) {
+                const pendingTodos = result.todos.filter((t: any) => t.status === 'pending');
+                if (pendingTodos.length > 1) {
+                    next = pendingTodos[1];
+                    break;
+                }
+            }
+        }
+
+        return { current, next };
+    }, []);
 
     useEffect(() => {
         const eventEmitter = sessionService.events;
@@ -62,23 +105,19 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
         const flushEvents = () => {
             if (eventBuffer.length > 0) {
-                // 处理工具执行相关事件
                 const toolEvents = eventBuffer.filter(event =>
                     event.type === UIEventType.ToolExecutionStarted ||
                     event.type === UIEventType.ToolExecutionOutput ||
                     event.type === UIEventType.ToolExecutionCompleted
                 );
-
                 const otherEvents = eventBuffer.filter(event =>
                     event.type !== UIEventType.ToolExecutionStarted &&
                     event.type !== UIEventType.ToolExecutionOutput &&
                     event.type !== UIEventType.ToolExecutionCompleted
                 );
 
-                // 更新工具执行状态
                 setToolExecutions(prev => {
                     const newMap = new Map(prev);
-
                     toolEvents.forEach(event => {
                         const toolExecutionId = (event as any).toolExecutionId;
                         if (!toolExecutionId) return;
@@ -95,48 +134,38 @@ export const useSessionEvents = (sessionService: SessionService) => {
                             existing.outputEvents.push(event);
                             existing.currentStatus = 'executing';
                         } else if (event.type === UIEventType.ToolExecutionCompleted) {
-                            // 只有当存在startEvent时才处理completed事件
                             if (existing.startEvent) {
                                 existing.completedEvent = event;
                                 existing.currentStatus = (event as any).success ? 'completed' : 'failed';
                             } else {
-                                // 丢弃无法匹配的completed事件
                                 return;
                             }
                         }
 
                         newMap.set(toolExecutionId, existing);
                     });
-
                     return newMap;
                 });
 
-                // 更新显示事件列表
                 setEvents((prevEvents) => {
                     const newEvents = [...prevEvents];
 
-                    // 添加非工具执行事件
                     otherEvents.forEach(event => {
                         newEvents.push(event);
                     });
 
-                    // 添加或更新工具执行事件
                     toolEvents.forEach(event => {
                         const toolExecutionId = (event as any).toolExecutionId;
                         if (!toolExecutionId) return;
 
                         if (event.type === UIEventType.ToolExecutionStarted) {
-                            // 添加新的工具执行事件
                             newEvents.push(event);
                         } else if (event.type === UIEventType.ToolExecutionCompleted) {
-                            // 查找并更新对应的started事件
                             const existingIndex = newEvents.findIndex(e =>
                                 (e as any).toolExecutionId === toolExecutionId &&
                                 e.type === UIEventType.ToolExecutionStarted
                             );
-
                             if (existingIndex !== -1) {
-                                // 更新现有事件，添加完成状态
                                 const updatedEvent = {
                                     ...newEvents[existingIndex],
                                     completedData: event,
@@ -145,11 +174,14 @@ export const useSessionEvents = (sessionService: SessionService) => {
                                 newEvents[existingIndex] = updatedEvent as UIEvent;
                             }
                         }
-                        // ToolExecutionOutput 事件不直接添加到显示列表中
                     });
 
                     return newEvents;
                 });
+
+                // Update todo state
+                const allEvents = [...events, ...eventBuffer];
+                setTodoState(extractTodoState(allEvents));
 
                 eventBuffer = [];
             }
@@ -162,6 +194,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
             }
 
             eventBuffer.push(event);
+
             if (batchTimeout) {
                 clearTimeout(batchTimeout);
             }
@@ -171,12 +204,24 @@ export const useSessionEvents = (sessionService: SessionService) => {
                 case UIEventType.TaskStart:
                     setIsProcessing(true);
                     setCurrentActivity('Processing...');
+                    // Clear errors when new task starts
+                    setErrorState({ errors: [] });
                     break;
                 case UIEventType.TaskComplete:
                     setTimeout(() => {
                         setIsProcessing(false);
                         setCurrentActivity('');
+                        setTodoState({});
                     }, 500);
+                    break;
+                case UIEventType.SystemInfo:
+                    const systemEvent = event as any;
+                    if (systemEvent.level === 'error') {
+                        setErrorState(prev => ({
+                            errors: [...prev.errors, systemEvent.message].slice(-3),
+                            lastErrorTime: new Date()
+                        }));
+                    }
                     break;
                 case UIEventType.ToolConfirmationRequest:
                     const confirmEvent = event as any;
@@ -191,6 +236,12 @@ export const useSessionEvents = (sessionService: SessionService) => {
                 case UIEventType.ToolConfirmationResponse:
                     setPendingConfirmation(null);
                     break;
+                case UIEventType.ToolExecutionStarted:
+                    // Clear errors when new tool execution starts
+                    if (errorState.errors.length > 0) {
+                        setErrorState({ errors: [] });
+                    }
+                    break;
             }
         };
 
@@ -203,7 +254,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
             }
             flushEvents();
         };
-    }, [sessionService, pendingConfirmation, mergeToolExecutionEvents]);
+    }, [sessionService, pendingConfirmation, mergeToolExecutionEvents, extractTodoState, errorState.errors, events]);
 
     const handleConfirmation = useCallback(
         (confirmationId: string, choice: 'yes' | 'no' | 'yes_and_remember') => {
@@ -227,5 +278,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
         currentActivity,
         handleConfirmation,
         toolExecutions,
+        todoState,
+        errorState,
     };
 };

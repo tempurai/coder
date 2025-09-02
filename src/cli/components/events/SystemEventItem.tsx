@@ -18,7 +18,7 @@ export const SystemEventItem: React.FC<SystemEventItemProps> = ({ event }) => {
         const userEvent = event as any;
         return {
           indicatorType: 'user' as const,
-          content: `${userEvent.input}`,
+          content: userEvent.input?.trim() || '',
         };
 
       case 'task_completed':
@@ -32,7 +32,7 @@ export const SystemEventItem: React.FC<SystemEventItemProps> = ({ event }) => {
         const sysEvent = event as any;
         return {
           indicatorType: sysEvent.level === 'error' ? ('error' as const) : ('system' as const),
-          content: sysEvent.message,
+          content: sysEvent.message?.trim() || '',
         };
 
       case 'snapshot_created':
@@ -46,7 +46,7 @@ export const SystemEventItem: React.FC<SystemEventItemProps> = ({ event }) => {
         const deafultEvent = event as any;
         return {
           indicatorType: 'system' as const,
-          content: deafultEvent.displayTitle ?? event.type,
+          content: deafultEvent.displayTitle?.trim() || event.type,
         };
     }
   };

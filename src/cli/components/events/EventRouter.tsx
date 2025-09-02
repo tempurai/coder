@@ -39,9 +39,12 @@ export const EventRouter: React.FC<EventRouterProps> = ({ event, index }) => {
     case UIEventType.SystemInfo:
     case UIEventType.SnapshotCreated:
       return <SystemEventItem event={event} index={index} />;
+
+    case UIEventType.TaskStart:
     case UIEventType.ToolConfirmationRequest:
     case UIEventType.ToolConfirmationResponse:
       return <></>;
+
     default:
       return <SystemEventItem event={event} index={index} />;
   }

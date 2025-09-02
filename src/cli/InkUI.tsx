@@ -10,6 +10,7 @@ import { useEventSeparation } from './hooks/useEventSeparation.js';
 import { EventItem } from './components/EventItem.js';
 import { ProgressIndicator } from './components/ProgressIndicator.js';
 import { ExecutionMode, getExecutionModeDisplayInfo } from '../services/ExecutionModeManager.js';
+import { UIEventType } from '../events/EventTypes.js';
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
 
@@ -23,7 +24,7 @@ interface MainUIProps {
 
 const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   const { currentTheme } = useTheme();
-  const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions } = useSessionEvents(sessionService);
+  const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions, todoState, errorState } = useSessionEvents(sessionService);
   const { staticEvents, dynamicEvents } = useEventSeparation(events);
   const [editModeStatus, setEditModeStatus] = useState<string>('');
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(ExecutionMode.CODE);
@@ -79,27 +80,35 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
       <Text color={currentTheme.colors.text.muted}> • </Text>
       <Text color={currentTheme.colors.info}>{getExecutionModeDisplayInfo(executionMode)?.displayName}</Text>
     </Box>,
-    ...staticEvents.map((event, index) => (
-      <Box key={event.id || `static-${index}`} marginBottom={1}>
-        <EventItem event={event} index={index} />
-      </Box>
-    )),
+    ...staticEvents
+      .filter((event) => {
+        const hiddenEventTypes = [UIEventType.TaskStart, UIEventType.ToolConfirmationRequest, UIEventType.ToolConfirmationResponse];
+        return !hiddenEventTypes.includes(event.type as any);
+      })
+      .map((event, index) => (
+        <Box key={event.id || `static-${index}`} marginBottom={1}>
+          <EventItem event={event} index={index} />
+        </Box>
+      )),
   ];
 
   return (
     <Box flexDirection='column'>
       <Static items={staticItems}>{(item) => item}</Static>
+
       {dynamicEvents.map((event, index) => (
         <Box key={event.id || `dynamic-${index}`} marginBottom={0}>
           <EventItem event={event} index={index} />
         </Box>
       ))}
+
       {isProcessing && (
-        <Box marginY={1}>
-          <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
+        <Box marginY={0}>
+          <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} todoState={todoState} errorState={errorState} />
         </Box>
       )}
-      <Box marginTop={1} paddingTop={1}>
+
+      <Box marginTop={1}>
         <InputContainer
           onSubmit={handleSubmit}
           isProcessing={isProcessing}

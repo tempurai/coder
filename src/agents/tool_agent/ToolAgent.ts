@@ -12,9 +12,10 @@ import { registerGitTools } from '../../tools/GitTools.js';
 import { registerMemoryTools } from '../../tools/MemoryTools.js';
 import { registerMcpTools } from '../../tools/McpToolLoader.js';
 import { InterruptService } from '../../services/InterruptService.js';
-import { ToolExecutionCompletedEvent } from '../../events/EventTypes.js';
+import { SystemInfoEvent, ToolExecutionCompletedEvent } from '../../events/EventTypes.js';
 import { Logger } from '../../utils/Logger.js';
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 
 export type Message = { role: 'system' | 'user' | 'assistant', content: string };
 export type Messages = Message[];
@@ -76,6 +77,7 @@ export class ToolAgent {
         @inject(TYPES.LanguageModel) private model: LanguageModel,
         @inject(TYPES.ToolRegistry) private toolRegistry: ToolRegistry,
         @inject(TYPES.InterruptService) private interruptService: InterruptService,
+        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
         @inject(TYPES.Logger) private logger: Logger
     ) { }
 
@@ -105,16 +107,19 @@ export class ToolAgent {
         const abortSignal = this.interruptService.getAbortSignal();
 
         try {
-            const result = await generateText({
-                model: this.model,
-                messages: finalMessages,
-                tools: {},
-                maxOutputTokens: this.config.maxTokens,
-                temperature: this.config.temperature,
-                abortSignal,
+            return this.retryGenerate(async () => {
+                const result = await generateText({
+                    model: this.model,
+                    messages: finalMessages,
+                    tools: {},
+                    maxOutputTokens: this.config.maxTokens,
+                    temperature: this.config.temperature,
+                    abortSignal,
+                });
+
+                return result.text;
             });
 
-            return result.text;
         } catch (error) {
             if (error instanceof Error && (error.name === 'AbortError' || this.interruptService.isInterrupted())) {
                 throw new Error('AI request interrupted by user');
@@ -128,30 +133,61 @@ export class ToolAgent {
         const abortSignal = this.interruptService.getAbortSignal();
 
         try {
-            const result = await generateText({
-                model: this.model,
-                messages: finalMessages,
-                tools: {},
-                maxOutputTokens: this.config.maxTokens,
-                temperature: this.config.temperature,
-                experimental_output: Output.object({ schema }),
-                abortSignal,
-                providerOptions: {
-                    deepseek: {
-                        response_format: {
-                            type: "json_object"
+            return this.retryGenerate(async () => {
+                const result = await generateText({
+                    model: this.model,
+                    messages: finalMessages,
+                    tools: {},
+                    maxOutputTokens: this.config.maxTokens,
+                    temperature: this.config.temperature,
+                    experimental_output: Output.object({ schema }),
+                    abortSignal,
+                    providerOptions: {
+                        deepseek: {
+                            response_format: {
+                                type: "json_object"
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            return result.experimental_output;
+                return result.experimental_output;
+            });
         } catch (error) {
             if (error instanceof Error && (error.name === 'AbortError' || this.interruptService.isInterrupted())) {
                 throw new Error('AI request interrupted by user');
             }
+
             throw error;
         }
+    }
+
+    private async retryGenerate<T>(operation: () => Promise<T>): Promise<T> {
+        const errorFn = async (error: Error, attempt: number): Promise<void> => {
+            // 如果被中断就不重试
+            if (error instanceof Error && (error.name === 'AbortError' || this.interruptService.isInterrupted())) {
+                throw new Error('AI request interrupted by user');
+            }
+
+            this.eventEmitter.emit({ type: 'system_info', level: 'error', message: error.message } as SystemInfoEvent);
+
+            if (attempt < 10) {
+                const delay = attempt <= 3 ? 1000 : 1000 + (attempt - 3) * 3000;
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                throw error;
+            }
+        }
+
+        for (let attempt = 1; attempt <= 10; attempt++) {
+            try {
+                return await operation();
+            } catch (error) {
+                await errorFn(error as Error, attempt);
+            }
+        }
+
+        throw new Error('Maximum retry attempts exceeded');
     }
 
     private addToolInfo(messages: Messages): Messages {

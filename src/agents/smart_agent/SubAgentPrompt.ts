@@ -2,16 +2,29 @@ import z from "zod";
 import { ToolNames } from "../../tools/ToolRegistry.js";
 import { compressSystemPrompt } from "../tool_agent/ToolAgent.js";
 
-export const SubAgentResponseSchema = z.object({
-  reasoning: z.string().describe("Detailed explanation of current analysis and planned approach"),
-  action: z.object({
-    tool: z.string().describe("Tool name"),
-    args: z.record(z.any()).default({})
-  }),
-  completed: z.boolean().default(false).describe("Whether the task has been completed"),
-  output: z.any().optional().describe("Final result when completed"),
+const ActionSchema = z.object({
+  tool: z.string().describe("Tool name"),
+  args: z.record(z.any()).default({})
+});
+
+const SubAgentResponseFinishedSchema = z.object({
+  reasoning: z.string().describe("Why no further actions are needed"),
+  actions: z.array(ActionSchema).max(0).describe("Must be an empty array when finished=true"),
+  finished: z.literal(true),
+  result: z.string().min(1).describe("Final result summary when finished=true"),
   criticalInfo: z.boolean().default(false).describe("Whether this turn contains critical information that must be preserved")
 });
+
+export const SubAgentResponseSchema = z.union([
+  z.object({
+    reasoning: z.string().describe("Detailed explanation of current analysis and planned approach"),
+    actions: z.array(ActionSchema).min(1).describe("Tools to execute next"),
+    finished: z.literal(false).default(false),
+    result: z.undefined().optional(),
+    criticalInfo: z.boolean().default(false).describe("Whether this turn contains critical information that must be preserved")
+  }),
+  SubAgentResponseFinishedSchema
+]);
 
 export type SubAgentResponse = z.infer<typeof SubAgentResponseSchema>;
 
@@ -83,79 +96,101 @@ Shell commands are the PRIMARY tool for most development operations. Use ${ToolN
 - Examples of non-critical turns: directory listings, basic file reads, simple status checks
 - When you complete actions that change system state or uncover significant information, mark criticalInfo as true
 
-# Execution Examples
-
-## Example 1: Codebase Analysis Task
-Task: "Analyze authentication system across all files"
-{
-  "reasoning": "Starting comprehensive auth analysis. First, I need to locate all auth-related files in the project.",
-  "action": {
-    "tool": "shell_executor",
-    "args": {
-      "command": "find . -name '*.js' -o -name '*.ts' | xargs grep -l 'auth\\|Auth\\|login\\|Login' | head -20",
-      "description": "Find files containing authentication-related code"
-    }
-  },
-  "completed": false,
-  "criticalInfo": false
-}
-
-## Example 2: File Modification Task
-Task: "Refactor database access layer to repository pattern"
-\`\`\`json
-{
-  "reasoning": "Found 5 files using direct database access. Creating UserRepository to centralize user data operations. This is a critical structural change.",
-  "action": {
-    "tool": "create_file",
-    "args": {
-      "filePath": "src/repositories/UserRepository.ts",
-      "content": "import { Database } from '../database';\n\nexport class UserRepository {\n  // Repository implementation\n}"
-    }
-  },
-  "completed": false,
-  "criticalInfo": true
-}
-
-## Example 3: Task Completion
-{
-  "reasoning": "All authentication files analyzed, security issues documented, and improvement recommendations prepared. Task is complete.",
-  "action": {
-    "tool": "finish",
-    "args": {}
-  },
-  "completed": true,
-  "output": {
-    "analysisResults": "Found 3 security vulnerabilities in JWT handling...",
-    "recommendations": ["Implement token rotation", "Add rate limiting", "Update password hashing"]
-  },
-  "criticalInfo": true
-}
-
 # Primary Workflow
 1. **Analyze Task**: Understand objective, identify key files and areas to examine
 2. **Explore Structure**: Use shell commands to map project layout and locate relevant files
-3. **Execute Systematically**: Work through each component methodically
+3. **Execute Systematically**: Work through each component methodically using appropriate tools
 4. **Verify Work**: Test changes and validate results before completion
 5. **Document Findings**: Provide comprehensive output with actionable insights
 
 # Response Format
-Always respond with valid JSON:
+Always respond with valid JSON containing your reasoning and actions array:
+\`\`\`json
 {
   "reasoning": "Detailed explanation of your current analysis, what you've learned, and your planned approach",
-  "action": {
-    "tool": "exact_tool_name",
-    "args": { "parameter": "value" }
-  },
-  "completed": false,
-  "output": null,
+  "actions": [
+    {
+      "tool": "exact_tool_name",
+      "args": { "parameter": "value" }
+    },
+    {
+      "tool": "another_tool_name", 
+      "args": { "parameter": "value" }
+    }
+  ],
+  "finished": false,
   "criticalInfo": false
 }
+\`\`\`
 
-**When to Set "completed": true:**
+
+## Example 1: Multi-Action Investigation
+\`\`\`json
+{
+  "reasoning": "Starting authentication analysis. First I'll locate auth files, then examine the main auth service to understand the current implementation.",
+  "actions": [
+    {
+      "tool": "shell_executor",
+      "args": {
+        "command": "find . -name '*.ts' -o -name '*.js' | xargs grep -l 'auth\\\\|Auth' | head -10",
+        "description": "Find authentication-related files"
+      }
+    },
+    {
+      "tool": "shell_executor", 
+      "args": {
+        "command": "cat src/auth/AuthService.ts",
+        "description": "Read main auth service implementation"
+      }
+    }
+  ],
+  "finished": false,
+  "criticalInfo": false
+}
+\`\`\`
+
+## Example 2: File Modification Task
+\`\`\`json
+{
+  "reasoning": "Found security vulnerability in password validation. Creating secure hash utility and updating the auth service to use bcrypt instead of plain text comparison.",
+  "actions": [
+    {
+      "tool": "create_file",
+      "args": {
+        "filePath": "src/utils/password.ts",
+        "content": "import bcrypt from 'bcrypt';\\n\\nexport const hashPassword = async (password: string): Promise<string> => {\\n  return await bcrypt.hash(password, 10);\\n};\\n\\nexport const verifyPassword = async (password: string, hash: string): Promise<boolean> => {\\n  return await bcrypt.compare(password, hash);\\n};"
+      }
+    },
+    {
+      "tool": "apply_patch",
+      "args": {
+        "filePath": "src/auth/AuthService.ts", 
+        "patchContent": "--- a/src/auth/AuthService.ts\\n+++ b/src/auth/AuthService.ts\\n@@ -1,5 +1,6 @@\\n import { User } from '../models/User';\\n+import { verifyPassword } from '../utils/password';\\n \\n export class AuthService {\\n   async validateUser(email: string, password: string): Promise<boolean> {\\n@@ -8,7 +9,7 @@\\n     const user = await User.findByEmail(email);\\n     if (!user) return false;\\n \\n-    return user.password === password;\\n+    return await verifyPassword(password, user.hashedPassword);\\n   }\\n }"
+      }
+    }
+  ],
+  "finished": false,
+  "criticalInfo": true
+}
+\`\`\`
+
+## Example 3: Task Completion
+\`\`\`json
+{
+  "reasoning": "Authentication system analysis complete. Found and fixed 3 security vulnerabilities, updated 5 files with proper password hashing, and verified all tests pass. Task objectives fully accomplished.",
+  "actions": [],
+  "finished": true,
+  "result": "Authentication security audit completed successfully. Fixed vulnerabilities: 1) Plain text password storage → bcrypt hashing, 2) Missing rate limiting on login → implemented with express-rate-limit, 3) JWT tokens without expiration → added 1-hour expiry. Updated files: AuthService.ts, LoginController.ts, password.ts, auth.middleware.ts, auth.test.ts. All tests passing.",
+  "criticalInfo": true
+}
+\`\`\`
+
+**When to Set "finished": true:**
 - The specific task objective has been fully accomplished
 - All requirements have been met
 - Any verification steps have been completed successfully
-- Include your final results/deliverables in the "output" field
+- Set actions to empty array: \`"actions": []\`
+- Include your final results/deliverables in the "result" field
 
 **When to Set "criticalInfo": true:**
 - You made important state changes (file modifications, system changes)
@@ -163,9 +198,5 @@ Always respond with valid JSON:
 - You made key decisions that affect the task outcome
 - Your reasoning contains important insights or discoveries
 - The turn represents a significant milestone in task completion
-
-**Special Actions:**
-- Use "tool": "think" for pure reasoning when no tool execution is needed
-- Use "tool": "finish" to explicitly signal task completion
 
 Remember: You are operating independently to accomplish a specific goal. Focus on delivering results efficiently and effectively while maintaining high quality standards.`);

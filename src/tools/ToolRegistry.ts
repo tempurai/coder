@@ -68,8 +68,8 @@ export class ToolRegistry {
 
     register(definition: ToolDefinition): void {
         this.tools.set(definition.name, definition);
-        this.logger.info('Tool registered', { 
-            toolName: definition.name, 
+        this.logger.info('Tool registered', {
+            toolName: definition.name,
             category: definition.category
         }, 'TOOL');
     }
@@ -113,4 +113,31 @@ export class ToolRegistry {
     getByCategory(category: string): ToolDefinition[] {
         return Array.from(this.tools.values()).filter(def => def.category === category);
     }
+}
+
+export const hasWriteOperations = (actions: Array<{ tool: string; args: any }>, securityEngine: SecurityPolicyEngine): boolean => {
+    const writeTools = [ToolNames.WRITE_FILE, ToolNames.APPLY_PATCH, ToolNames.CREATE_FILE];
+
+    for (const action of actions) {
+        if (writeTools.includes(action.tool)) {
+            return true;
+        }
+
+        if (action.tool === ToolNames.SHELL_EXECUTOR && action.args && action.args.command) {
+            if (securityEngine.isWriteOperation(action.args.command)) {
+                return true;
+            }
+        }
+
+        if (action.tool === ToolNames.MULTI_COMMAND && action.args && action.args.commands) {
+            const hasWriteCommand = action.args.commands.some((cmd: any) =>
+                cmd.command && securityEngine.isWriteOperation(cmd.command)
+            );
+            if (hasWriteCommand) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }

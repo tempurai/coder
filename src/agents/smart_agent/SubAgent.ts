@@ -1,6 +1,6 @@
 import { ToolAgent, Messages } from '../tool_agent/ToolAgent.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
-import { ToolNames } from '../../tools/ToolRegistry.js';
+import { hasWriteOperations, ToolNames } from '../../tools/ToolRegistry.js';
 import { z } from "zod";
 import { SystemInfoEvent } from '../../events/EventTypes.js';
 import { inject } from 'inversify';
@@ -8,6 +8,7 @@ import { TYPES } from '../../di/types.js';
 import { tool } from 'ai';
 import { SUB_AGENT_PROMPT, SubAgentResponse, SubAgentResponseSchema } from './SubAgentPrompt.js';
 import { TaskExecutionResult, TerminateReason } from '../tool_agent/ToolAgent.js';
+import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
 
 interface SubAgentTask {
   id: string;
@@ -29,6 +30,7 @@ export class SubAgent {
   constructor(
     @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
     @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
+    @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine,
   ) { }
 
   async executeTask(task: SubAgentTask): Promise<TaskExecutionResult> {
@@ -68,10 +70,8 @@ export class SubAgent {
           duration: Date.now() - startTime,
         }
       }
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
       return {
         terminateReason: 'ERROR',
         history: [],
@@ -112,30 +112,26 @@ Complete this task efficiently.`;
         const assistantMessage = { role: 'assistant' as const, content: JSON.stringify(response, null, 2) };
         conversationHistory.push(assistantMessage);
 
-        if (response.completed || response.action.tool === 'finish') {
+        // Check if task is finished
+        if (response.finished) {
           taskCompleted = true;
           break;
         }
 
-        if (response.action.tool === 'think') {
-          currentObservation = `Previous: Reasoning completed\nThought: ${response.reasoning}`;
-          continue;
-        }
+        const results = await Promise.allSettled(response.actions.map(action =>
+          this.toolAgent.executeTool(action.tool, action.args)
+            .then(result => `${action.tool}: ${JSON.stringify(result, null, 0)}`)
+            .catch(error => `${action.tool}: ${error instanceof Error ? error.message : 'Unknown tool error'}`)
+        ));
 
-        try {
-          const toolResult = await this.toolAgent.executeTool(response.action.tool, response.action.args);
-          currentObservation = `Previous: ${response.action.tool}\nResult: ${JSON.stringify(toolResult, null, 2)}`;
+        currentObservation = `Previous actions: ${results.join('; ')}`;
 
-        } catch (toolError) {
-          const errorMessage = toolError instanceof Error ? toolError.message : 'Unknown tool error';
-          currentObservation = `Previous: ${response.action.tool}\nError: ${errorMessage}`;
-
-        }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         currentObservation = `Error occurred: ${errorMessage}`;
-        if (turnCount >= maxTurns - 2) break;
 
+        // Don't break immediately, give it a chance to recover
+        if (turnCount >= maxTurns - 2) break;
       }
     }
 
@@ -163,55 +159,35 @@ Complete this task efficiently.`;
   private filterCriticalHistory(conversationHistory: Messages): Messages {
     const criticalHistory: Messages = [];
 
-    // Always preserve system message
+    // Always include system message
     if (conversationHistory[0]?.role === 'system') {
       criticalHistory.push(conversationHistory[0]);
     }
 
-    // Find critical assistant messages and their following user messages
+    // Filter messages based on criticalInfo flag and write operations
     for (let i = 1; i < conversationHistory.length; i++) {
       const message = conversationHistory[i];
 
       if (message.role === 'assistant') {
         try {
           const response = JSON.parse(message.content) as SubAgentResponse;
-          const isCritical = response.criticalInfo || this.isWriteOperationTool(response.action.tool, response.action.args);
+          const isCritical = response.criticalInfo || hasWriteOperations(response.actions || [], this.securityEngine);
 
           if (isCritical) {
             criticalHistory.push(message);
-            // Add next user message if it exists
+            // Also include the following user message if it exists
             if (conversationHistory[i + 1]?.role === 'user') {
               criticalHistory.push(conversationHistory[i + 1]);
             }
           }
         } catch {
-          // Skip messages that can't be parsed
+          // If we can't parse, keep the message to be safe
+          criticalHistory.push(message);
         }
       }
     }
 
     return criticalHistory;
-  }
-
-  private isWriteOperationTool(toolName: string, args: any): boolean {
-    const writeTools = [ToolNames.WRITE_FILE, ToolNames.APPLY_PATCH];
-    if (writeTools.includes(toolName)) {
-      return true;
-    }
-
-    if (toolName === ToolNames.SHELL_EXECUTOR && args && args.command) {
-      const securityEngine = this.toolAgent['toolRegistry'].getContext().securityEngine;
-      return securityEngine.isWriteOperation(args.command);
-    }
-
-    if (toolName === ToolNames.MULTI_COMMAND && args && args.commands) {
-      const securityEngine = this.toolAgent['toolRegistry'].getContext().securityEngine;
-      return args.commands.some((cmd: any) =>
-        cmd.command && securityEngine.isWriteOperation(cmd.command)
-      );
-    }
-
-    return false;
   }
 
   private createTimeoutPromise(timeoutMs: number): Promise<never> {
@@ -221,10 +197,10 @@ Complete this task efficiently.`;
   }
 }
 
-export const createSubAgentTool = (toolAgent: ToolAgent, eventEmitter: UIEventEmitter) => {
+export const createSubAgentTool = (toolAgent: ToolAgent, eventEmitter: UIEventEmitter, securityEngine: SecurityPolicyEngine) => {
   const startSubAgent = async (args: any): Promise<TaskExecutionResult> => {
     console.log('Starting sub-agent for specialized task');
-    const subAgent = new SubAgent(toolAgent, eventEmitter);
+    const subAgent = new SubAgent(toolAgent, eventEmitter, securityEngine);
     return await subAgent.executeTask(args);
   };
 

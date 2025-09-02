@@ -32,7 +32,6 @@ export interface ThoughtGeneratedEvent extends BaseEvent {
   type: 'thought_generated';
   iteration: number;
   thought: string;
-  context: string;
 }
 
 export interface ToolExecutionStartedEvent extends BaseEvent {

@@ -93,7 +93,7 @@ export class AgentOrchestrator {
         }
     }
 
-    async shouldContinue(conversationHistory: Messages, currentObservation: string): Promise<boolean> {
+    async shouldContinue(conversationHistory: Messages): Promise<boolean> {
         if (conversationHistory.length === 0) return false;
 
         // Find the last assistant message
@@ -102,9 +102,14 @@ export class AgentOrchestrator {
             .reverse()
             .find(msg => msg.role === 'assistant');
 
-        if (!lastAssistantMessage) return false;
+        const lastUserMessage = conversationHistory
+            .slice()
+            .reverse()
+            .find(msg => msg.role === 'user');
 
-        const context = `Last assistant response: ${lastAssistantMessage.content}\nCurrent observation: ${currentObservation}`;
+        if (!lastAssistantMessage || !lastUserMessage) return false;
+
+        const context = `Last assistant response: ${lastAssistantMessage.content}\nCurrent observation: ${lastUserMessage}`;
 
         try {
             const messages: Messages = [

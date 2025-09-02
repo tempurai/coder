@@ -9,7 +9,7 @@ import { InterruptService } from '../../services/InterruptService.js';
 import { ToolRegistry, ToolNames } from '../../tools/ToolRegistry.js';
 import { z, ZodSchema } from "zod";
 import { TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
-import { getSmartAgentPrompt, PlanningResponse, PlanningResponseSchema, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
+import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PLAN_PROMPT, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
 import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
 import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
 import { ToolInterceptor } from './ToolInterceptor.js';
@@ -73,12 +73,11 @@ export class SmartAgent {
     // 只有在非Plan模式下才进行初始todo创建
     const editMode = this.editModeManager.getCurrentMode();
     if (editMode === EditMode.PLAN_ONLY) {
-      // Plan模式下让Agent自然地探索和规划
       return;
     }
 
     const planningMessages = [
-      { role: 'system' as const, content: 'You are a task planning specialist. Analyze the user request and break it down into actionable todos if it\'s complex enough to warrant structured planning.' },
+      { role: 'system' as const, content: PLANNING_PROMPT },
       { role: 'user' as const, content: query }
     ];
 
@@ -102,9 +101,16 @@ export class SmartAgent {
 
   private async executeMainLoop(initialQuery: string): Promise<TaskExecutionResult> {
     let iteration = 0;
-    let currentObservation = `Task: ${initialQuery}`;
     let finished = false;
     let recentErrorCount = 0;
+
+    this.iterations.push(
+      {
+        iteration: 0, role: 'system',
+        content: this.editModeManager.getCurrentMode() == EditMode.PLAN_ONLY ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT
+      },
+      { iteration: 0, role: "user", content: `Task: ${initialQuery}` }
+    );
 
     while (!finished && iteration < this.maxIterations) {
       if (this.interruptService.isInterrupted()) {
@@ -121,7 +127,7 @@ export class SmartAgent {
       iteration++;
       console.log(`Smart Agent Iteration ${iteration}/${this.maxIterations}`);
 
-      const { response, observation, error } = await this.executeSingleIteration(iteration, currentObservation);
+      const { response, error } = await this.executeSingleIteration(iteration);
 
       if (iteration % 10 === 0) {
         const iterationHistory = this.toMessages(this.iterations);
@@ -148,11 +154,9 @@ export class SmartAgent {
         };
       }
 
-      currentObservation = observation;
-
       if (!finished) {
         const iterationHistory = this.toMessages(this.iterations);
-        const shouldContinue = await this.orchestrator.shouldContinue(iterationHistory, currentObservation);
+        const shouldContinue = await this.orchestrator.shouldContinue(iterationHistory);
         if (!shouldContinue) {
           return { terminateReason: 'WAITING_FOR_USER', history: iterationHistory };
         }
@@ -184,86 +188,51 @@ export class SmartAgent {
     };
   }
 
-  private async executeSingleIteration(
-    iteration: number,
-    observation: string
-  ): Promise<{ response: SmartAgentResponse; observation: string, error?: string }> {
+  private async executeSingleIteration(iteration: number): Promise<{ response: SmartAgentResponse; error?: string }> {
     try {
       if (this.interruptService.isInterrupted()) {
         const response = { reasoning: 'Task interrupted by user', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
-        this.iterations.push(
-          { role: 'user', content: `Observation: ${observation}`, iteration },
-          { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
-        );
-        return { response, observation: 'Task interrupted' };
+        this.iterations.push({ role: 'assistant', content: JSON.stringify(response, null, 2), iteration });
+        return { response };
       }
 
-      // 使用动态Prompt
-      const editMode = this.editModeManager.getCurrentMode();
-      const systemPrompt = getSmartAgentPrompt(editMode);
-
-      const messages: Messages = [
-        { role: 'system', content: systemPrompt },
-        ...this.toMessages(this.iterations),
-        { role: 'user', content: `Current observation: ${observation}` }
-      ];
-
       const response = await this.toolAgent.generateObject<SmartAgentResponse>({
-        messages,
+        messages: this.toMessages(this.iterations),
         schema: SmartAgentResponseSchema as ZodSchema<SmartAgentResponse>
       });
 
       this.iterations.push(
-        { role: 'user', content: `Observation: ${observation}`, iteration },
         { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
       );
-
-      let nextObservation = 'No actions executed';
 
       if (!response.finished) {
         this.eventEmitter.emit({
           type: 'thought_generated',
           iteration,
           thought: response.reasoning,
-          context: observation,
         } as ThoughtGeneratedEvent);
 
         const toolResults = [];
         for (const action of response.actions) {
-          // 使用ToolInterceptor来安全执行工具
           const toolResult = await this.toolInterceptor.executeToolSafely(iteration, action);
-          toolResults.push({
-            tool: action.tool,
-            args: action.args,
-            result: toolResult.result,
-            error: toolResult.error,
-            duration: toolResult.duration
-          });
+          toolResults.push(JSON.stringify(toolResult.result, null, 0) || toolResult.error);
         }
 
-        const toolMessage = JSON.stringify(toolResults, null, 2);
-        this.iterations.push({
-          role: 'user',
-          content: toolMessage,
-          iteration
-        });
-
-        const results = toolResults.map(tr =>
-          `${tr.tool}: ${tr.result ? JSON.stringify(tr.result) : tr.error}`
+        this.iterations.push(
+          { role: 'assistant', content: `Actions Results: ${toolResults.join('; ')}`, iteration }
         );
-        nextObservation = `Previous actions: ${results.join('; ')}`;
       }
 
-      return { response, observation: nextObservation };
+      return { response };
+
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
       console.error(`Iteration ${iteration} failed: ${errorMessage}`);
       const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
       this.iterations.push(
-        { role: 'user', content: `Observation: ${observation}`, iteration },
-        { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
+        { role: 'user', content: `Observation: ${response}`, iteration },
       );
-      return { response, observation: "", error: errorMessage };
+      return { response, error: errorMessage };
     }
   }
 
@@ -275,7 +244,7 @@ export class SmartAgent {
     const todoTool = this.todoManager.createTool();
     this.toolRegistry.register({ name: ToolNames.TODO_MANAGER, tool: todoTool });
 
-    const subAgentTool = createSubAgentTool(this.toolAgent, this.eventEmitter);
+    const subAgentTool = createSubAgentTool(this.toolAgent, this.eventEmitter, this.securityEngine);
     this.toolRegistry.register({ name: ToolNames.START_SUBAGENT, tool: subAgentTool });
   }
 }

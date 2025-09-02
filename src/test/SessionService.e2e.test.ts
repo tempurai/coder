@@ -20,8 +20,9 @@ describe('SessionService E2E Tests', () => {
     container = createTestContainer();
 
     // Get initialized session service from factory
-    const sessionFactory = container.get<() => Promise<SessionService>>(TYPES.InitializedSessionService);
-    sessionService = await sessionFactory();
+    const sessionFactory = container.get<any>(TYPES.SessionServiceFactory);
+    const sessionBundle = sessionFactory();
+    sessionService = sessionBundle.sessionService;
 
     // Get agent for direct testing
     agent = container.get<ToolAgent>(TYPES.ToolAgent);

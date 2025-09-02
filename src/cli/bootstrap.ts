@@ -7,7 +7,7 @@ import 'reflect-metadata';
 import { getContainer } from '../di/container.js';
 import { TYPES } from '../di/types.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
-import { SessionService } from '../services/SessionService.js';
+import { SessionServiceFactory } from '../di/interfaces.js';
 import type { LanguageModel } from 'ai';
 import { startInkUI } from './InkUI.js';
 import { Logger } from '../utils/Logger.js';
@@ -37,6 +37,7 @@ export interface LaunchContext {
 export class ApplicationBootstrap {
   private container = getContainer();
   private logger: Logger;
+  private currentSession?: { sessionService: any; clearSession(): void };
 
   constructor() {
     // 早期初始化logger，确保后续所有操作都能被记录
@@ -108,20 +109,32 @@ export class ApplicationBootstrap {
     }
 
     try {
-      // 使用新的异步单例模式获取SessionService（会自动初始化所有依赖）
-      const sessionService = await this.container.getAsync<SessionService>(TYPES.InitializedSessionService);
+      // 使用SessionServiceFactory创建新的会话
+      const sessionFactory = this.container.get<SessionServiceFactory>(TYPES.SessionServiceFactory);
+      this.currentSession = sessionFactory();
 
       console.log('✅ 新的依赖注入架构已初始化');
       this.logger.info('Dependency injection architecture initialized successfully');
 
       // 启动InkUI界面
       this.logger.info('Starting Ink UI interface');
-      await startInkUI(sessionService);
+      await startInkUI(this.currentSession.sessionService);
 
     } catch (error) {
       console.error('❌ 启动代码编辑界面失败:', error instanceof Error ? error.message : '未知错误');
       this.logger.error('Failed to launch code editor interface', { error: error instanceof Error ? error.message : error });
       process.exit(1);
+    }
+  }
+
+  /**
+   * 清理当前会话
+   */
+  clearCurrentSession(): void {
+    if (this.currentSession) {
+      this.currentSession.clearSession();
+      this.currentSession = undefined;
+      this.logger.info('Session cleared');
     }
   }
 

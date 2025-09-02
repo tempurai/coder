@@ -132,7 +132,30 @@ export function createTestContainer(): Container {
     stopTask: jest.fn(),
     interrupt: jest.fn(),
     interrupted: false,
-    abortController: new AbortController()
+    abortController: new AbortController(),
+    reset: jest.fn()
+  })).inSingletonScope();
+
+  // Bind mock CompressorService
+  container.bind(TYPES.CompressorService).toDynamicValue(() => ({
+    compressContextIfNeeded: jest.fn().mockResolvedValue(true),
+    compressContext: jest.fn().mockResolvedValue('compressed'),
+    getCompressionStats: jest.fn().mockReturnValue({}),
+    reset: jest.fn()
+  })).inSingletonScope();
+
+  // Bind mock EditModeManager
+  container.bind(TYPES.EditModeManager).toDynamicValue(() => ({
+    getCurrentMode: jest.fn().mockReturnValue('normal'),
+    setMode: jest.fn(),
+    cycleMode: jest.fn(),
+    getModeInfo: jest.fn().mockReturnValue({ mode: 'normal', displayName: 'Normal' }),
+    checkEditPermission: jest.fn().mockReturnValue({ allowed: true }),
+    rememberEditApproval: jest.fn(),
+    getStatusMessage: jest.fn().mockReturnValue('Normal mode'),
+    clearSessionApprovals: jest.fn(),
+    getApprovalCount: jest.fn().mockReturnValue(0),
+    reset: jest.fn()
   })).inSingletonScope();
 
   // Bind mock agent
@@ -144,57 +167,37 @@ export function createTestContainer(): Container {
   // Bind event emitter
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter).toDynamicValue(() => new UIEventEmitter()).inSingletonScope();
 
-  // Mock factories that return promises
-  container.bind(TYPES.SnapshotManagerFactory).toDynamicValue(() => {
-    return async () => ({
-      initialize: jest.fn(),
-      createSnapshot: jest.fn().mockResolvedValue({
-        success: true,
-        snapshotId: 'test-snapshot-id',
-        description: 'Test snapshot',
-        filesCount: 5
-      }),
-      restoreSnapshot: jest.fn().mockResolvedValue({
-        success: true,
-        restoredFiles: 5
-      }),
-      listSnapshots: jest.fn().mockResolvedValue([]),
-      cleanupOldSnapshots: jest.fn().mockResolvedValue(0),
-      getStatus: jest.fn().mockResolvedValue({
-        initialized: true,
-        shadowRepoExists: true,
-        snapshotCount: 1,
-        latestSnapshot: { id: 'test-snapshot-id' }
-      }),
-      cleanup: jest.fn()
-    }) as any;
-  });
-
   // SessionService factory
-  container.bind(TYPES.InitializedSessionService).toDynamicValue(() => {
-    return async () => {
+  container.bind(TYPES.SessionServiceFactory).toDynamicValue(() => {
+    return () => {
       const agent = container.get<ToolAgent>(TYPES.ToolAgent);
       const fileWatcher = container.get<FileWatcherService>(TYPES.FileWatcherService);
       const config = container.get<any>(TYPES.Config);
-      const snapshotManagerFactory = container.get(TYPES.SnapshotManagerFactory) as any;
       const eventEmitter = container.get<UIEventEmitter>(TYPES.UIEventEmitter);
       const interruptService = container.get(TYPES.InterruptService) as any;
       const toolRegistry = container.get(TYPES.ToolRegistry) as any;
+      const compressorService = container.get(TYPES.CompressorService) as any;
+      const editModeManager = container.get(TYPES.EditModeManager) as any;
 
       const sessionService = new SessionService(
         agent,
         fileWatcher,
         config,
-        snapshotManagerFactory,
         eventEmitter,
         interruptService,
-        toolRegistry
+        toolRegistry,
+        compressorService,
+        editModeManager
       );
 
-      // Initialize the agent
-      await agent.initializeAsync();
-
-      return sessionService;
+      return {
+        sessionService,
+        clearSession: () => {
+          sessionService.clearSession();
+          interruptService.reset?.();
+          editModeManager.reset?.();
+        }
+      };
     };
   });
 

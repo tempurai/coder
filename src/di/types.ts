@@ -6,32 +6,29 @@ export const TYPES = {
   ModelFactory: Symbol.for('ModelFactory'),
 
   // --- Core Agents ---
-  ToolAgent: Symbol.for('ToolAgent'),
   SmartAgent: Symbol.for('SmartAgent'),
   AgentOrchestrator: Symbol.for('AgentOrchestrator'),
   TodoManager: Symbol.for('TodoManager'),
   SubAgent: Symbol.for('SubAgent'),
   CompressedAgent: Symbol.for('CompressedAgent'),
 
-  // --- Core Services ---
-  SessionService: Symbol.for('SessionService'),
-  CompressorService: Symbol.for('CompressorService'),
-
-  // --- Supporting Services ---
+  // --- Global Services (Singleton) ---
   FileWatcherService: Symbol.for('FileWatcherService'),
   UIEventEmitter: Symbol.for('UIEventEmitter'),
-  HITLManager: Symbol.for('HITLManager'),
-  InterruptService: Symbol.for('InterruptService'),
-  EditModeManager: Symbol.for('EditModeManager'),
-
   Logger: Symbol.for('Logger'),
-
   SecurityPolicyEngine: Symbol.for('SecurityPolicyEngine'),
   ToolRegistry: Symbol.for('ToolRegistry'),
 
-  // --- Factories for Async/On-demand Initialization ---
-  InitializedToolAgent: Symbol.for('InitializedToolAgent'),
-  InitializedSmartAgent: Symbol.for('InitializedSmartAgent'),
-  InitializedSessionService: Symbol.for('InitializedSessionService'),
-  SnapshotManagerFactory: Symbol.for('SnapshotManagerFactory'),
+  // --- Session-scoped Services (Request scope for optimization) ---
+  InterruptService: Symbol.for('InterruptService'),
+  EditModeManager: Symbol.for('EditModeManager'),
+  HITLManager: Symbol.for('HITLManager'),
+  CompressorService: Symbol.for('CompressorService'),
+
+  // --- Per-Task Services (Transient) ---
+  ToolAgent: Symbol.for('ToolAgent'),
+  ToolInterceptor: Symbol.for('ToolInterceptor'),
+
+  // --- Factories ---
+  SessionServiceFactory: Symbol.for('SessionServiceFactory'),
 };

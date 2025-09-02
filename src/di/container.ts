@@ -10,7 +10,7 @@ import { SubAgent } from '../agents/smart_agent/SubAgent.js';
 import { SessionService } from '../services/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
-import { ISnapshotManagerFactory } from './interfaces.js';
+import { SessionServiceFactory } from './interfaces.js';
 import { TYPES } from './types.js';
 import type { LanguageModel } from 'ai';
 import { HITLManager } from '../services/HITLManager.js';
@@ -21,6 +21,7 @@ import { SecurityPolicyEngine } from '../security/SecurityPolicyEngine.js';
 import { Logger } from '../utils/Logger.js';
 import { CompressorService } from '../services/CompressorService.js';
 import { EditModeManager } from '../services/EditModeManager.js';
+import { ToolInterceptor } from '../agents/smart_agent/ToolInterceptor.js';
 
 export { TYPES } from './types.js';
 
@@ -54,91 +55,59 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  // --- Supporting Services ---
+  // --- Global Services (Singleton) ---
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter).toDynamicValue(() => new UIEventEmitter()).inSingletonScope();
   container.bind<FileWatcherService>(TYPES.FileWatcherService).to(FileWatcherService).inSingletonScope();
   container.bind<Logger>(TYPES.Logger).to(Logger).inSingletonScope();
-
-  // --- Core Agents (in dependency order) ---
-
-  // ToolAgent - 基础工具代理，不依赖其他 Agent
-  container.bind<ToolAgent>(TYPES.ToolAgent).to(ToolAgent).inSingletonScope();
-
-  // :TodoManager - 独立的任务管理器
-  container.bind<TodoManager>(TYPES.TodoManager).to(TodoManager).inSingletonScope();
-
-  // AgentOrchestrator - 需要 ToolAgent 和 UIEventEmitter
-  container.bind<AgentOrchestrator>(TYPES.AgentOrchestrator).to(AgentOrchestrator).inSingletonScope();
-
-  // SubAgent - 需要 ToolAgent 和 UIEventEmitter  
-  container.bind<SubAgent>(TYPES.SubAgent).to(SubAgent).inSingletonScope();
-
-  // SmartAgent - 需要 ToolAgent 和 UIEventEmitter，会内部创建其他组件
-  container.bind<SmartAgent>(TYPES.SmartAgent).to(SmartAgent).inSingletonScope();
-
-  // CompressedAgent - 需要 ToolAgent 和 UIEventEmitter
-  container.bind<CompressedAgent>(TYPES.CompressedAgent).to(CompressedAgent).inSingletonScope();
-
-  // --- Core Services ---
-  container.bind<SessionService>(TYPES.SessionService).to(SessionService).inSingletonScope();
-
-  container.bind<CompressorService>(TYPES.CompressorService).to(CompressorService).inSingletonScope();
-
-  container.bind<EditModeManager>(TYPES.EditModeManager).to(EditModeManager).inSingletonScope();
-
-  container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inSingletonScope();
-
-  container.bind<InterruptService>(TYPES.InterruptService).to(InterruptService).inSingletonScope();
-
-  container.bind<SecurityPolicyEngine>(TYPES.SecurityPolicyEngine).to(SecurityPolicyEngine);
-
+  container.bind<SecurityPolicyEngine>(TYPES.SecurityPolicyEngine).to(SecurityPolicyEngine).inSingletonScope();
   container.bind<ToolRegistry>(TYPES.ToolRegistry).to(ToolRegistry).inSingletonScope();
 
+  // --- Session-scoped Services (inRequestScope for optimization) ---
+  container.bind<InterruptService>(TYPES.InterruptService).to(InterruptService).inRequestScope();
+  container.bind<EditModeManager>(TYPES.EditModeManager).to(EditModeManager).inRequestScope();
+  container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inRequestScope();
+  container.bind<CompressorService>(TYPES.CompressorService).to(CompressorService).inRequestScope();
+
+  // --- Per-Task Services (Transient) ---
+  container.bind<ToolAgent>(TYPES.ToolAgent).to(ToolAgent);
+  container.bind<ToolInterceptor>(TYPES.ToolInterceptor).to(ToolInterceptor);
+
+
   // --- Factories ---
-  container.bind<ISnapshotManagerFactory>(TYPES.SnapshotManagerFactory)
+  container.bind<SessionServiceFactory>(TYPES.SessionServiceFactory)
     .toFactory(() => {
-      return async (projectRoot?: string) => {
-        const { SnapshotManager } = await import('../services/SnapshotManager.js');
-        return new SnapshotManager(projectRoot || process.cwd());
+      return () => {
+        // 一次性解析所有session-scoped依赖，inRequestScope确保它们内部共享
+        const toolAgent = container.get<ToolAgent>(TYPES.ToolAgent);
+        const fileWatcherService = container.get<FileWatcherService>(TYPES.FileWatcherService);
+        const config = container.get<Config>(TYPES.Config);
+        const eventEmitter = container.get<UIEventEmitter>(TYPES.UIEventEmitter);
+        const interruptService = container.get<InterruptService>(TYPES.InterruptService);
+        const toolRegistry = container.get<ToolRegistry>(TYPES.ToolRegistry);
+        const compressorService = container.get<CompressorService>(TYPES.CompressorService);
+        const editModeManager = container.get<EditModeManager>(TYPES.EditModeManager);
+
+        const sessionService = new SessionService(
+          toolAgent,
+          fileWatcherService,
+          config,
+          eventEmitter,
+          interruptService,
+          toolRegistry,
+          compressorService,
+          editModeManager
+        );
+
+        return {
+          sessionService,
+          clearSession(): void {
+            sessionService.clearSession();
+            interruptService.reset();
+            editModeManager.reset();
+          }
+        };
       };
     });
-
-  // 创建异步单例来确保 ToolAgent 完成异步初始化
-  container.bind<Promise<ToolAgent>>(TYPES.InitializedToolAgent)
-    .toDynamicValue(async () => {
-      const agent = container.get<ToolAgent>(TYPES.ToolAgent);
-      await agent.initializeAsync();
-      console.log('✅ ToolAgent异步初始化完成');
-      return agent;
-    })
-    .inSingletonScope();
-
-  // 创建异步单例来确保 SmartAgent 完成异步初始化
-  container.bind<Promise<SmartAgent>>(TYPES.InitializedSmartAgent)
-    .toDynamicValue(async () => {
-      // 首先确保 ToolAgent 已初始化
-      await container.getAsync<ToolAgent>(TYPES.InitializedToolAgent);
-
-      const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
-      smartAgent.initializeTools();
-
-      console.log('✅ SmartAgent工具初始化完成');
-      return smartAgent;
-    })
-    .inSingletonScope();
-
-  // 创建异步单例来获取完全初始化好的 SessionService
-  container.bind<Promise<SessionService>>(TYPES.InitializedSessionService)
-    .toDynamicValue(async () => {
-      // 确保所有依赖的 Agent 都已初始化
-      await container.getAsync<ToolAgent>(TYPES.InitializedToolAgent);
-      await container.getAsync<SmartAgent>(TYPES.InitializedSmartAgent);
-
-      const sessionService = container.get<SessionService>(TYPES.SessionService);
-      console.log('✅ 会话管理服务已初始化');
-      return sessionService;
-    })
-    .inSingletonScope();
 
   console.log('🏗️ 依赖注入容器已配置完成');
   return container;

@@ -1,16 +1,13 @@
-import { SmartAgent } from '../agents/smart_agent/SmartAgent.js';
+import { ToolAgent, Messages } from '../agents/tool_agent/ToolAgent.js';
 import { FileWatcherService } from './FileWatcherService.js';
 import { Config } from '../config/ConfigLoader.js';
-import { injectable, inject } from 'inversify';
-import { TYPES } from '../di/types.js';
-import { ISnapshotManagerFactory } from '../di/interfaces.js';
 import { UIEventEmitter, TaskStartedEvent, TaskCompletedEvent, SnapshotCreatedEvent, TextGeneratedEvent, UserInputEvent, SystemInfoEvent } from '../events/index.js';
-import { ToolAgent, Messages } from '../agents/tool_agent/ToolAgent.js';
+import { SmartAgent } from '../agents/smart_agent/SmartAgent.js';
 import { InterruptService } from './InterruptService.js';
 import { CompressorService } from './CompressorService.js';
 import { TaskExecutionResult } from '../agents/tool_agent/ToolAgent.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
-import { SnapshotResult } from './SnapshotManager.js';
+import { SnapshotResult, SnapshotManager } from './SnapshotManager.js';
 import { EditModeManager } from './EditModeManager.js';
 
 export interface SessionStats {
@@ -22,7 +19,6 @@ export interface SessionStats {
     };
 }
 
-@injectable()
 export class SessionService {
     private compressedContext: string = '';
     private recentHistory: Messages = [];
@@ -34,15 +30,14 @@ export class SessionService {
     public readonly editModeManager: EditModeManager;
 
     constructor(
-        @inject(TYPES.ToolAgent) private _agent: ToolAgent,
-        @inject(TYPES.FileWatcherService) private fileWatcherService: FileWatcherService,
-        @inject(TYPES.Config) private config: Config,
-        @inject(TYPES.SnapshotManagerFactory) private createSnapshotManager: ISnapshotManagerFactory,
-        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
-        @inject(TYPES.InterruptService) private interruptService: InterruptService,
-        @inject(TYPES.ToolRegistry) private toolRegistry: ToolRegistry,
-        @inject(TYPES.CompressorService) private compressorService: CompressorService,
-        @inject(TYPES.EditModeManager) editModeManager: EditModeManager,
+        private _agent: ToolAgent,
+        private fileWatcherService: FileWatcherService,
+        private config: Config,
+        private eventEmitter: UIEventEmitter,
+        private interruptService: InterruptService,
+        private toolRegistry: ToolRegistry,
+        private compressorService: CompressorService,
+        editModeManager: EditModeManager,
     ) {
         this.sessionStartTime = new Date();
         this.editModeManager = editModeManager;
@@ -87,9 +82,8 @@ export class SessionService {
         let snapshotResult: SnapshotResult | null = null;
 
         try {
-            const snapshotManager = await this.createSnapshotManager(process.cwd());
             console.log('创建任务开始前的快照...');
-            snapshotResult = await snapshotManager.createSnapshot(
+            snapshotResult = await SnapshotManager.createSnapshot(
                 `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
             );
 
@@ -121,8 +115,12 @@ export class SessionService {
                 filesCount: snapshotResult!.filesCount || 0,
             } as SnapshotCreatedEvent);
 
-            const smartAgent = new SmartAgent(this._agent, this.eventEmitter,
-                this.interruptService, this.toolRegistry, this.editModeManager,
+            const smartAgent = new SmartAgent(
+                this._agent, 
+                this.eventEmitter,
+                this.interruptService, 
+                this.toolRegistry, 
+                this.editModeManager,
                 this.toolRegistry.getContext().securityEngine
             );
             smartAgent.initializeTools();
@@ -194,8 +192,7 @@ export class SessionService {
     async restoreFromSnapshot(snapshotId: string): Promise<{ success: boolean, error?: string }> {
         console.log(`🔄 恢复快照: ${snapshotId}`);
         try {
-            const snapshotManager = await this.createSnapshotManager(process.cwd());
-            const restoreResult = await snapshotManager.restoreSnapshot(snapshotId);
+            const restoreResult = await SnapshotManager.restoreSnapshot(snapshotId);
 
             if (restoreResult.success) {
                 console.log(`✅ 快照恢复成功`);
@@ -211,21 +208,19 @@ export class SessionService {
     }
 
     async getSnapshots() {
-        const snapshotManager = await this.createSnapshotManager(process.cwd());
-        return await snapshotManager.listSnapshots();
+        return await SnapshotManager.listSnapshots();
     }
 
     async getSessionStats(): Promise<SessionStats> {
         const sessionDuration = Date.now() - this.sessionStartTime.getTime();
-        const snapshotManager = await this.createSnapshotManager();
-        const snapshotStatus = await snapshotManager.getStatus();
+        const snapshots = await SnapshotManager.listSnapshots();
 
         return {
             totalInteractions: this.interactionCount,
             sessionDuration: Math.round(sessionDuration / 1000),
             snapshotStats: {
-                totalSnapshots: snapshotStatus.snapshotCount,
-                latestSnapshot: snapshotStatus.latestSnapshot?.id,
+                totalSnapshots: snapshots.length,
+                latestSnapshot: snapshots[0]?.id,
             }
         };
     }

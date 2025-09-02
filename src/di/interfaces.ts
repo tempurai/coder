@@ -1,4 +1,5 @@
 import { SnapshotResult, RestoreResult, SnapshotInfo } from '../services/SnapshotManager.js';
+import { SessionService } from '../services/SessionService.js';
 
 /**
  * 快照管理器接口定义
@@ -50,6 +51,11 @@ export interface ISnapshotManager {
 }
 
 /**
- * 快照管理器工厂函数类型
+ * SessionService工厂函数类型
  */
-export type ISnapshotManagerFactory = (projectRoot?: string) => Promise<ISnapshotManager>;
+export interface SessionBundle {
+  sessionService: SessionService;
+  clearSession(): void;
+}
+
+export type SessionServiceFactory = () => SessionBundle;

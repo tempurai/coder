@@ -64,7 +64,7 @@ You must respond in this JSON format:
 
 Analyze the user's task and output the planning JSON.`);
 
-const ActionSchema = z.object({
+export const ActionSchema = z.object({
   tool: z.string().min(1).describe("Name of the tool to be invoked"),
   args: z.any().default({}).describe("Tool arguments")
 });

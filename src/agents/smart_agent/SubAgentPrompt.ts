@@ -1,16 +1,13 @@
 import z from "zod";
 import { ToolNames } from "../../tools/ToolRegistry.js";
 import { compressSystemPrompt } from "../tool_agent/ToolAgent.js";
+import { ActionSchema } from "./SmartAgentPrompt.js";
 
-const ActionSchema = z.object({
-  tool: z.string().describe("Tool name"),
-  args: z.record(z.any()).default({})
-});
 
 const SubAgentResponseFinishedSchema = z.object({
   reasoning: z.string().describe("Why no further actions are needed"),
   actions: z.array(ActionSchema).max(0).describe("Must be an empty array when finished=true"),
-  finished: z.literal(true),
+  finished: z.boolean().refine(val => val === true),
   result: z.string().min(1).describe("Final result summary when finished=true"),
   criticalInfo: z.boolean().default(false).describe("Whether this turn contains critical information that must be preserved")
 });
@@ -19,7 +16,7 @@ export const SubAgentResponseSchema = z.union([
   z.object({
     reasoning: z.string().describe("Detailed explanation of current analysis and planned approach"),
     actions: z.array(ActionSchema).min(1).describe("Tools to execute next"),
-    finished: z.literal(false).default(false),
+    finished: z.boolean().refine(val => val === false),
     result: z.undefined().optional(),
     criticalInfo: z.boolean().default(false).describe("Whether this turn contains critical information that must be preserved")
   }),

@@ -115,7 +115,7 @@ export class ToolRegistry {
     }
 }
 
-export const hasWriteOperations = (actions: Array<{ tool: string; args: any }>, securityEngine: SecurityPolicyEngine): boolean => {
+export const hasWriteOperations = (actions: Array<{ tool: string; args?: any }>, securityEngine: SecurityPolicyEngine): boolean => {
     const writeTools = [ToolNames.WRITE_FILE, ToolNames.APPLY_PATCH, ToolNames.CREATE_FILE];
 
     for (const action of actions) {

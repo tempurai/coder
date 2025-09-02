@@ -4,6 +4,7 @@ import { UIEventEmitter } from '../events/UIEventEmitter.js';
 import { ToolConfirmationRequestEvent, ToolConfirmationResponseEvent } from '../events/EventTypes.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
 import { ToolNames } from '../tools/ToolRegistry.js';
+import { EditModeManager } from './EditModeManager.js';
 
 export type ConfirmationChoice = 'yes' | 'no' | 'yes_and_remember';
 
@@ -25,7 +26,8 @@ export class HITLManager {
 
     constructor(
         @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
-        @inject(TYPES.ConfigLoader) private configLoader: ConfigLoader
+        @inject(TYPES.ConfigLoader) private configLoader: ConfigLoader,
+        @inject(TYPES.EditModeManager) private editModeManager: EditModeManager
     ) {
         this.setupEventListeners();
     }
@@ -36,25 +38,56 @@ export class HITLManager {
         });
     }
 
+    // 确认shell命令等
     async requestConfirmation(
         toolName: string,
         args: any,
         description: string,
         options: ConfirmationOptions = {}
     ): Promise<boolean> {
-        const choice = await this.requestConfirmationWithChoice(toolName, args, description, options);
+        const choice = await this.requestConfirmationWithChoice(toolName, args, description, {
+            ...options,
+            isEditOperation: false
+        });
+
         if (choice === 'yes_and_remember') {
             await this.addToAllowlist(toolName, args);
             return true;
         }
+
         return choice === 'yes';
     }
 
-    async requestConfirmationWithChoice(
+    // 编辑确认文件操作
+    async requestEditConfirmation(
+        toolName: string,
+        args: any,
+        filePath: string,
+        options: ConfirmationOptions = {}
+    ): Promise<boolean> {
+        const description = `Execute file operation: ${toolName} on "${filePath}"`;
+        const modeInfo = this.editModeManager.getModeInfo();
+        const enhancedDescription = `${description}\n\nCurrent mode: ${modeInfo.displayName} (${modeInfo.description})`;
+
+        const choice = await this.requestConfirmationWithChoice(toolName, args, enhancedDescription, {
+            ...options,
+            showRememberOption: true,
+            isEditOperation: true
+        });
+
+        if (choice === 'yes_and_remember') {
+            this.editModeManager.rememberEditApproval(toolName, args);
+            return true;
+        }
+
+        return choice === 'yes';
+    }
+
+    private async requestConfirmationWithChoice(
         toolName: string,
         args: any,
         description: string,
-        options: ConfirmationOptions = {}
+        options: ConfirmationOptions & { isEditOperation?: boolean } = {}
     ): Promise<ConfirmationChoice> {
         const confirmationId = this.generateConfirmationId();
 
@@ -147,10 +180,15 @@ export class HITLManager {
         const firstPart = parts[0];
         const pathSegments = firstPart.split(/[/\\]/);
         const commandName = pathSegments[pathSegments.length - 1];
+
         return commandName.replace(/\.(exe|cmd|bat)$/i, '').toLowerCase();
     }
 
     private generateConfirmationId(): string {
         return `conf_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    getEditModeManager(): EditModeManager {
+        return this.editModeManager;
     }
 }

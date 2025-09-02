@@ -23,9 +23,19 @@ interface MainUIProps {
 const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   const { currentTheme } = useTheme();
   const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions } = useSessionEvents(sessionService);
-
-  // 使用新的事件分离hook
   const { staticEvents, dynamicEvents } = useEventSeparation(events);
+  const [editModeStatus, setEditModeStatus] = useState<string>('');
+
+  // Update edit mode status periodically
+  useEffect(() => {
+    const updateEditModeStatus = () => {
+      setEditModeStatus(sessionService.editModeManager.getStatusMessage());
+    };
+
+    updateEditModeStatus();
+    const interval = setInterval(updateEditModeStatus, 1000);
+    return () => clearInterval(interval);
+  }, [sessionService]);
 
   const handleSubmit = useCallback(
     async (userInput: string) => {
@@ -35,25 +45,36 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
     [sessionService, isProcessing, pendingConfirmation],
   );
 
+  const handleEditModeToggle = useCallback(() => {
+    sessionService.editModeManager.cycleMode();
+    setEditModeStatus(sessionService.editModeManager.getStatusMessage());
+  }, [sessionService]);
+
   const staticItems = [
-    // Header
+    // Header with edit mode status
     <Box key='header' flexDirection='column' marginBottom={1} paddingX={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
       <Text color={currentTheme.colors.info}>Welcome to Tempurai Code Assistant</Text>
       <Text> </Text>
       <Text>
-        Type /help for commands • <Text color={currentTheme.colors.accent}>Ctrl+R</Text> for detail mode
+        Type /help for commands • <Text color={currentTheme.colors.accent}>Ctrl+R</Text> for detail mode • <Text color={currentTheme.colors.accent}>Shift+Tab</Text> cycle edit mode
       </Text>
       <Text color={currentTheme.colors.text.muted}>cwd: {process.cwd()}</Text>
       <Text> </Text>
       <Text color={currentTheme.colors.text.muted}>AI can make mistakes, please check output carefully.</Text>
     </Box>,
 
-    // Title
+    // Title with edit mode indicator
     <Box key='title' marginBottom={1}>
       <Text color={currentTheme.colors.ui.highlight}>{'⚡'} </Text>
       <Text color={currentTheme.colors.primary} bold>
         Tempurai Code Assistant
       </Text>
+      {editModeStatus && (
+        <>
+          <Text color={currentTheme.colors.text.muted}> • </Text>
+          <Text color={currentTheme.colors.accent}>{editModeStatus}</Text>
+        </>
+      )}
     </Box>,
 
     // Static events
@@ -66,7 +87,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 
   return (
     <Box flexDirection='column'>
-      {/* Static content */}
+      {/* Static items */}
       <Static items={staticItems}>{(item) => item}</Static>
 
       {/* Dynamic events */}
@@ -78,14 +99,14 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 
       {/* Processing indicator */}
       {isProcessing && (
-        <Box marginBottom={1}>
+        <Box marginY={1}>
           <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
         </Box>
       )}
 
       {/* Input area */}
-      <Box>
-        <DynamicInput onSubmit={handleSubmit} isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} />
+      <Box marginTop={1} paddingTop={1}>
+        <DynamicInput onSubmit={handleSubmit} isProcessing={isProcessing} confirmationData={pendingConfirmation} onConfirm={handleConfirmation} editModeStatus={editModeStatus} onEditModeToggle={handleEditModeToggle} />
       </Box>
     </Box>
   );
@@ -121,9 +142,9 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       return;
     }
 
-    // Ctrl+R is reserved for detail mode (not implemented yet)
+    // Ctrl+R for detail mode (placeholder for future implementation)
     if (key.ctrl && inputChar === 'r') {
-      // TODO: Toggle detail mode functionality
+      // Detail mode toggle - could be implemented later
       return;
     }
 
@@ -158,9 +179,6 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => (
 
 export const startInkUI = async (sessionService: SessionService) => {
   console.log('Starting InkUI Interface...');
-
-  // 不再静默console，让logger的拦截继续工作
-  // console重定向由Logger类负责处理
 
   const exitFn = () => {
     sessionService.interrupt();

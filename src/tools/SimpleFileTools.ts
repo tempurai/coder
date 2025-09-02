@@ -11,7 +11,7 @@ import { ToolExecutionResult } from './ToolRegistry.js';
 const execAsync = util.promisify(exec);
 
 export const createCreateFileTool = (context: ToolContext) => tool({
-    description: `Create a new file with content. 
+    description: `Create a new file with content.
     Fails if the file already exists to prevent accidental overwrites.
     Use this tool when you want to ensure you're creating a completely new file.`,
     inputSchema: z.object({
@@ -22,6 +22,7 @@ export const createCreateFileTool = (context: ToolContext) => tool({
     execute: async ({ filePath, content, toolExecutionId }): Promise<ToolExecutionResult> => {
         const displayTitle = `Create(${filePath})`;
 
+        // 发送开始事件
         context.eventEmitter.emit({
             type: 'tool_execution_started',
             toolName: ToolNames.CREATE_FILE,
@@ -30,10 +31,34 @@ export const createCreateFileTool = (context: ToolContext) => tool({
             displayTitle,
         } as ToolExecutionStartedEvent);
 
+        // 检查编辑权限
+        const editModeManager = context.hitlManager.getEditModeManager();
+        const permission = editModeManager.checkEditPermission(ToolNames.CREATE_FILE, { filePath, content });
+
+        if (!permission.allowed) {
+            if (permission.needsConfirmation) {
+                const confirmed = await context.hitlManager.requestEditConfirmation(
+                    ToolNames.CREATE_FILE,
+                    { filePath, content },
+                    filePath
+                );
+                if (!confirmed) {
+                    return {
+                        error: 'File creation cancelled by user',
+                        displayDetails: 'File creation cancelled by user',
+                    };
+                }
+            } else {
+                return {
+                    error: permission.reason || 'File creation not allowed',
+                    displayDetails: permission.reason || 'File creation blocked by current edit mode',
+                };
+            }
+        }
+
         try {
             const absolutePath = path.resolve(filePath);
 
-            // Check if file already exists
             if (fs.existsSync(absolutePath)) {
                 return {
                     error: `File already exists: ${filePath}`,
@@ -42,8 +67,6 @@ export const createCreateFileTool = (context: ToolContext) => tool({
             }
 
             const dir = path.dirname(absolutePath);
-
-            // Create directory if it doesn't exist
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
@@ -71,8 +94,9 @@ export const createWriteFileTool = (context: ToolContext) => tool({
         toolExecutionId: z.string().optional().describe('Tool execution ID (auto-generated)'),
     }),
     execute: async ({ filePath, content, toolExecutionId }): Promise<ToolExecutionResult> => {
-        const displayTitle = `Write(${filePath}, ${content.length > 10 ? content.substring(0, 10) + '...' : content})`;
+        const displayTitle = `Write(${filePath})`;
 
+        // 发送开始事件
         context.eventEmitter.emit({
             type: 'tool_execution_started',
             toolName: ToolNames.WRITE_FILE,
@@ -81,10 +105,34 @@ export const createWriteFileTool = (context: ToolContext) => tool({
             displayTitle,
         } as ToolExecutionStartedEvent);
 
+        // 检查编辑权限
+        const editModeManager = context.hitlManager.getEditModeManager();
+        const permission = editModeManager.checkEditPermission(ToolNames.WRITE_FILE, { filePath, content });
+
+        if (!permission.allowed) {
+            if (permission.needsConfirmation) {
+                const confirmed = await context.hitlManager.requestEditConfirmation(
+                    ToolNames.WRITE_FILE,
+                    { filePath, content },
+                    filePath
+                );
+                if (!confirmed) {
+                    return {
+                        error: 'File write cancelled by user',
+                        displayDetails: 'File write cancelled by user',
+                    };
+                }
+            } else {
+                return {
+                    error: permission.reason || 'File write not allowed',
+                    displayDetails: permission.reason || 'File write blocked by current edit mode',
+                };
+            }
+        }
+
         try {
             const absolutePath = path.resolve(filePath);
             const dir = path.dirname(absolutePath);
-
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
@@ -116,6 +164,7 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
     execute: async ({ filePath, patchContent, toolExecutionId }): Promise<ToolExecutionResult> => {
         const displayTitle = `Update(${filePath})`;
 
+        // 发送开始事件
         context.eventEmitter.emit({
             type: 'tool_execution_started',
             toolName: ToolNames.APPLY_PATCH,
@@ -124,9 +173,33 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
             displayTitle,
         } as ToolExecutionStartedEvent);
 
+        // 检查编辑权限
+        const editModeManager = context.hitlManager.getEditModeManager();
+        const permission = editModeManager.checkEditPermission(ToolNames.APPLY_PATCH, { filePath, patchContent });
+
+        if (!permission.allowed) {
+            if (permission.needsConfirmation) {
+                const confirmed = await context.hitlManager.requestEditConfirmation(
+                    ToolNames.APPLY_PATCH,
+                    { filePath, patchContent },
+                    filePath
+                );
+                if (!confirmed) {
+                    return {
+                        error: 'Patch application cancelled by user',
+                        displayDetails: 'Patch application cancelled by user',
+                    };
+                }
+            } else {
+                return {
+                    error: permission.reason || 'Patch application not allowed',
+                    displayDetails: permission.reason || 'Patch application blocked by current edit mode',
+                };
+            }
+        }
+
         try {
             const absolutePath = path.resolve(filePath);
-
             if (!fs.existsSync(absolutePath)) {
                 return {
                     error: `File not found: ${filePath}`,
@@ -154,13 +227,11 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
                     },
                     displayDetails: patchContent,
                 };
-
             } catch (patchError) {
                 const result = await applyPatchManually(absolutePath, patchContent);
                 await fs.promises.unlink(tempPatchFile);
                 return result;
             }
-
         } catch (error) {
             return {
                 error: error instanceof Error ? error.message : 'Unknown error',
@@ -189,8 +260,8 @@ async function applyPatchManually(filePath: string, patchContent: string): Promi
         const originalContent = await fs.promises.readFile(filePath, 'utf-8');
         const eol = detectNewline(originalContent);
         const originalLines = originalContent.split(/\r?\n/);
-        const patchLines = patchContent.split(/\r?\n/);
 
+        const patchLines = patchContent.split(/\r?\n/);
         const hunks: Hunk[] = [];
         let currentHunk: Hunk | null = null;
 
@@ -251,7 +322,6 @@ async function applyPatchManually(filePath: string, patchContent: string): Promi
             },
             displayDetails: patchContent,
         };
-
     } catch (error) {
         return {
             error: error instanceof Error ? error.message : 'Manual patch application failed',

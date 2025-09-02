@@ -20,6 +20,7 @@ import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SecurityPolicyEngine } from '../security/SecurityPolicyEngine.js';
 import { Logger } from '../utils/Logger.js';
 import { CompressorService } from '../services/CompressorService.js';
+import { EditModeManager } from '../services/EditModeManager.js';
 
 export { TYPES } from './types.js';
 
@@ -82,6 +83,8 @@ export function createContainer(): Container {
   container.bind<SessionService>(TYPES.SessionService).to(SessionService).inSingletonScope();
 
   container.bind<CompressorService>(TYPES.CompressorService).to(CompressorService).inSingletonScope();
+
+  container.bind<EditModeManager>(TYPES.EditModeManager).to(EditModeManager).inSingletonScope();
 
   container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inSingletonScope();
 

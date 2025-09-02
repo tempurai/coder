@@ -11,6 +11,7 @@ import { CompressorService } from './CompressorService.js';
 import { TaskExecutionResult } from '../agents/tool_agent/ToolAgent.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SnapshotResult } from './SnapshotManager.js';
+import { EditModeManager } from './EditModeManager.js';
 
 export interface SessionStats {
     totalInteractions: number;
@@ -30,6 +31,9 @@ export class SessionService {
     private messageQueue: string[] = [];
     private isTaskRunning: boolean = false;
 
+    // 直接暴露EditModeManager，不使用包装函数
+    public readonly editModeManager: EditModeManager;
+
     constructor(
         @inject(TYPES.ToolAgent) private _agent: ToolAgent,
         @inject(TYPES.FileWatcherService) private fileWatcherService: FileWatcherService,
@@ -39,8 +43,10 @@ export class SessionService {
         @inject(TYPES.InterruptService) private interruptService: InterruptService,
         @inject(TYPES.ToolRegistry) private toolRegistry: ToolRegistry,
         @inject(TYPES.CompressorService) private compressorService: CompressorService,
+        @inject(TYPES.EditModeManager) editModeManager: EditModeManager,
     ) {
         this.sessionStartTime = new Date();
+        this.editModeManager = editModeManager;
     }
 
     get agent(): ToolAgent {
@@ -271,5 +277,6 @@ export class SessionService {
     async cleanup(): Promise<void> {
         this.fileWatcherService.cleanup();
         await this._agent.cleanup();
+        this.editModeManager.reset();
     }
 }

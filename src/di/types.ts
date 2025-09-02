@@ -22,6 +22,8 @@ export const TYPES = {
   UIEventEmitter: Symbol.for('UIEventEmitter'),
   HITLManager: Symbol.for('HITLManager'),
   InterruptService: Symbol.for('InterruptService'),
+  EditModeManager: Symbol.for('EditModeManager'),
+
   Logger: Symbol.for('Logger'),
 
   SecurityPolicyEngine: Symbol.for('SecurityPolicyEngine'),

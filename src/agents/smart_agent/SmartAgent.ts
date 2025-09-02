@@ -21,7 +21,7 @@ export interface SmartAgentMessage extends Message {
 @injectable()
 export class SmartAgent {
   private maxIterations: number;
-  private iterations: SmartAgentMessage[] = [];
+  private memory: SmartAgentMessage[] = [];
   private todoManager: TodoManager;
   private orchestrator: AgentOrchestrator;
 
@@ -40,15 +40,15 @@ export class SmartAgent {
     this.orchestrator = new AgentOrchestrator(toolAgent, eventEmitter);
   }
 
-  async runTask(initialQuery: string, sessionHistory: Messages = []): Promise<TaskExecutionResult> {
-    this.iterations = [...sessionHistory.map((msg, i) => ({ ...msg, iteration: 0 }))];
+  async executeTask(initialQuery: string, sessionHistory: Messages = []): Promise<TaskExecutionResult> {
+    this.memory = [...sessionHistory.map((msg, i) => ({ ...msg, iteration: 0 }))];
     console.log(`Starting intelligent task execution: ${initialQuery}`);
-
     const startTime = Date.now();
-    try {
-      await this.initializeTaskPlanning(initialQuery);
-      const result = await this.executeMainLoop(initialQuery);
 
+    try {
+      await this.initialPlanningExecution(initialQuery);
+
+      const result = await this.executeMainLoop(initialQuery);
       return {
         ...result,
         metadata: {
@@ -57,20 +57,20 @@ export class SmartAgent {
           duration: Date.now() - startTime,
         }
       }
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return {
         terminateReason: 'ERROR',
-        history: this.toMessages(this.iterations),
+        history: this.processHistory(this.memory),
         error: errorMessage
       };
     }
   }
 
-  private async initializeTaskPlanning(query: string): Promise<void> {
+  private async initialPlanningExecution(query: string): Promise<void> {
     console.log('Initializing task planning phase...');
 
-    // 只有在非Plan模式下才进行初始todo创建
     const editMode = this.editModeManager.getCurrentMode();
     if (editMode === EditMode.PLAN_ONLY) {
       return;
@@ -100,11 +100,11 @@ export class SmartAgent {
   }
 
   private async executeMainLoop(initialQuery: string): Promise<TaskExecutionResult> {
-    let iteration = 0;
-    let finished = false;
+    let currentIteration = 0;
+    let isCompleted = false;
     let recentErrorCount = 0;
 
-    this.iterations.push(
+    this.memory.push(
       {
         iteration: 0, role: 'system',
         content: this.editModeManager.getCurrentMode() == EditMode.PLAN_ONLY ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT
@@ -112,131 +112,110 @@ export class SmartAgent {
       { iteration: 0, role: "user", content: `Task: ${initialQuery}` }
     );
 
-    while (!finished && iteration < this.maxIterations) {
+    while (!isCompleted && currentIteration < this.maxIterations) {
       if (this.interruptService.isInterrupted()) {
         console.log('Task execution interrupted by user');
         return {
           terminateReason: 'INTERRUPTED',
-          history: this.toMessages(this.iterations),
+          history: this.processHistory(this.memory),
           metadata: {
-            iterations: iteration,
+            iterations: currentIteration,
           }
         };
       }
 
-      iteration++;
-      console.log(`Smart Agent Iteration ${iteration}/${this.maxIterations}`);
+      currentIteration++;
+      console.log(`Smart Agent Iteration ${currentIteration}/${this.maxIterations}`);
 
-      const { response, error } = await this.executeSingleIteration(iteration);
+      const { response, error } = await this.executeSingleIteration(currentIteration);
 
-      if (iteration % 10 === 0) {
-        const iterationHistory = this.toMessages(this.iterations);
+      if (currentIteration % 10 === 0) {
+        const iterationHistory = this.processHistory(this.memory);
         const loopDetection = await this.orchestrator.detectLoop(iterationHistory);
         if (loopDetection.isLoop) {
           console.log(`Loop detected: ${loopDetection.description}`);
           return { terminateReason: 'ERROR', history: iterationHistory, error: loopDetection.description || 'Repetitive behavior detected' };
         }
-      }
 
-      finished = response.finished;
-      if (finished) {
-        this.eventEmitter.emit({
-          type: 'text_generated',
-          text: response.result,
-        } as TextGeneratedEvent);
-
-        return {
-          terminateReason: 'FINISHED',
-          history: this.toMessages(this.iterations),
-          metadata: {
-            iterations: iteration,
-          }
-        };
-      }
-
-      if (!finished) {
-        const iterationHistory = this.toMessages(this.iterations);
         const shouldContinue = await this.orchestrator.shouldContinue(iterationHistory);
         if (!shouldContinue) {
           return { terminateReason: 'WAITING_FOR_USER', history: iterationHistory };
         }
       }
 
+      isCompleted = response.finished;
+      if (isCompleted) {
+        this.eventEmitter.emit({ type: 'text_generated', text: response.result } as TextGeneratedEvent);
+        break;
+      }
+
       recentErrorCount += (error ? 1 : 0);
       if (recentErrorCount >= 2) {
         console.error('Too many consecutive errors, terminating');
-        return { terminateReason: 'ERROR', history: this.toMessages(this.iterations), error: 'Too many consecutive errors' };
+        return { terminateReason: 'ERROR', history: this.processHistory(this.memory), error: 'Too many consecutive errors' };
       }
     }
 
-    if (iteration >= this.maxIterations) {
+    if (currentIteration > this.maxIterations) {
       return {
         terminateReason: 'TIMEOUT',
-        history: this.toMessages(this.iterations),
+        history: this.processHistory(this.memory),
         metadata: {
-          iterations: iteration,
+          iterations: currentIteration,
         }
       };
     }
 
     return {
       terminateReason: 'FINISHED',
-      history: this.toMessages(this.iterations),
+      history: this.processHistory(this.memory),
       metadata: {
-        iterations: iteration,
+        iterations: currentIteration,
       }
     };
   }
 
-  private async executeSingleIteration(iteration: number): Promise<{ response: SmartAgentResponse; error?: string }> {
+  private async executeSingleIteration(currentIteration: number): Promise<{ response: SmartAgentResponse; error?: string }> {
     try {
-      if (this.interruptService.isInterrupted()) {
-        const response = { reasoning: 'Task interrupted by user', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
-        this.iterations.push({ role: 'assistant', content: JSON.stringify(response, null, 2), iteration });
-        return { response };
-      }
-
       const response = await this.toolAgent.generateObject<SmartAgentResponse>({
-        messages: this.toMessages(this.iterations),
+        messages: this.processHistory(this.memory),
         schema: SmartAgentResponseSchema as ZodSchema<SmartAgentResponse>
       });
 
-      this.iterations.push(
-        { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
+      this.memory.push(
+        { role: 'assistant', content: JSON.stringify(response, null, 2), iteration: currentIteration }
       );
 
-      if (!response.finished) {
-        this.eventEmitter.emit({
-          type: 'thought_generated',
-          iteration,
-          thought: response.reasoning,
-        } as ThoughtGeneratedEvent);
-
-        const toolResults = [];
-        for (const action of response.actions) {
-          const toolResult = await this.toolInterceptor.executeToolSafely(iteration, action);
-          toolResults.push(JSON.stringify(toolResult.result, null, 0) || toolResult.error);
-        }
-
-        this.iterations.push(
-          { role: 'assistant', content: `Actions Results: ${toolResults.join('; ')}`, iteration }
-        );
+      if (response.finished) {
+        return { response };
       }
+
+      this.eventEmitter.emit({ type: 'thought_generated', iteration: currentIteration, thought: response.reasoning } as ThoughtGeneratedEvent);
+
+      const toolResults = [];
+      for (const action of response.actions) {
+        const toolResult = await this.toolInterceptor.executeToolSafely(currentIteration, action);
+        toolResults.push(JSON.stringify(toolResult.result, null, 0) || toolResult.error);
+      }
+
+      this.memory.push(
+        { role: 'assistant', content: `Actions Results: ${toolResults.join('; ')}`, iteration: currentIteration }
+      );
 
       return { response };
 
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
-      console.error(`Iteration ${iteration} failed: ${errorMessage}`);
+      console.error(`Iteration ${currentIteration} failed: ${errorMessage}`);
+
       const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
-      this.iterations.push(
-        { role: 'user', content: `Observation: ${response}`, iteration },
-      );
+      this.memory.push({ role: 'user', content: `Observation: ${response}`, iteration: currentIteration });
+
       return { response, error: errorMessage };
     }
   }
 
-  private toMessages(smartAgentMessages: SmartAgentMessage[]): Messages {
+  private processHistory(smartAgentMessages: SmartAgentMessage[]): Messages {
     return smartAgentMessages.map(m => ({ role: m.role, content: m.content }));
   }
 
@@ -244,7 +223,7 @@ export class SmartAgent {
     const todoTool = this.todoManager.createTool();
     this.toolRegistry.register({ name: ToolNames.TODO_MANAGER, tool: todoTool });
 
-    const subAgentTool = createSubAgentTool(this.toolAgent, this.eventEmitter, this.securityEngine);
+    const subAgentTool = createSubAgentTool();
     this.toolRegistry.register({ name: ToolNames.START_SUBAGENT, tool: subAgentTool });
   }
 }

@@ -26,6 +26,7 @@ export const SubAgentResponseSchema = z.union([
   SubAgentResponseFinishedSchema
 ]);
 
+export type SubAgentResponseFinished = z.infer<typeof SubAgentResponseFinishedSchema>;
 export type SubAgentResponse = z.infer<typeof SubAgentResponseSchema>;
 
 export const SUB_AGENT_PROMPT = compressSystemPrompt(`You are a specialized SubAgent designed to complete a specific focused task autonomously. You operate in non-interactive mode, meaning you cannot ask the user for input or clarification.

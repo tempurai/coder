@@ -2,13 +2,16 @@ import { ToolAgent, Messages } from '../tool_agent/ToolAgent.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 import { hasWriteOperations, ToolNames } from '../../tools/ToolRegistry.js';
 import { z } from "zod";
-import { SystemInfoEvent } from '../../events/EventTypes.js';
+import { SystemInfoEvent, TextGeneratedEvent, ThoughtGeneratedEvent } from '../../events/EventTypes.js';
 import { inject } from 'inversify';
 import { TYPES } from '../../di/types.js';
 import { tool } from 'ai';
-import { SUB_AGENT_PROMPT, SubAgentResponse, SubAgentResponseSchema } from './SubAgentPrompt.js';
+import { SUB_AGENT_PROMPT, SubAgentResponse, SubAgentResponseFinished, SubAgentResponseSchema } from './SubAgentPrompt.js';
 import { TaskExecutionResult, TerminateReason } from '../tool_agent/ToolAgent.js';
 import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
+import { InterruptService } from '../../services/InterruptService.js';
+import { ToolInterceptor } from './ToolInterceptor.js';
+import { getContainer } from '../../di/container.js';
 
 interface SubAgentTask {
   id: string;
@@ -24,22 +27,24 @@ interface SubAgentTask {
 }
 
 export class SubAgent {
-  private readonly MAX_TURNS = 20;
-  private readonly DEFAULT_TIMEOUT = 300000;
+  private readonly maxIterations = 20;
+  private readonly executionTimeout = 300000;
+  private memory: Messages = [];
 
   constructor(
     @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
     @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
+    @inject(TYPES.InterruptService) private interruptService: InterruptService,
     @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine,
+    @inject(TYPES.ToolInterceptor) private toolInterceptor: ToolInterceptor,
   ) { }
 
   async executeTask(task: SubAgentTask): Promise<TaskExecutionResult> {
     const startTime = Date.now();
-    const maxTurns = this.MAX_TURNS;
-    const timeout = this.DEFAULT_TIMEOUT;
+    const maxTurns = this.maxIterations;
+    const timeout = this.executionTimeout;
 
     console.log(`SubAgent executing: ${task.type} - ${task.description}`);
-
     this.eventEmitter.emit({
       type: 'system_info',
       level: 'info',
@@ -49,12 +54,11 @@ export class SubAgent {
 
     try {
       const result = await Promise.race([
-        this.executeTaskLoop(task, maxTurns),
-        this.createTimeoutPromise(timeout)
+        this.executeMainLoop(task, maxTurns),
+        this.createTimeoutHandler(timeout)
       ]);
 
       const duration = Date.now() - startTime;
-
       this.eventEmitter.emit({
         type: 'system_info',
         level: result.terminateReason === 'FINISHED' ? 'info' : 'warning',
@@ -84,104 +88,128 @@ export class SubAgent {
     }
   }
 
-  private async executeTaskLoop(task: SubAgentTask, maxTurns: number): Promise<TaskExecutionResult> {
-    const conversationHistory: Messages = [
+  private async executeMainLoop(task: SubAgentTask, maxTurns: number): Promise<TaskExecutionResult> {
+    this.memory = [
       { role: 'system', content: SUB_AGENT_PROMPT },
-    ];
-
-    let currentObservation = `Task: ${task.description}
+      {
+        role: "user", content: `Task: ${task.description}
 Context: ${JSON.stringify(task.context, null, 2)}
 Preservation Guidance: ${JSON.stringify(task.preservationGuidance, null, 2)}
-Complete this task efficiently.`;
-
-    let turnCount = 0;
-    let taskCompleted = false;
-
-    while (!taskCompleted && turnCount < maxTurns) {
-      turnCount++;
-
-      try {
-        const userMessage = { role: 'user' as const, content: `Current observation: ${currentObservation}` };
-        conversationHistory.push(userMessage);
-
-        const response = await this.toolAgent.generateObject<SubAgentResponse>({
-          messages: conversationHistory,
-          schema: SubAgentResponseSchema as z.ZodSchema<SubAgentResponse>,
-        });
-
-        const assistantMessage = { role: 'assistant' as const, content: JSON.stringify(response, null, 2) };
-        conversationHistory.push(assistantMessage);
-
-        // Check if task is finished
-        if (response.finished) {
-          taskCompleted = true;
-          break;
-        }
-
-        const results = await Promise.allSettled(response.actions.map(action =>
-          this.toolAgent.executeTool(action.tool, action.args)
-            .then(result => `${action.tool}: ${JSON.stringify(result, null, 0)}`)
-            .catch(error => `${action.tool}: ${error instanceof Error ? error.message : 'Unknown tool error'}`)
-        ));
-
-        currentObservation = `Previous actions: ${results.join('; ')}`;
-
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        currentObservation = `Error occurred: ${errorMessage}`;
-
-        // Don't break immediately, give it a chance to recover
-        if (turnCount >= maxTurns - 2) break;
+Complete this task efficiently.`
       }
+    ];
+
+    let currentIteration = 0;
+    let isCompleted = false;
+
+    while (!isCompleted && currentIteration < maxTurns) {
+      if (this.interruptService.isInterrupted()) {
+        console.log('Task execution interrupted by user');
+        return {
+          terminateReason: 'INTERRUPTED',
+          history: this.processHistory(),
+          metadata: {
+            iterations: currentIteration,
+          }
+        };
+      }
+
+      currentIteration++;
+
+      const { response, error } = await this.executeSingleIteration(currentIteration);
+
+      if (response.finished) {
+        this.eventEmitter.emit({ type: 'text_generated', text: response.result, } as TextGeneratedEvent);
+        isCompleted = true;
+        break;
+      }
+
+      if (error && currentIteration >= maxTurns - 2) break;
     }
 
     let terminateReason: TerminateReason;
-    if (taskCompleted) {
+    if (isCompleted) {
       terminateReason = 'FINISHED';
-    } else if (turnCount >= maxTurns) {
+    } else if (currentIteration >= maxTurns) {
       terminateReason = 'TIMEOUT';
     } else {
       terminateReason = 'ERROR';
     }
 
-    const criticalHistory = this.filterCriticalHistory(conversationHistory);
+    const criticalHistory = this.processHistory();
 
     return {
       terminateReason,
       history: criticalHistory,
       error: terminateReason !== 'FINISHED' ? 'Task did not complete successfully' : undefined,
       metadata: {
-        iterations: turnCount
+        iterations: currentIteration
       }
     };
   }
 
-  private filterCriticalHistory(conversationHistory: Messages): Messages {
+  private async executeSingleIteration(currentIteration: number): Promise<{ response: SubAgentResponse; error?: string }> {
+    try {
+      const response = await this.toolAgent.generateObject<SubAgentResponse>({
+        messages: this.memory,
+        schema: SubAgentResponseSchema as z.ZodSchema<SubAgentResponse>,
+      });
+
+      const assistantMessage = { role: 'assistant' as const, content: JSON.stringify(response, null, 2) };
+      this.memory.push(assistantMessage);
+
+      if (response.finished) {
+        return { response };
+      }
+
+      this.eventEmitter.emit({ type: 'thought_generated', iteration: currentIteration, thought: response.reasoning } as ThoughtGeneratedEvent);
+
+      const toolResults = [];
+      for (const action of response.actions) {
+        const toolResult = await this.toolInterceptor.executeToolSafely(currentIteration, action);
+        toolResults.push(JSON.stringify(toolResult.result, null, 0) || toolResult.error);
+      }
+
+      this.memory.push({
+        role: "user", content: `Actions Results: ${JSON.stringify(toolResults, null, 0)}`
+      });
+
+      return { response };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Sub Agent Iteration ${currentIteration} failed: ${errorMessage}`);
+
+      const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "", criticalInfo: true } as SubAgentResponseFinished;
+      this.memory.push({ role: 'user', content: `Observation: ${response}` });
+
+      return {
+        response: { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as any,
+        error: errorMessage
+      };
+    }
+  }
+
+  private processHistory(): Messages {
     const criticalHistory: Messages = [];
 
-    // Always include system message
-    if (conversationHistory[0]?.role === 'system') {
-      criticalHistory.push(conversationHistory[0]);
+    if (this.memory[0]?.role === 'system') {
+      criticalHistory.push(this.memory[0]);
     }
 
-    // Filter messages based on criticalInfo flag and write operations
-    for (let i = 1; i < conversationHistory.length; i++) {
-      const message = conversationHistory[i];
-
+    for (let i = 1; i < this.memory.length; i++) {
+      const message = this.memory[i];
       if (message.role === 'assistant') {
         try {
           const response = JSON.parse(message.content) as SubAgentResponse;
           const isCritical = response.criticalInfo || hasWriteOperations(response.actions || [], this.securityEngine);
-
           if (isCritical) {
             criticalHistory.push(message);
-            // Also include the following user message if it exists
-            if (conversationHistory[i + 1]?.role === 'user') {
-              criticalHistory.push(conversationHistory[i + 1]);
+            if (this.memory[i + 1]?.role === 'user') {
+              criticalHistory.push(this.memory[i + 1]);
             }
           }
         } catch {
-          // If we can't parse, keep the message to be safe
           criticalHistory.push(message);
         }
       }
@@ -190,17 +218,17 @@ Complete this task efficiently.`;
     return criticalHistory;
   }
 
-  private createTimeoutPromise(timeoutMs: number): Promise<never> {
+  private createTimeoutHandler(timeoutMs: number): Promise<never> {
     return new Promise((_, reject) => {
       setTimeout(() => reject(new Error(`SubAgent task timed out after ${timeoutMs}ms`)), timeoutMs);
     });
   }
 }
 
-export const createSubAgentTool = (toolAgent: ToolAgent, eventEmitter: UIEventEmitter, securityEngine: SecurityPolicyEngine) => {
+export const createSubAgentTool = () => {
   const startSubAgent = async (args: any): Promise<TaskExecutionResult> => {
     console.log('Starting sub-agent for specialized task');
-    const subAgent = new SubAgent(toolAgent, eventEmitter, securityEngine);
+    const subAgent = getContainer().get<SubAgent>(TYPES.SubAgent);
     return await subAgent.executeTask(args);
   };
 

@@ -118,14 +118,15 @@ export class SessionService {
             const container = getContainer();
 
             const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
-            smartAgent.initializeTools(executionMode);
 
             console.log('Try to build history and compress context');
             await this.compressorService.compressContextIfNeeded(this.recentHistory);
-
             const fullHistory = this.buildFullHistory();
 
             console.log(`🔄 开始SmartAgent推理循环... (mode: ${executionMode})`);
+
+            // 确保工具初始化完成
+            await smartAgent.initializeTools(executionMode);
             const taskResult = await smartAgent.executeTask(query, fullHistory, executionMode);
 
             taskResult.history = taskResult.history.filter(msg => msg.role !== 'system');

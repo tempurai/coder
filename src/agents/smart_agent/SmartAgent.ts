@@ -184,6 +184,8 @@ export class SmartAgent {
         { role: 'assistant', content: JSON.stringify(response, null, 2), iteration: currentIteration }
       );
 
+      console.log(`Agent Response: ${JSON.stringify(response)}`);
+
       if (response.finished) {
         return { response };
       }
@@ -214,7 +216,9 @@ export class SmartAgent {
     return smartAgentMessages.map(m => ({ role: m.role, content: m.content }));
   }
 
-  public initializeTools(executionMode: ExecutionMode): void {
+  public async initializeTools(executionMode: ExecutionMode): Promise<void> {
+    await this.toolAgent.initializeAsync();
+
     const todoTool = this.todoManager.createTool();
     this.toolRegistry.register({ name: ToolNames.TODO_MANAGER, tool: todoTool });
 

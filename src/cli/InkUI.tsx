@@ -4,7 +4,7 @@ import { SessionService } from '../services/SessionService.js';
 import { ThemeName, ThemeProvider, useTheme } from './themes/index.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
 import { ThemeSelector } from './components/ThemeSelector.js';
-import { DynamicInput } from './components/DynamicInput.js';
+import { InputContainer } from './components/InputContainer.js';
 import { useSessionEvents } from './hooks/useSessionEvents.js';
 import { useEventSeparation } from './hooks/useEventSeparation.js';
 import { EventItem } from './components/EventItem.js';
@@ -42,7 +42,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
       if (isProcessing || pendingConfirmation) return;
       await sessionService.processTask(userInput, executionMode);
     },
-    [sessionService, isProcessing, pendingConfirmation],
+    [sessionService, isProcessing, pendingConfirmation, executionMode],
   );
 
   const handleEditModeToggle = useCallback(() => {
@@ -89,21 +89,18 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   return (
     <Box flexDirection='column'>
       <Static items={staticItems}>{(item) => item}</Static>
-
       {dynamicEvents.map((event, index) => (
         <Box key={event.id || `dynamic-${index}`} marginBottom={0}>
           <EventItem event={event} index={index} />
         </Box>
       ))}
-
       {isProcessing && (
         <Box marginY={1}>
           <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} />
         </Box>
       )}
-
       <Box marginTop={1} paddingTop={1}>
-        <DynamicInput
+        <InputContainer
           onSubmit={handleSubmit}
           isProcessing={isProcessing}
           confirmationData={pendingConfirmation}
@@ -171,6 +168,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
 
   if (appState === 'welcome') return <WelcomeScreen onDismiss={handleWelcomeDismiss} />;
   if (appState === 'theme-selection') return <ThemeSelector onThemeSelected={handleThemeSelected} />;
+
   return <MainUI sessionService={sessionService} />;
 };
 
@@ -186,9 +184,7 @@ export const startInkUI = async (sessionService: SessionService) => {
     sessionService.interrupt();
     process.exit(0);
   };
-
   process.on('SIGINT', exitFn);
   process.on('SIGTERM', exitFn);
-
   render(<CodeAssistantApp sessionService={sessionService} />, { patchConsole: false });
 };

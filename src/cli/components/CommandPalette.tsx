@@ -1,0 +1,79 @@
+import React, { useState } from 'react';
+import { Box, Text, useInput } from 'ink';
+import { useTheme } from '../themes/index.js';
+
+interface Command {
+  name: string;
+  description: string;
+  usage: string;
+}
+
+interface CommandPaletteProps {
+  onSelect: (command: string) => void;
+  onCancel: () => void;
+}
+
+export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCancel }) => {
+  const { currentTheme } = useTheme();
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const commands: Command[] = [
+    {
+      name: 'help',
+      description: 'Show available commands',
+      usage: '/help',
+    },
+    {
+      name: 'theme',
+      description: 'Switch theme or list available themes',
+      usage: '/theme [theme-name]',
+    },
+    {
+      name: 'mode',
+      description: 'Show current execution and edit modes',
+      usage: '/mode',
+    },
+  ];
+
+  useInput((input, key) => {
+    if (key.upArrow) {
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : commands.length - 1));
+    } else if (key.downArrow) {
+      setSelectedIndex((prev) => (prev < commands.length - 1 ? prev + 1 : 0));
+    } else if (key.return) {
+      onSelect(commands[selectedIndex].usage);
+    } else if (key.escape) {
+      onCancel();
+    }
+  });
+
+  return (
+    <Box flexDirection='column' paddingX={1} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
+      <Box marginBottom={1}>
+        <Text color={currentTheme.colors.primary} bold>
+          Available Commands
+        </Text>
+      </Box>
+
+      <Box flexDirection='column'>
+        {commands.map((command, index) => (
+          <Box key={command.name} flexDirection='row' marginY={0}>
+            <Box width={20}>
+              <Text color={index === selectedIndex ? currentTheme.colors.accent : currentTheme.colors.text.primary} bold={index === selectedIndex}>
+                {index === selectedIndex ? '▶ ' : '  '}
+                {command.usage}
+              </Text>
+            </Box>
+            <Text color={currentTheme.colors.text.muted}>{command.description}</Text>
+          </Box>
+        ))}
+      </Box>
+
+      <Box marginTop={1}>
+        <Text color={currentTheme.colors.text.muted}>
+          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate •<Text color={currentTheme.colors.accent}>Enter</Text> Select •<Text color={currentTheme.colors.accent}>Esc</Text> Cancel
+        </Text>
+      </Box>
+    </Box>
+  );
+};

@@ -48,18 +48,21 @@ export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ cu
       <Box flexDirection='column'>
         {ExecutionModeData.map((modeData, index) => (
           <Box key={modeData.mode} flexDirection='row' marginY={0}>
-            <Text color={index === selectedIndex ? currentTheme.colors.accent : currentTheme.colors.text.primary} bold={index === selectedIndex}>
-              {index === selectedIndex ? '▶ ' : '  '}
-              {index + 1}. {modeData.displayName}
-              {modeData.mode === currentMode ? ' (current)' : ''}
-            </Text>
+            <Box width={25}>
+              <Text color={index === selectedIndex ? currentTheme.colors.accent : currentTheme.colors.text.primary} bold={index === selectedIndex}>
+                {index === selectedIndex ? '▶ ' : '  '}
+                {index + 1}. {modeData.displayName}
+                {modeData.mode === currentMode ? ' (current)' : ''}
+              </Text>
+            </Box>
+            <Text color={currentTheme.colors.text.muted}>{modeData.description}</Text>
           </Box>
         ))}
       </Box>
 
       <Box marginTop={1}>
         <Text color={currentTheme.colors.text.muted}>
-          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate • <Text color={currentTheme.colors.accent}>Enter</Text> Select • <Text color={currentTheme.colors.accent}>1/2</Text> Quick select •{' '}
+          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate •<Text color={currentTheme.colors.accent}>Enter</Text> Select •<Text color={currentTheme.colors.accent}>1/2</Text> Quick select •
           <Text color={currentTheme.colors.accent}>Esc</Text> Cancel
         </Text>
       </Box>

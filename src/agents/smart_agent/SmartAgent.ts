@@ -9,7 +9,10 @@ import { InterruptService } from '../../services/InterruptService.js';
 import { ToolRegistry, ToolNames } from '../../tools/ToolRegistry.js';
 import { z, ZodSchema } from "zod";
 import { TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
-import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
+import { getSmartAgentPrompt, PlanningResponse, PlanningResponseSchema, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
+import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
+import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
+import { ToolInterceptor } from './ToolInterceptor.js';
 
 export interface SmartAgentMessage extends Message {
   iteration: number;
@@ -21,28 +24,36 @@ export class SmartAgent {
   private iterations: SmartAgentMessage[] = [];
   private todoManager: TodoManager;
   private orchestrator: AgentOrchestrator;
+  private toolInterceptor: ToolInterceptor;
 
   constructor(
     @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
     @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter,
     @inject(TYPES.InterruptService) private interruptService: InterruptService,
     @inject(TYPES.ToolRegistry) private toolRegistry: ToolRegistry,
+    @inject(TYPES.EditModeManager) private editModeManager: EditModeManager,
+    @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine,
     maxIterations: number = 50
   ) {
     this.maxIterations = maxIterations;
     this.todoManager = new TodoManager(eventEmitter);
     this.orchestrator = new AgentOrchestrator(toolAgent, eventEmitter);
+    this.toolInterceptor = new ToolInterceptor({
+      editModeManager: this.editModeManager,
+      securityEngine: this.securityEngine,
+      toolAgent: this.toolAgent
+    });
   }
 
   async runTask(initialQuery: string, sessionHistory: Messages = []): Promise<TaskExecutionResult> {
     this.iterations = [...sessionHistory.map((msg, i) => ({ ...msg, iteration: 0 }))];
-
     console.log(`Starting intelligent task execution: ${initialQuery}`);
-    const startTime = Date.now();
 
+    const startTime = Date.now();
     try {
       await this.initializeTaskPlanning(initialQuery);
       const result = await this.executeMainLoop(initialQuery);
+
       return {
         ...result,
         metadata: {
@@ -63,8 +74,16 @@ export class SmartAgent {
 
   private async initializeTaskPlanning(query: string): Promise<void> {
     console.log('Initializing task planning phase...');
+
+    // 只有在非Plan模式下才进行初始todo创建
+    const editMode = this.editModeManager.getCurrentMode();
+    if (editMode === EditMode.PLAN_ONLY) {
+      // Plan模式下让Agent自然地探索和规划
+      return;
+    }
+
     const planningMessages = [
-      { role: 'system' as const, content: PLANNING_PROMPT },
+      { role: 'system' as const, content: 'You are a task planning specialist. Analyze the user request and break it down into actionable todos if it\'s complex enough to warrant structured planning.' },
       { role: 'user' as const, content: query }
     ];
 
@@ -119,12 +138,12 @@ export class SmartAgent {
       }
 
       finished = response.finished;
-
       if (finished) {
         this.eventEmitter.emit({
           type: 'text_generated',
           text: response.result,
         } as TextGeneratedEvent);
+
         return {
           terminateReason: 'FINISHED',
           history: this.toMessages(this.iterations),
@@ -184,8 +203,12 @@ export class SmartAgent {
         return { response, observation: 'Task interrupted' };
       }
 
+      // 使用动态Prompt
+      const editMode = this.editModeManager.getCurrentMode();
+      const systemPrompt = getSmartAgentPrompt(editMode);
+
       const messages: Messages = [
-        { role: 'system', content: SMART_AGENT_PROMPT },
+        { role: 'system', content: systemPrompt },
         ...this.toMessages(this.iterations),
         { role: 'user', content: `Current observation: ${observation}` }
       ];
@@ -212,7 +235,8 @@ export class SmartAgent {
 
         const toolResults = [];
         for (const action of response.actions) {
-          const toolResult = await this.executeToolSafely(iteration, action);
+          // 使用ToolInterceptor来安全执行工具
+          const toolResult = await this.toolInterceptor.executeToolSafely(iteration, action);
           toolResults.push({
             tool: action.tool,
             args: action.args,
@@ -236,40 +260,20 @@ export class SmartAgent {
       }
 
       return { response, observation: nextObservation };
-
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
       console.error(`Iteration ${iteration} failed: ${errorMessage}`);
-
       const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
       this.iterations.push(
         { role: 'user', content: `Observation: ${observation}`, iteration },
         { role: 'assistant', content: JSON.stringify(response, null, 2), iteration }
       );
-
       return { response, observation: "", error: errorMessage };
     }
   }
 
   private toMessages(smartAgentMessages: SmartAgentMessage[]): Messages {
     return smartAgentMessages.map(m => ({ role: m.role, content: m.content }));
-  }
-
-  private async executeToolSafely(
-    iteration: number,
-    action: { tool: string, args: any }
-  ): Promise<{ result?: any, error?: string, duration?: number }> {
-    if (this.interruptService.isInterrupted()) {
-      return { error: 'Tool execution interrupted by user' };
-    }
-
-    const startTime = Date.now();
-    try {
-      const result = await this.toolAgent.executeTool(action.tool, action.args);
-      return { result, duration: Date.now() - startTime };
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'Unknown tool error' };
-    }
   }
 
   public initializeTools(): void {

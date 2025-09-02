@@ -31,7 +31,6 @@ export class SessionService {
     private messageQueue: string[] = [];
     private isTaskRunning: boolean = false;
 
-    // 直接暴露EditModeManager，不使用包装函数
     public readonly editModeManager: EditModeManager;
 
     constructor(
@@ -71,7 +70,6 @@ export class SessionService {
         this.interruptService.startTask();
 
         console.log('\n🚀 开始处理任务...');
-
         this.eventEmitter.emit({
             type: 'user_input',
             input: query,
@@ -86,11 +84,12 @@ export class SessionService {
             workingDirectory: process.cwd(),
         } as TaskStartedEvent);
 
-        const snapshotResult: SnapshotResult | null = null
+        let snapshotResult: SnapshotResult | null = null;
+
         try {
             const snapshotManager = await this.createSnapshotManager(process.cwd());
             console.log('创建任务开始前的快照...');
-            const snapshotResult = await snapshotManager.createSnapshot(
+            snapshotResult = await snapshotManager.createSnapshot(
                 `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
             );
 
@@ -99,7 +98,6 @@ export class SessionService {
             }
         } catch (error: string | any) {
             console.error('快照创建失败:', error);
-
             this.eventEmitter.emit({
                 type: 'system_info',
                 level: 'error',
@@ -112,6 +110,7 @@ export class SessionService {
                 error: error
             };
         }
+
         console.log(`安全快照已创建: ${snapshotResult!.snapshotId}`);
 
         try {
@@ -122,11 +121,15 @@ export class SessionService {
                 filesCount: snapshotResult!.filesCount || 0,
             } as SnapshotCreatedEvent);
 
-            const smartAgent = new SmartAgent(this._agent, this.eventEmitter, this.interruptService, this.toolRegistry);
+            const smartAgent = new SmartAgent(this._agent, this.eventEmitter,
+                this.interruptService, this.toolRegistry, this.editModeManager,
+                this.toolRegistry.getContext().securityEngine
+            );
             smartAgent.initializeTools();
 
             console.log('Try to build history and compress context');
             await this.compressorService.compressContextIfNeeded(this.recentHistory);
+
             const fullHistory = this.buildFullHistory();
 
             console.log('🔄 开始SmartAgent推理循环...');
@@ -137,6 +140,7 @@ export class SessionService {
             this.interactionCount++;
 
             console.log(`任务处理完成: ${taskResult.terminateReason}`);
+
             this.eventEmitter.emit({
                 type: 'task_completed',
                 displayTitle: "Finished",
@@ -148,9 +152,10 @@ export class SessionService {
             } as TaskCompletedEvent);
 
             return taskResult;
-
         } catch (error) {
-            this.restoreFromSnapshot(snapshotResult!.snapshotId!);
+            if (snapshotResult?.snapshotId) {
+                this.restoreFromSnapshot(snapshotResult.snapshotId);
+            }
 
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
             console.error(`${errorMessage}`);

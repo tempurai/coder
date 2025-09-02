@@ -19,6 +19,7 @@ import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SecurityPolicyEngine } from '../security/SecurityPolicyEngine.js';
 import { Logger } from '../utils/Logger.js';
+import { CompressorService } from '../services/CompressorService.js';
 
 export { TYPES } from './types.js';
 
@@ -80,6 +81,8 @@ export function createContainer(): Container {
   // --- Core Services ---
   container.bind<SessionService>(TYPES.SessionService).to(SessionService).inSingletonScope();
 
+  container.bind<CompressorService>(TYPES.CompressorService).to(CompressorService).inSingletonScope();
+
   container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inSingletonScope();
 
   container.bind<InterruptService>(TYPES.InterruptService).to(InterruptService).inSingletonScope();
@@ -112,10 +115,10 @@ export function createContainer(): Container {
     .toDynamicValue(async () => {
       // 首先确保 ToolAgent 已初始化
       await container.getAsync<ToolAgent>(TYPES.InitializedToolAgent);
-      
+
       const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
       smartAgent.initializeTools();
-      
+
       console.log('✅ SmartAgent工具初始化完成');
       return smartAgent;
     })
@@ -127,7 +130,7 @@ export function createContainer(): Container {
       // 确保所有依赖的 Agent 都已初始化
       await container.getAsync<ToolAgent>(TYPES.InitializedToolAgent);
       await container.getAsync<SmartAgent>(TYPES.InitializedSmartAgent);
-      
+
       const sessionService = container.get<SessionService>(TYPES.SessionService);
       console.log('✅ 会话管理服务已初始化');
       return sessionService;

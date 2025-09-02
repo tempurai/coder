@@ -15,6 +15,7 @@ export const TYPES = {
 
   // --- Core Services ---
   SessionService: Symbol.for('SessionService'),
+  CompressorService: Symbol.for('CompressorService'),
 
   // --- Supporting Services ---
   FileWatcherService: Symbol.for('FileWatcherService'),

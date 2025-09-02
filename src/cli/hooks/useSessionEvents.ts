@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { SessionService } from '../../services/SessionService.js';
 import { UIEvent, UIEventType, ToolConfirmationResponseEvent } from '../../events/index.js';
+import { ConfirmationChoice } from '../../services/HITLManager.js';
 
 interface PendingConfirmation {
     confirmationId: string;
@@ -210,7 +211,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
                 sessionService.events.emit({
                     type: 'tool_confirmation_response',
                     confirmationId,
-                    approved: choice === 'yes' || choice === 'yes_and_remember',
+                    approved: choice === ConfirmationChoice.YES || choice === ConfirmationChoice.YES_AND_REMEMBER,
                     choice,
                 } as Omit<ToolConfirmationResponseEvent, 'id' | 'timestamp' | 'sessionId'>);
                 setPendingConfirmation(null);

@@ -1,3 +1,5 @@
+import { ConfirmationChoice } from '../services/HITLManager.js';
+
 export interface BaseEvent {
   id?: string;
   timestamp?: Date;
@@ -99,7 +101,7 @@ export interface ToolConfirmationRequestEvent extends BaseEvent {
   description: string;
   options?: {
     showRememberOption?: boolean;
-    defaultChoice?: 'yes' | 'no' | 'yes_and_remember';
+    defaultChoice?: ConfirmationChoice;
     timeout?: number;
   };
 }
@@ -108,7 +110,7 @@ export interface ToolConfirmationResponseEvent extends BaseEvent {
   type: 'tool_confirmation_response';
   confirmationId: string;
   approved: boolean;
-  choice?: 'yes' | 'no' | 'yes_and_remember';
+  choice?: ConfirmationChoice;
 }
 
 export type UIEvent =
@@ -131,20 +133,15 @@ export type UIEventType = UIEvent['type'];
 export const UIEventType = {
   TaskStart: 'task_started' as const,
   TaskComplete: 'task_completed' as const,
-
   ThoughtGenerated: 'thought_generated' as const,
   TextGenerated: 'text_generated' as const,
-
   ToolExecutionStarted: 'tool_execution_started' as const,
   ToolExecutionCompleted: 'tool_execution_completed' as const,
   ToolExecutionOutput: 'tool_execution_output' as const,
-
   SystemInfo: 'system_info' as const,
   UserInput: 'user_input' as const,
-
   SessionStats: 'session_stats' as const,
   SnapshotCreated: 'snapshot_created' as const,
-
   ToolConfirmationRequest: 'tool_confirmation_request' as const,
   ToolConfirmationResponse: 'tool_confirmation_response' as const,
 } as const;

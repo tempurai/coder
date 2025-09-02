@@ -6,7 +6,13 @@ import { ConfigLoader } from '../config/ConfigLoader.js';
 import { ToolNames } from '../tools/ToolRegistry.js';
 import { EditModeManager } from './EditModeManager.js';
 
-export type ConfirmationChoice = 'yes' | 'no' | 'yes_and_remember';
+export const ConfirmationChoice = {
+    YES: 'yes',
+    NO: 'no',
+    YES_AND_REMEMBER: 'yes_and_remember'
+} as const;
+
+export type ConfirmationChoice = typeof ConfirmationChoice[keyof typeof ConfirmationChoice];
 
 export interface ConfirmationOptions {
     showRememberOption?: boolean;
@@ -38,7 +44,6 @@ export class HITLManager {
         });
     }
 
-    // 确认shell命令等
     async requestConfirmation(
         toolName: string,
         args: any,
@@ -49,16 +54,13 @@ export class HITLManager {
             ...options,
             isEditOperation: false
         });
-
-        if (choice === 'yes_and_remember') {
+        if (choice === ConfirmationChoice.YES_AND_REMEMBER) {
             await this.addToAllowlist(toolName, args);
             return true;
         }
-
-        return choice === 'yes';
+        return choice === ConfirmationChoice.YES;
     }
 
-    // 编辑确认文件操作
     async requestEditConfirmation(
         toolName: string,
         args: any,
@@ -75,12 +77,11 @@ export class HITLManager {
             isEditOperation: true
         });
 
-        if (choice === 'yes_and_remember') {
+        if (choice === ConfirmationChoice.YES_AND_REMEMBER) {
             this.editModeManager.rememberEditApproval(toolName, args);
             return true;
         }
-
-        return choice === 'yes';
+        return choice === ConfirmationChoice.YES;
     }
 
     private async requestConfirmationWithChoice(
@@ -103,7 +104,7 @@ export class HITLManager {
                     const pending = this.pendingConfirmations.get(confirmationId);
                     if (pending) {
                         this.pendingConfirmations.delete(confirmationId);
-                        resolve(options.defaultChoice || 'no');
+                        resolve(options.defaultChoice || ConfirmationChoice.NO);
                     }
                 }, options.timeout);
             }
@@ -133,7 +134,7 @@ export class HITLManager {
         if ('choice' in event && event.choice) {
             pending.resolve(event.choice as ConfirmationChoice);
         } else {
-            pending.resolve(event.approved ? 'yes' : 'no');
+            pending.resolve(event.approved ? ConfirmationChoice.YES : ConfirmationChoice.NO);
         }
     }
 
@@ -158,7 +159,6 @@ export class HITLManager {
                                 }
                             }
                         };
-
                         await this.configLoader.updateConfig(updatedConfig, true);
                         console.log(`Added '${command}' to allowlist`);
                     }

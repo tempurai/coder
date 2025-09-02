@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { useTheme } from '../themes/index.js';
 import { MAX_FRAME_WIDTH } from './base.js';
+import { ConfirmationChoice } from '../../services/HITLManager.js';
 
 interface ConfirmationData {
   confirmationId: string;
@@ -11,7 +12,7 @@ interface ConfirmationData {
   description: string;
   options?: {
     showRememberOption?: boolean;
-    defaultChoice?: 'yes' | 'no' | 'yes_and_remember';
+    defaultChoice?: ConfirmationChoice;
     timeout?: number;
     isEditOperation?: boolean;
   };
@@ -21,23 +22,21 @@ interface DynamicInputProps {
   onSubmit: (value: string) => void;
   isProcessing: boolean;
   confirmationData?: ConfirmationData | null;
-  onConfirm?: (confirmationId: string, choice: 'yes' | 'no' | 'yes_and_remember') => void;
+  onConfirm?: (confirmationId: string, choice: ConfirmationChoice) => void;
   editModeStatus?: string;
   onEditModeToggle?: () => void;
 }
 
-type ConfirmationChoice = 'yes' | 'no' | 'yes_and_remember';
-
 export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessing, confirmationData, onConfirm, editModeStatus, onEditModeToggle }) => {
   const { currentTheme } = useTheme();
   const [input, setInput] = useState('');
-  const [selectedChoice, setSelectedChoice] = useState<ConfirmationChoice>('yes');
+  const [selectedChoice, setSelectedChoice] = useState<ConfirmationChoice>(ConfirmationChoice.YES);
 
   const isConfirmationMode = !!confirmationData;
   const showRememberOption = confirmationData?.options?.showRememberOption !== false;
   const isEditOperation = confirmationData?.options?.isEditOperation || false;
 
-  const choices: ConfirmationChoice[] = showRememberOption ? ['yes', 'no', 'yes_and_remember'] : ['yes', 'no'];
+  const choices: ConfirmationChoice[] = showRememberOption ? [ConfirmationChoice.YES, ConfirmationChoice.NO, ConfirmationChoice.YES_AND_REMEMBER] : [ConfirmationChoice.YES, ConfirmationChoice.NO];
 
   const handleInternalSubmit = useCallback(() => {
     if (input.trim()) {
@@ -51,13 +50,11 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
 
   useInput(
     (char, key) => {
-      // Handle edit mode toggle (Shift+Tab)
       if (key.shift && key.tab && !isConfirmationMode && onEditModeToggle) {
         onEditModeToggle();
         return;
       }
 
-      // Confirmation mode input handling
       if (isConfirmationMode) {
         if (key.upArrow) {
           const currentIndex = getChoiceIndex(selectedChoice);
@@ -73,14 +70,14 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
           }
         } else if (key.escape) {
           if (confirmationData && onConfirm) {
-            onConfirm(confirmationData.confirmationId, 'no');
+            onConfirm(confirmationData.confirmationId, ConfirmationChoice.NO);
           }
         } else if (char.toLowerCase() === 'y') {
-          if (confirmationData && onConfirm) onConfirm(confirmationData.confirmationId, 'yes');
+          if (confirmationData && onConfirm) onConfirm(confirmationData.confirmationId, ConfirmationChoice.YES);
         } else if (char.toLowerCase() === 'n') {
-          if (confirmationData && onConfirm) onConfirm(confirmationData.confirmationId, 'no');
+          if (confirmationData && onConfirm) onConfirm(confirmationData.confirmationId, ConfirmationChoice.NO);
         } else if (char.toLowerCase() === 'a' && showRememberOption) {
-          if (confirmationData && onConfirm) onConfirm(confirmationData.confirmationId, 'yes_and_remember');
+          if (confirmationData && onConfirm) onConfirm(confirmationData.confirmationId, ConfirmationChoice.YES_AND_REMEMBER);
         }
       }
     },
@@ -89,11 +86,11 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
 
   const getChoiceText = (choice: ConfirmationChoice) => {
     switch (choice) {
-      case 'yes':
+      case ConfirmationChoice.YES:
         return isEditOperation ? 'Yes (this time only)' : 'Yes';
-      case 'no':
+      case ConfirmationChoice.NO:
         return 'No';
-      case 'yes_and_remember':
+      case ConfirmationChoice.YES_AND_REMEMBER:
         return isEditOperation ? "Yes, and don't ask again for edits during this session" : 'Yes and remember this choice';
     }
   };
@@ -102,18 +99,17 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
     if (!isSelected) return currentTheme.colors.text.secondary;
 
     switch (choice) {
-      case 'yes':
+      case ConfirmationChoice.YES:
         return currentTheme.colors.success;
-      case 'no':
+      case ConfirmationChoice.NO:
         return currentTheme.colors.error;
-      case 'yes_and_remember':
+      case ConfirmationChoice.YES_AND_REMEMBER:
         return currentTheme.colors.warning;
     }
   };
 
   const getEditModeIcon = (status?: string): string => {
     if (!status) return '?';
-
     if (status.includes('Always accept')) return '>>';
     if (status.includes('plan mode on')) return 'plan mode on';
     return '?';
@@ -121,7 +117,6 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
 
   return (
     <Box flexDirection='column'>
-      {/* Edit Operation Confirmation */}
       {isConfirmationMode && confirmationData && (
         <Box width={MAX_FRAME_WIDTH} flexDirection='column'>
           <Box flexDirection='column' marginY={1} paddingX={2} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.warning}>
@@ -130,14 +125,12 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
                 {isEditOperation ? 'File Edit Confirmation' : 'Command Confirmation Required'}
               </Text>
             </Box>
-
             <Box flexDirection='column' marginBottom={1}>
               <Text color={currentTheme.colors.text.primary} bold>
                 Tool: {confirmationData.toolName}
               </Text>
               <Text color={currentTheme.colors.text.secondary}>{confirmationData.description}</Text>
             </Box>
-
             {confirmationData.args && Object.keys(confirmationData.args).length > 0 && (
               <Box flexDirection='column' marginBottom={1}>
                 <Text color={currentTheme.colors.text.muted}>Parameters:</Text>
@@ -146,7 +139,6 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
                 </Box>
               </Box>
             )}
-
             <Box flexDirection='column' marginBottom={1}>
               <Text color={currentTheme.colors.text.primary} bold>
                 Do you want to proceed?
@@ -161,7 +153,6 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
               ))}
             </Box>
           </Box>
-
           <Text color={currentTheme.colors.text.muted}>
             <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate •<Text color={currentTheme.colors.accent}>Enter</Text> Confirm •<Text color={currentTheme.colors.accent}>Esc</Text> Cancel
             {showRememberOption && (
@@ -173,8 +164,6 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
           </Text>
         </Box>
       )}
-
-      {/* Regular Input */}
       {!isConfirmationMode && (
         <Box borderStyle='round' borderColor={currentTheme.colors.ui.border} paddingX={1} paddingY={0}>
           <Box alignItems='center' width='100%'>
@@ -184,10 +173,7 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
           </Box>
         </Box>
       )}
-
-      {/* Status and Help Text */}
       <Box flexDirection='column'>
-        {/* Edit Mode Status */}
         {editModeStatus && !isConfirmationMode && (
           <Box marginBottom={0}>
             <Text color={currentTheme.colors.text.muted}>
@@ -195,8 +181,6 @@ export const DynamicInput: React.FC<DynamicInputProps> = ({ onSubmit, isProcessi
             </Text>
           </Box>
         )}
-
-        {/* Regular Help Text */}
         <Text color={currentTheme.colors.text.muted}>
           {isProcessing ? (
             <>

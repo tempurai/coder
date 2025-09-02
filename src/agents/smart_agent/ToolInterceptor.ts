@@ -16,7 +16,7 @@ export class ToolInterceptor {
 
     async executeToolSafely(
         iteration: number,
-        action: { tool: string, args: any },
+        action: { tool: string, args?: any },
         executionMode: ExecutionMode
     ): Promise<{ result?: any, error?: string, duration?: number }> {
         const startTime = Date.now();

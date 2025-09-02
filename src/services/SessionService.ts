@@ -73,8 +73,6 @@ export class SessionService {
             input: query,
         } as UserInputEvent);
 
-        this.recentHistory.push({ role: 'user', content: query });
-
         this.eventEmitter.emit({
             type: 'task_started',
             displayTitle: "Task Started",

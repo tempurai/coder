@@ -100,13 +100,11 @@ export class SmartAgent {
     let isCompleted = false;
     let recentErrorCount = 0;
 
-    const systemPrompt = executionMode === ExecutionMode.PLAN ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT;
-
+    this.memory.unshift({
+      iteration: 0, role: 'system',
+      content: executionMode === ExecutionMode.PLAN ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT
+    });
     this.memory.push(
-      {
-        iteration: 0, role: 'system',
-        content: systemPrompt
-      },
       { iteration: 0, role: "user", content: `Task: ${initialQuery}` }
     );
 
@@ -175,6 +173,8 @@ export class SmartAgent {
 
   private async executeSingleIteration(currentIteration: number, executionMode: ExecutionMode): Promise<{ response: SmartAgentResponse; error?: string }> {
     try {
+      console.log(`Requesting`, this.processHistory(this.memory));
+
       const response = await this.toolAgent.generateObject<SmartAgentResponse>({
         messages: this.processHistory(this.memory),
         schema: SmartAgentResponseSchema as ZodSchema<SmartAgentResponse>

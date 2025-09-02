@@ -66,13 +66,13 @@ Analyze the user's task and output the planning JSON.`);
 
 const ActionSchema = z.object({
   tool: z.string().min(1).describe("Name of the tool to be invoked"),
-  args: z.record(z.any()).default({})
+  args: z.any().default({}).describe("Tool arguments")
 });
 
 const SmartAgentResponseFinishedSchema = z.object({
   reasoning: z.string().describe("Why no further actions are needed"),
   actions: z.array(ActionSchema).max(0).describe("Must be an empty array when finished=true"),
-  finished: z.literal(true),
+  finished: z.boolean().refine(val => val === true, "Must be true when finished (len(actions)==0)"),
   result: z.string().min(1).describe("Final result summary when finished=true")
 })
 
@@ -80,7 +80,7 @@ export const SmartAgentResponseSchema = z.union([
   z.object({
     reasoning: z.string().describe("Description of the reasoning behind the chosen actions"),
     actions: z.array(ActionSchema).min(1).describe("Tools to execute next"),
-    finished: z.literal(false).default(false),
+    finished: z.boolean().refine(val => val === false, "Must be false when actions provided"),
     result: z.undefined().optional()
   }),
   SmartAgentResponseFinishedSchema

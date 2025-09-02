@@ -211,7 +211,7 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
             await fs.promises.writeFile(tempPatchFile, patchContent, 'utf-8');
 
             try {
-                const patchCmd = `patch "${absolutePath}" < "${tempPatchFile}"`;
+                const patchCmd = `patch --no-backup-if-mismatch --reject-file=/dev/null "${absolutePath}" < "${tempPatchFile}"`;
 
                 const { stdout, stderr } = await execAsync(patchCmd);
                 await fs.promises.unlink(tempPatchFile);

@@ -136,6 +136,13 @@ export class ToolAgent {
                 temperature: this.config.temperature,
                 experimental_output: Output.object({ schema }),
                 abortSignal,
+                providerOptions: {
+                    deepseek: {
+                        response_format: {
+                            type: "json_object"
+                        }
+                    }
+                }
             });
 
             return result.experimental_output;

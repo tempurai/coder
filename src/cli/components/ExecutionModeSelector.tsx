@@ -38,7 +38,7 @@ export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ cu
   });
 
   return (
-    <Box flexDirection='column' paddingX={1} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
+    <Box flexDirection='column' paddingLeft={1} paddingRight={3} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
       <Box marginBottom={1}>
         <Text color={currentTheme.colors.primary} bold>
           Select Execution Mode
@@ -48,9 +48,9 @@ export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ cu
       <Box flexDirection='column'>
         {ExecutionModeData.map((modeData, index) => (
           <Box key={modeData.mode} flexDirection='row' marginY={0}>
-            <Box width={25}>
+            <Box width={40}>
               <Text color={index === selectedIndex ? currentTheme.colors.accent : currentTheme.colors.text.primary} bold={index === selectedIndex}>
-                {index === selectedIndex ? '▶ ' : '  '}
+                {index === selectedIndex ? '⏵ ' : '  '}
                 {index + 1}. {modeData.displayName}
                 {modeData.mode === currentMode ? ' (current)' : ''}
               </Text>
@@ -62,7 +62,7 @@ export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ cu
 
       <Box marginTop={1}>
         <Text color={currentTheme.colors.text.muted}>
-          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate •<Text color={currentTheme.colors.accent}>Enter</Text> Select •<Text color={currentTheme.colors.accent}>1/2</Text> Quick select •
+          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate • <Text color={currentTheme.colors.accent}>Enter</Text> Select •<Text color={currentTheme.colors.accent}>1/2</Text> Quick select •
           <Text color={currentTheme.colors.accent}>Esc</Text> Cancel
         </Text>
       </Box>

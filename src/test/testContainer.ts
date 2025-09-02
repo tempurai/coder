@@ -153,7 +153,6 @@ export function createTestContainer(): Container {
     checkEditPermission: jest.fn().mockReturnValue({ allowed: true }),
     rememberEditApproval: jest.fn(),
     getStatusMessage: jest.fn().mockReturnValue('Normal mode'),
-    clearSessionApprovals: jest.fn(),
     getApprovalCount: jest.fn().mockReturnValue(0),
     reset: jest.fn()
   })).inSingletonScope();

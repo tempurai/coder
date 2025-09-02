@@ -48,7 +48,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
   });
 
   return (
-    <Box flexDirection='column' paddingX={1} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
+    <Box flexDirection='column' paddingLeft={1} paddingRight={3} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
       <Box marginBottom={1}>
         <Text color={currentTheme.colors.primary} bold>
           Available Commands
@@ -58,9 +58,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
       <Box flexDirection='column'>
         {commands.map((command, index) => (
           <Box key={command.name} flexDirection='row' marginY={0}>
-            <Box width={20}>
+            <Box width={40}>
               <Text color={index === selectedIndex ? currentTheme.colors.accent : currentTheme.colors.text.primary} bold={index === selectedIndex}>
-                {index === selectedIndex ? '▶ ' : '  '}
+                {index === selectedIndex ? '⏵ ' : '  '}
                 {command.usage}
               </Text>
             </Box>
@@ -71,7 +71,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
 
       <Box marginTop={1}>
         <Text color={currentTheme.colors.text.muted}>
-          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate •<Text color={currentTheme.colors.accent}>Enter</Text> Select •<Text color={currentTheme.colors.accent}>Esc</Text> Cancel
+          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate • <Text color={currentTheme.colors.accent}>Enter</Text> Select •<Text color={currentTheme.colors.accent}>Esc</Text> Cancel
         </Text>
       </Box>
     </Box>

@@ -16,7 +16,7 @@ export const lightTheme: ThemeConfig = {
 
     text: {
       primary: '#000000',
-      secondary: '#0066CC',
+      secondary: '#909696',
       muted: '#008000',
       inverse: '#FFFFFF',
     },

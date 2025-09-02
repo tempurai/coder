@@ -81,7 +81,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onThemeSelected })
               {/* Theme name */}
               <Box width={20}>
                 <Text color={index === selectedIndex ? accent : textPrimary} bold={index === selectedIndex}>
-                  {index === selectedIndex ? '▶ ' : '  '}
+                  {index === selectedIndex ? '⏵ ' : '  '}
                   {theme.charAt(0).toUpperCase() + theme.slice(1).replace('-', ' ')}
                 </Text>
               </Box>

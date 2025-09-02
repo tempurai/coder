@@ -197,7 +197,7 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
               {choices.map((choice, index) => (
                 <Box key={choice} marginLeft={2}>
                   <Text color={getChoiceColor(choice, selectedChoice === choice)} bold={selectedChoice === choice}>
-                    {selectedChoice === choice ? '▶ ' : '  '}
+                    {selectedChoice === choice ? '⏵ ' : '  '}
                     {index + 1}. {getChoiceText(choice)}
                   </Text>
                 </Box>
@@ -234,11 +234,11 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
           )}
 
           {/* Status and Help Text */}
-          <Box flexDirection='column' marginTop={1}>
+          <Box flexDirection='column'>
             {editModeStatus && (
               <Box marginBottom={0}>
                 <Text color={currentTheme.colors.text.muted}>
-                  {editModeStatus} • <Text color={currentTheme.colors.accent}>Shift+Tab</Text> to cycle
+                  {editModeStatus} • <Text color={currentTheme.colors.text.secondary}>(Shift+Tab to cycle)</Text>
                 </Text>
               </Box>
             )}

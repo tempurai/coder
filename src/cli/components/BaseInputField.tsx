@@ -18,6 +18,7 @@ export const BaseInputField: React.FC<BaseInputFieldProps> = ({ value, onChange,
   return (
     <Box borderStyle='round' borderColor={currentTheme.colors.ui.border} paddingX={1} paddingY={0}>
       <Box alignItems='center' width='100%'>
+        <Text color={currentTheme.colors.text.secondary}>{'> '}</Text>
         <Text color={currentTheme.colors.text.primary}>
           <TextInput value={value} onChange={onChange} onSubmit={onSubmit} showCursor={isActive && !isProcessing} placeholder={placeholder} />
         </Text>

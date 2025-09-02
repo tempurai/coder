@@ -5,9 +5,9 @@ export const darkTheme: ThemeConfig = {
   displayName: 'VS Code Dark+ (CLI tuned)',
   type: 'dark',
   colors: {
-    primary: '#4FC1FF',
+    primary: '#FEFEFE',
     secondary: '#C586C0',
-    accent: '#4EC9B0',
+    accent: '#ef4444',
 
     success: '#73C991',
     warning: '#FFCC02',
@@ -16,7 +16,7 @@ export const darkTheme: ThemeConfig = {
 
     text: {
       primary: '#FAFAFA', // 主文字，接近白
-      secondary: '#E9E9E9', // 次级文字，冷灰蓝
+      secondary: '#DDDDDD', // 次级文字，冷灰蓝
       muted: '#A0A0A0', // 中性灰
       inverse: '#1E1E1E', // 反转用
     },

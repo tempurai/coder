@@ -27,25 +27,14 @@ export class EditModeManager {
     private currentMode: EditMode = EditMode.NORMAL;
     private sessionEditApprovals = new Set<string>();
 
-    constructor(
-        @inject(TYPES.UIEventEmitter) private eventEmitter: UIEventEmitter
-    ) { }
+    constructor() { }
 
     getCurrentMode(): EditMode {
         return this.currentMode;
     }
 
     setMode(mode: EditMode): void {
-        const oldMode = this.currentMode;
         this.currentMode = mode;
-        if (oldMode !== mode) {
-            this.eventEmitter.emit({
-                type: 'system_info',
-                level: 'info',
-                message: `Edit mode changed: ${this.getModeInfo(oldMode).displayName} → ${this.getModeInfo(mode).displayName}`,
-                context: { oldMode, newMode: mode }
-            } as SystemInfoEvent);
-        }
     }
 
     cycleMode(): EditMode {
@@ -62,7 +51,7 @@ export class EditModeManager {
                 mode: EditMode.ALWAYS_ACCEPT,
                 displayName: 'Always Accept',
                 description: 'Automatically allow all file edits',
-                icon: '>>',
+                icon: '⏵⏵⏵',
                 shortcut: 'Shift+Tab'
             };
         }
@@ -71,7 +60,7 @@ export class EditModeManager {
             mode: EditMode.NORMAL,
             displayName: 'Normal',
             description: 'Ask for confirmation on each file edit',
-            icon: '?',
+            icon: '⏵',
             shortcut: 'Shift+Tab'
         };
     }
@@ -116,15 +105,6 @@ export class EditModeManager {
                 : `${modeInfo.icon} Normal mode`;
         }
         return `${modeInfo.icon} Always accept edits`;
-    }
-
-    clearSessionApprovals(): void {
-        this.sessionEditApprovals.clear();
-        this.eventEmitter.emit({
-            type: 'system_info',
-            level: 'info',
-            message: 'Session edit approvals cleared',
-        } as SystemInfoEvent);
     }
 
     getApprovalCount(): number {

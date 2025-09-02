@@ -6,6 +6,8 @@ import { SmartAgent } from '../agents/smart_agent/SmartAgent.js';
 import { InterruptService } from './InterruptService.js';
 import { CompressorService } from './CompressorService.js';
 import { TaskExecutionResult } from '../agents/tool_agent/ToolAgent.js';
+import { TYPES } from '../di/types.js';
+import { getContainer } from '../di/container.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SnapshotResult, SnapshotManager } from './SnapshotManager.js';
 import { EditModeManager } from './EditModeManager.js';
@@ -115,14 +117,8 @@ export class SessionService {
                 filesCount: snapshotResult!.filesCount || 0,
             } as SnapshotCreatedEvent);
 
-            const smartAgent = new SmartAgent(
-                this._agent, 
-                this.eventEmitter,
-                this.interruptService, 
-                this.toolRegistry, 
-                this.editModeManager,
-                this.toolRegistry.getContext().securityEngine
-            );
+            const container = getContainer();
+            const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
             smartAgent.initializeTools();
 
             console.log('Try to build history and compress context');

@@ -24,7 +24,6 @@ export class SmartAgent {
   private iterations: SmartAgentMessage[] = [];
   private todoManager: TodoManager;
   private orchestrator: AgentOrchestrator;
-  private toolInterceptor: ToolInterceptor;
 
   constructor(
     @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
@@ -33,16 +32,12 @@ export class SmartAgent {
     @inject(TYPES.ToolRegistry) private toolRegistry: ToolRegistry,
     @inject(TYPES.EditModeManager) private editModeManager: EditModeManager,
     @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine,
+    @inject(TYPES.ToolInterceptor) private toolInterceptor: ToolInterceptor,
     maxIterations: number = 50
   ) {
     this.maxIterations = maxIterations;
     this.todoManager = new TodoManager(eventEmitter);
     this.orchestrator = new AgentOrchestrator(toolAgent, eventEmitter);
-    this.toolInterceptor = new ToolInterceptor({
-      editModeManager: this.editModeManager,
-      securityEngine: this.securityEngine,
-      toolAgent: this.toolAgent
-    });
   }
 
   async runTask(initialQuery: string, sessionHistory: Messages = []): Promise<TaskExecutionResult> {

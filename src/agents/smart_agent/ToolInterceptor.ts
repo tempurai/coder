@@ -2,19 +2,14 @@ import { ToolAgent, Message, Messages, TaskExecutionResult, TerminateReason } fr
 import { ToolRegistry, ToolNames } from '../../tools/ToolRegistry.js';
 import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
 import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
+import { inject, injectable } from 'inversify';
+import { TYPES } from '../../di/types.js';
 
-export interface SmartAgentMessage extends Message {
-    iteration: number;
-}
-
-interface ToolInterceptorOptions {
-    editModeManager: EditModeManager;
-    securityEngine: SecurityPolicyEngine;
-    toolAgent: ToolAgent;
-}
-
+@injectable()
 export class ToolInterceptor {
-    constructor(private options: ToolInterceptorOptions) { }
+    constructor(@inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
+        @inject(TYPES.EditModeManager) private editModeManager: EditModeManager,
+        @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine) { }
 
     async executeToolSafely(
         iteration: number,
@@ -23,7 +18,7 @@ export class ToolInterceptor {
         const startTime = Date.now();
 
         try {
-            const editMode = this.options.editModeManager.getCurrentMode();
+            const editMode = this.editModeManager.getCurrentMode();
 
             // Plan Mode下的写操作拦截
             if (editMode === EditMode.PLAN_ONLY) {
@@ -45,7 +40,7 @@ export class ToolInterceptor {
             }
 
             // 正常执行
-            const result = await this.options.toolAgent.executeTool(action.tool, action.args);
+            const result = await this.toolAgent.executeTool(action.tool, action.args);
             return { result, duration: Date.now() - startTime };
 
         } catch (error) {
@@ -70,12 +65,12 @@ export class ToolInterceptor {
 
         // 检查shell命令
         if (toolName === ToolNames.SHELL_EXECUTOR && args && args.command) {
-            return this.options.securityEngine.isWriteOperation(args.command);
+            return this.securityEngine.isWriteOperation(args.command);
         }
 
         if (toolName === ToolNames.MULTI_COMMAND && args && args.commands) {
             return args.commands.some((cmd: any) =>
-                cmd.command && this.options.securityEngine.isWriteOperation(cmd.command)
+                cmd.command && this.securityEngine.isWriteOperation(cmd.command)
             );
         }
 

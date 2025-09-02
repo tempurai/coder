@@ -7,6 +7,7 @@ import { SmartAgent } from '../agents/smart_agent/SmartAgent.js';
 import { AgentOrchestrator } from '../agents/smart_agent/AgentOrchestrator.js';
 import { TodoManager } from '../agents/smart_agent/TodoManager.js';
 import { SubAgent } from '../agents/smart_agent/SubAgent.js';
+import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
 import { SessionService } from '../services/SessionService.js';
 import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/UIEventEmitter.js';
@@ -15,7 +16,6 @@ import { TYPES } from './types.js';
 import type { LanguageModel } from 'ai';
 import { HITLManager } from '../services/HITLManager.js';
 import { InterruptService } from '../services/InterruptService.js';
-import { CompressedAgent } from '../agents/compressed_agent/CompressedAgent.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SecurityPolicyEngine } from '../security/SecurityPolicyEngine.js';
 import { Logger } from '../utils/Logger.js';
@@ -71,6 +71,13 @@ export function createContainer(): Container {
   // --- Per-Task Services (Transient) ---
   container.bind<ToolAgent>(TYPES.ToolAgent).to(ToolAgent);
   container.bind<ToolInterceptor>(TYPES.ToolInterceptor).to(ToolInterceptor);
+
+  // --- Core Agents (Transient - per task) ---
+  container.bind<SmartAgent>(TYPES.SmartAgent).to(SmartAgent);
+  container.bind<TodoManager>(TYPES.TodoManager).to(TodoManager);
+  container.bind<AgentOrchestrator>(TYPES.AgentOrchestrator).to(AgentOrchestrator);
+  container.bind<SubAgent>(TYPES.SubAgent).to(SubAgent);
+  container.bind<CompressedAgent>(TYPES.CompressedAgent).to(CompressedAgent);
 
 
   // --- Factories ---

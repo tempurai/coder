@@ -12,6 +12,7 @@ import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
 import { InterruptService } from '../../services/InterruptService.js';
 import { ToolInterceptor } from './ToolInterceptor.js';
 import { getContainer } from '../../di/container.js';
+import { ExecutionMode } from '../../services/ExecutionModeManager.js';
 
 interface SubAgentTask {
   id: string;
@@ -30,6 +31,7 @@ export class SubAgent {
   private readonly maxIterations = 20;
   private readonly executionTimeout = 300000;
   private memory: Messages = [];
+  private executionMode: ExecutionMode = ExecutionMode.CODE;
 
   constructor(
     @inject(TYPES.ToolAgent) private toolAgent: ToolAgent,
@@ -155,7 +157,7 @@ Complete this task efficiently.`
         schema: SubAgentResponseSchema as z.ZodSchema<SubAgentResponse>,
       });
 
-      const assistantMessage = { role: 'assistant' as const, content: JSON.stringify(response, null, 2) };
+      const assistantMessage = { role: 'assistant' as const, content: JSON.stringify(response, null, 0) };
       this.memory.push(assistantMessage);
 
       if (response.finished) {
@@ -166,7 +168,7 @@ Complete this task efficiently.`
 
       const toolResults = [];
       for (const action of response.actions) {
-        const toolResult = await this.toolInterceptor.executeToolSafely(currentIteration, action);
+        const toolResult = await this.toolInterceptor.executeToolSafely(currentIteration, action, this.executionMode);
         toolResults.push(JSON.stringify(toolResult.result, null, 0) || toolResult.error);
       }
 
@@ -223,9 +225,13 @@ Complete this task efficiently.`
       setTimeout(() => reject(new Error(`SubAgent task timed out after ${timeoutMs}ms`)), timeoutMs);
     });
   }
+
+  public setExecutionMode(executionMode: ExecutionMode) {
+    this.executionMode = executionMode;
+  }
 }
 
-export const createSubAgentTool = () => {
+export const createSubAgentTool = (executionMode: ExecutionMode) => {
   const startSubAgent = async (args: any): Promise<TaskExecutionResult> => {
     console.log('Starting sub-agent for specialized task');
     const subAgent = getContainer().get<SubAgent>(TYPES.SubAgent);

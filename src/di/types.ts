@@ -24,7 +24,6 @@ export const TYPES = {
   EditModeManager: Symbol.for('EditModeManager'),
   HITLManager: Symbol.for('HITLManager'),
   CompressorService: Symbol.for('CompressorService'),
-  ExecutionModeManager: Symbol.for('ExecutionModeManager'),
 
   // --- Per-Task Services (Transient) ---
   ToolAgent: Symbol.for('ToolAgent'),

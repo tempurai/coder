@@ -9,7 +9,7 @@ import { useSessionEvents } from './hooks/useSessionEvents.js';
 import { useEventSeparation } from './hooks/useEventSeparation.js';
 import { EventItem } from './components/EventItem.js';
 import { ProgressIndicator } from './components/ProgressIndicator.js';
-import { ExecutionMode } from '../services/ExecutionModeManager.js';
+import { ExecutionMode, getExecutionModeDisplayInfo } from '../services/ExecutionModeManager.js';
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
 
@@ -31,7 +31,6 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   useEffect(() => {
     const updateStatus = () => {
       setEditModeStatus(sessionService.editModeManager.getStatusMessage());
-      setExecutionMode(sessionService.executionModeManager.getCurrentMode());
     };
     updateStatus();
     const interval = setInterval(updateStatus, 1000);
@@ -41,7 +40,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   const handleSubmit = useCallback(
     async (userInput: string) => {
       if (isProcessing || pendingConfirmation) return;
-      await sessionService.processTask(userInput);
+      await sessionService.processTask(userInput, executionMode);
     },
     [sessionService, isProcessing, pendingConfirmation],
   );
@@ -78,7 +77,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
         </>
       )}
       <Text color={currentTheme.colors.text.muted}> • </Text>
-      <Text color={currentTheme.colors.info}>{sessionService.executionModeManager.getStatusMessage()}</Text>
+      <Text color={currentTheme.colors.info}>{getExecutionModeDisplayInfo(executionMode)?.displayName}</Text>
     </Box>,
     ...staticEvents.map((event, index) => (
       <Box key={event.id || `static-${index}`} marginBottom={1}>

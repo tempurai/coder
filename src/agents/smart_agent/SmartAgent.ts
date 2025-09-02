@@ -214,11 +214,11 @@ export class SmartAgent {
     return smartAgentMessages.map(m => ({ role: m.role, content: m.content }));
   }
 
-  public initializeTools(): void {
+  public initializeTools(executionMode: ExecutionMode): void {
     const todoTool = this.todoManager.createTool();
     this.toolRegistry.register({ name: ToolNames.TODO_MANAGER, tool: todoTool });
 
-    const subAgentTool = createSubAgentTool();
+    const subAgentTool = createSubAgentTool(executionMode);
     this.toolRegistry.register({ name: ToolNames.START_SUBAGENT, tool: subAgentTool });
   }
 }

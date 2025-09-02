@@ -11,7 +11,7 @@ import { getContainer } from '../di/container.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SnapshotResult, SnapshotManager } from './SnapshotManager.js';
 import { EditModeManager } from './EditModeManager.js';
-import { ExecutionModeManager, ExecutionMode } from './ExecutionModeManager.js';
+import { ExecutionMode } from './ExecutionModeManager.js';
 
 export interface SessionStats {
     totalInteractions: number;
@@ -30,7 +30,6 @@ export class SessionService {
     private messageQueue: Array<{ query: string, executionMode: ExecutionMode }> = [];
     private isTaskRunning: boolean = false;
     public readonly editModeManager: EditModeManager;
-    public readonly executionModeManager: ExecutionModeManager;
 
     constructor(
         private _agent: ToolAgent,
@@ -41,11 +40,9 @@ export class SessionService {
         private toolRegistry: ToolRegistry,
         private compressorService: CompressorService,
         editModeManager: EditModeManager,
-        executionModeManager: ExecutionModeManager,
     ) {
         this.sessionStartTime = new Date();
         this.editModeManager = editModeManager;
-        this.executionModeManager = executionModeManager;
     }
 
     get agent(): ToolAgent {
@@ -56,9 +53,9 @@ export class SessionService {
         return this.eventEmitter;
     }
 
-    async processTask(query: string, executionMode?: ExecutionMode): Promise<TaskExecutionResult> {
+    async processTask(query: string, executionMode: ExecutionMode): Promise<TaskExecutionResult> {
         if (this.isTaskRunning) {
-            this.queueMessage(query, executionMode || this.executionModeManager.getCurrentMode());
+            this.queueMessage(query, executionMode);
             return {
                 terminateReason: 'ERROR',
                 history: [],
@@ -119,17 +116,17 @@ export class SessionService {
             } as SnapshotCreatedEvent);
 
             const container = getContainer();
+
             const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
-            smartAgent.initializeTools();
+            smartAgent.initializeTools(executionMode);
 
             console.log('Try to build history and compress context');
             await this.compressorService.compressContextIfNeeded(this.recentHistory);
 
             const fullHistory = this.buildFullHistory();
-            const currentMode = executionMode || this.executionModeManager.getCurrentMode();
 
-            console.log(`🔄 开始SmartAgent推理循环... (mode: ${currentMode})`);
-            const taskResult = await smartAgent.executeTask(query, fullHistory, currentMode);
+            console.log(`🔄 开始SmartAgent推理循环... (mode: ${executionMode})`);
+            const taskResult = await smartAgent.executeTask(query, fullHistory, executionMode);
 
             taskResult.history = taskResult.history.filter(msg => msg.role !== 'system');
             this.recentHistory.push(...taskResult.history);
@@ -238,7 +235,6 @@ export class SessionService {
         this.interactionCount = 0;
         this.sessionStartTime = new Date();
         this.editModeManager.reset();
-        this.executionModeManager.reset();
     }
 
     interrupt(): void {
@@ -277,6 +273,5 @@ export class SessionService {
         this.fileWatcherService.cleanup();
         await this._agent.cleanup();
         this.editModeManager.reset();
-        this.executionModeManager.reset();
     }
 }

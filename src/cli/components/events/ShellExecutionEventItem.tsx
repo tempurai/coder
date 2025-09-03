@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { UIEvent } from '../../../events/index.js';
 import { useTheme } from '../../themes/index.js';
 import { StatusIndicator } from '../StatusIndicator.js';
+import { EventRouter } from './EventRouter.js';
 
 interface ShellExecutionEventItemProps {
   event: UIEvent;
@@ -12,11 +13,9 @@ interface ShellExecutionEventItemProps {
 export const ShellExecutionEventItem: React.FC<ShellExecutionEventItemProps> = ({ event }) => {
   const { currentTheme } = useTheme();
   const toolEvent = event as any;
-
   const executionStatus = toolEvent.executionStatus || 'started';
   const completedData = toolEvent.completedData;
   const outputData = toolEvent.outputData;
-
   const displayTitle = toolEvent.displayTitle || 'Shell Command';
 
   const isCompleted = executionStatus === 'completed' || executionStatus === 'failed';
@@ -43,7 +42,6 @@ export const ShellExecutionEventItem: React.FC<ShellExecutionEventItemProps> = (
   if (outputContent) {
     const lines = outputContent.split('\n');
     const maxLines = isError ? 20 : 10;
-
     if (lines.length > maxLines) {
       outputContent = lines.slice(0, maxLines).join('\n') + `\n(...${lines.length - maxLines} more lines)`;
     }
@@ -63,13 +61,24 @@ export const ShellExecutionEventItem: React.FC<ShellExecutionEventItemProps> = (
         </Text>
       </Box>
 
-      {outputContent && (
+      {(outputContent || (event.subEvents && event.subEvents.length > 0)) && (
         <Box marginLeft={2}>
           <Text color={currentTheme.colors.text.muted}>⎿ </Text>
           <Box flexGrow={1}>
-            <Text color={currentTheme.colors.text.secondary} wrap='wrap'>
-              {outputContent}
-            </Text>
+            {outputContent && (
+              <Text color={currentTheme.colors.text.secondary} wrap='wrap'>
+                {outputContent}
+              </Text>
+            )}
+
+            {/* 显示附加的错误信息 */}
+            {event.subEvents?.map((subEvent, index) => (
+              <Box key={index} marginTop={outputContent ? 1 : 0} flexDirection='column'>
+                <Box>
+                  <EventRouter event={subEvent} index={index} />
+                </Box>
+              </Box>
+            ))}
           </Box>
         </Box>
       )}

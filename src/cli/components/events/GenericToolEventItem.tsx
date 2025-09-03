@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { UIEvent } from '../../../events/index.js';
 import { useTheme } from '../../themes/index.js';
 import { StatusIndicator } from '../StatusIndicator.js';
+import { EventRouter } from './EventRouter.js';
 
 interface GenericToolEventItemProps {
   event: UIEvent;
@@ -12,11 +13,9 @@ interface GenericToolEventItemProps {
 export const GenericToolEventItem: React.FC<GenericToolEventItemProps> = ({ event }) => {
   const { currentTheme } = useTheme();
   const toolEvent = event as any;
-
   const executionStatus = toolEvent.executionStatus || 'started';
   const completedData = toolEvent.completedData;
   const outputData = toolEvent.outputData;
-
   const displayTitle = toolEvent.displayTitle || 'Tool';
 
   // 确定状态
@@ -36,7 +35,6 @@ export const GenericToolEventItem: React.FC<GenericToolEventItemProps> = ({ even
         outputContent = String(completedData.result);
       }
     }
-
     if (completedData.error) {
       outputContent = completedData.error;
     }
@@ -53,7 +51,7 @@ export const GenericToolEventItem: React.FC<GenericToolEventItemProps> = ({ even
 
   return (
     <Box flexDirection='column'>
-      {/* 工具标题行 */}
+      {/* 工具执行信息 */}
       <Box>
         <Box marginRight={1}>
           <StatusIndicator type={indicatorType} isActive={!isCompleted} />
@@ -63,14 +61,25 @@ export const GenericToolEventItem: React.FC<GenericToolEventItemProps> = ({ even
         </Text>
       </Box>
 
-      {/* 输出内容 */}
-      {outputContent && (
+      {/* 显示输出内容和错误信息 */}
+      {(outputContent || (event.subEvents && event.subEvents.length > 0)) && (
         <Box marginLeft={2}>
           <Text color={currentTheme.colors.text.muted}>⎿ </Text>
           <Box flexGrow={1}>
-            <Text color={currentTheme.colors.text.secondary} wrap='wrap'>
-              {outputContent}
-            </Text>
+            {outputContent && (
+              <Text color={currentTheme.colors.text.secondary} wrap='wrap'>
+                {outputContent}
+              </Text>
+            )}
+
+            {/* 显示附加的错误信息 */}
+            {event.subEvents?.map((subEvent, index) => (
+              <Box key={index} marginTop={outputContent ? 1 : 0} flexDirection='column'>
+                <Box>
+                  <EventRouter event={subEvent} index={index} />
+                </Box>
+              </Box>
+            ))}
           </Box>
         </Box>
       )}

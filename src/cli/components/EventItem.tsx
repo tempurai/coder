@@ -6,7 +6,6 @@ import { EventRouter } from './events/EventRouter.js';
 interface EventItemProps {
   event: UIEvent;
   index: number;
-  detailMode?: boolean; // 保留接口兼容性，但不使用
 }
 
 export const EventItem: React.FC<EventItemProps> = React.memo(({ event, index }) => {

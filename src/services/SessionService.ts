@@ -67,7 +67,6 @@ export class SessionService {
 
         this.isTaskRunning = true;
         this.interruptService.startTask();
-
         console.log('\n🚀 开始处理任务...');
 
         this.eventEmitter.emit({
@@ -83,21 +82,24 @@ export class SessionService {
         } as TaskStartedEvent);
 
         let snapshotResult: SnapshotResult | null = null;
+
         try {
             console.log('创建任务开始前的快照...');
             snapshotResult = await SnapshotManager.createSnapshot(
                 `Pre-task: ${query.substring(0, 50)}${query.length > 50 ? '...' : ''}`
             );
             if (!snapshotResult.success) {
+                this.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'system',
+                    message: `Failed to create safety snapshot: ${snapshotResult.error}`
+                } as SystemInfoEvent);
                 throw new Error(snapshotResult.error);
             }
         } catch (error: string | any) {
+            // 快照错误已在上面发送
             console.error('快照创建失败:', error);
-            this.eventEmitter.emit({
-                type: 'system_info',
-                level: 'error',
-                message: 'Failed to create safety snapshot: ' + error,
-            } as SystemInfoEvent);
             return {
                 terminateReason: 'ERROR',
                 history: [],
@@ -116,7 +118,6 @@ export class SessionService {
             } as SnapshotCreatedEvent);
 
             const container = getContainer();
-
             const smartAgent = container.get<SmartAgent>(TYPES.SmartAgent);
 
             console.log('Try to build history and compress context');
@@ -124,12 +125,12 @@ export class SessionService {
             const fullHistory = this.buildFullHistory();
 
             console.log(`🔄 开始SmartAgent推理循环... (mode: ${executionMode})`);
-
             // 确保工具初始化完成
             await smartAgent.initializeTools(executionMode);
-            const taskResult = await smartAgent.executeTask(query, fullHistory, executionMode);
-            // TODO WAITING_FOR_USER
 
+            const taskResult = await smartAgent.executeTask(query, fullHistory, executionMode);
+
+            // TODO WAITING_FOR_USER
             taskResult.history = taskResult.history.filter(msg => msg.role !== 'system');
             this.recentHistory.push(...taskResult.history);
             this.interactionCount++;
@@ -149,18 +150,22 @@ export class SessionService {
             return taskResult;
         } catch (error) {
             if (snapshotResult?.snapshotId) {
+                this.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'agent',
+                    message: `Task failed, attempting to restore snapshot: ${snapshotResult.snapshotId}`
+                } as SystemInfoEvent);
                 this.restoreFromSnapshot(snapshotResult.snapshotId);
             }
-
             const errorMessage = `任务处理出错: ${error instanceof Error ? error.message : '未知错误'}`;
-            console.error(`${errorMessage}`);
-
             this.eventEmitter.emit({
                 type: 'system_info',
                 level: 'error',
-                message: errorMessage,
+                source: 'agent',
+                message: errorMessage
             } as SystemInfoEvent);
-
+            console.error(`${errorMessage}`);
             return {
                 terminateReason: 'ERROR',
                 history: [],
@@ -174,14 +179,12 @@ export class SessionService {
 
     private buildFullHistory(): Messages {
         const history: Messages = [];
-
         if (this.compressedContext) {
             history.push({
                 role: 'system',
                 content: `[PREVIOUS CONTEXT]\n${this.compressedContext}`
             });
         }
-
         history.push(...this.recentHistory);
         return history;
     }
@@ -198,6 +201,12 @@ export class SessionService {
             }
         } catch (error) {
             const errorMessage = `快照恢复失败: ${error instanceof Error ? error.message : '未知错误'}`;
+            this.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'system',
+                message: errorMessage
+            } as SystemInfoEvent);
             console.error(errorMessage);
             return { success: false, error: errorMessage };
         }
@@ -256,7 +265,8 @@ export class SessionService {
         this.eventEmitter.emit({
             type: 'system_info',
             level: 'info',
-            message: `Task queued: ${this.messageQueue.length} task(s) waiting. Current task: "${query.substring(0, 100)}${query.length > 100 ? '...' : ''}"`,
+            source: 'system',
+            message: `Task queued: ${this.messageQueue.length} task(s) waiting`
         } as SystemInfoEvent);
     }
 

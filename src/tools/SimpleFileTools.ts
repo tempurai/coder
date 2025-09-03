@@ -5,7 +5,7 @@ import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
 import { ToolContext, ToolNames } from './ToolRegistry.js';
-import { ToolExecutionStartedEvent } from '../events/EventTypes.js';
+import { ToolExecutionStartedEvent, SystemInfoEvent } from '../events/EventTypes.js';
 import { ToolExecutionResult } from './ToolRegistry.js';
 
 const execAsync = util.promisify(exec);
@@ -49,8 +49,16 @@ export const createCreateFileTool = (context: ToolContext) => tool({
                     };
                 }
             } else {
+                context.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'tool',
+                    sourceId: toolExecutionId!,
+                    message: permission.reason || 'File creation not allowed'
+                } as SystemInfoEvent);
+
                 return {
-                    error: permission.reason || 'File creation not allowed',
+                    result: null,
                     displayDetails: permission.reason || 'File creation blocked by current edit mode',
                 };
             }
@@ -60,8 +68,16 @@ export const createCreateFileTool = (context: ToolContext) => tool({
             const absolutePath = path.resolve(filePath);
 
             if (fs.existsSync(absolutePath)) {
+                context.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'tool',
+                    sourceId: toolExecutionId!,
+                    message: `File already exists: ${filePath}`
+                } as SystemInfoEvent);
+
                 return {
-                    error: `File already exists: ${filePath}`,
+                    result: null,
                     displayDetails: `Cannot create file - it already exists: ${filePath}`,
                 };
             }
@@ -78,8 +94,16 @@ export const createCreateFileTool = (context: ToolContext) => tool({
                 displayDetails: `New file created successfully (${content.length} characters)`,
             };
         } catch (error) {
+            context.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'tool',
+                sourceId: toolExecutionId!,
+                message: `Failed to create file: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             return {
-                error: error instanceof Error ? error.message : 'Unknown error',
+                result: null,
                 displayDetails: `Failed to create file: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
@@ -123,8 +147,16 @@ export const createWriteFileTool = (context: ToolContext) => tool({
                     };
                 }
             } else {
+                context.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'tool',
+                    sourceId: toolExecutionId!,
+                    message: permission.reason || 'File write not allowed'
+                } as SystemInfoEvent);
+
                 return {
-                    error: permission.reason || 'File write not allowed',
+                    result: null,
                     displayDetails: permission.reason || 'File write blocked by current edit mode',
                 };
             }
@@ -133,6 +165,7 @@ export const createWriteFileTool = (context: ToolContext) => tool({
         try {
             const absolutePath = path.resolve(filePath);
             const dir = path.dirname(absolutePath);
+
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
@@ -144,8 +177,16 @@ export const createWriteFileTool = (context: ToolContext) => tool({
                 displayDetails: `File written successfully (${content.length} characters)`,
             };
         } catch (error) {
+            context.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'tool',
+                sourceId: toolExecutionId!,
+                message: `Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             return {
-                error: error instanceof Error ? error.message : 'Unknown error',
+                result: null,
                 displayDetails: `Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
@@ -191,8 +232,16 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
                     };
                 }
             } else {
+                context.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'tool',
+                    sourceId: toolExecutionId!,
+                    message: permission.reason || 'Patch application not allowed'
+                } as SystemInfoEvent);
+
                 return {
-                    error: permission.reason || 'Patch application not allowed',
+                    result: null,
                     displayDetails: permission.reason || 'Patch application blocked by current edit mode',
                 };
             }
@@ -200,9 +249,18 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
 
         try {
             const absolutePath = path.resolve(filePath);
+
             if (!fs.existsSync(absolutePath)) {
+                context.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'tool',
+                    sourceId: toolExecutionId!,
+                    message: `File not found: ${filePath}`
+                } as SystemInfoEvent);
+
                 return {
-                    error: `File not found: ${filePath}`,
+                    result: null,
                     displayDetails: `File not found: ${filePath}`,
                 };
             }
@@ -212,8 +270,8 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
 
             try {
                 const patchCmd = `patch --no-backup-if-mismatch --reject-file=/dev/null "${absolutePath}" < "${tempPatchFile}"`;
-
                 const { stdout, stderr } = await execAsync(patchCmd);
+
                 await fs.promises.unlink(tempPatchFile);
 
                 const addedLines = (patchContent.match(/^\+[^+]/gm) || []).length;
@@ -228,13 +286,22 @@ export const createApplyPatchTool = (context: ToolContext) => tool({
                     displayDetails: patchContent,
                 };
             } catch (patchError) {
+                // 工具级错误已经在 applyPatchManually 中处理
                 const result = await applyPatchManually(absolutePath, patchContent);
                 await fs.promises.unlink(tempPatchFile);
                 return result;
             }
         } catch (error) {
+            context.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'tool',
+                sourceId: toolExecutionId!,
+                message: `Failed to apply patch: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             return {
-                error: error instanceof Error ? error.message : 'Unknown error',
+                result: null,
                 displayDetails: `Failed to apply patch: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
@@ -260,8 +327,8 @@ async function applyPatchManually(filePath: string, patchContent: string): Promi
         const originalContent = await fs.promises.readFile(filePath, 'utf-8');
         const eol = detectNewline(originalContent);
         const originalLines = originalContent.split(/\r?\n/);
-
         const patchLines = patchContent.split(/\r?\n/);
+
         const hunks: Hunk[] = [];
         let currentHunk: Hunk | null = null;
 
@@ -323,8 +390,10 @@ async function applyPatchManually(filePath: string, patchContent: string): Promi
             displayDetails: patchContent,
         };
     } catch (error) {
+        // 手动patch失败时不发送错误事件，因为这是备用方案
+        // 主要错误已在调用处发送
         return {
-            error: error instanceof Error ? error.message : 'Manual patch application failed',
+            result: null,
             displayDetails: `Manual patch failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         };
     }
@@ -356,8 +425,16 @@ export const createFindFilesTool = (context: ToolContext) => tool({
                 displayDetails: files.join('\n') || 'No files found',
             };
         } catch (error) {
+            context.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'tool',
+                sourceId: toolExecutionId!,
+                message: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             return {
-                error: error instanceof Error ? error.message : 'Unknown error',
+                result: null,
                 displayDetails: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }

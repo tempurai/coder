@@ -4,6 +4,7 @@ export interface BaseEvent {
   id?: string;
   timestamp?: Date;
   sessionId?: string;
+  subEvents?: UIEvent[];
 }
 
 export interface TaskStartedEvent extends BaseEvent {
@@ -66,6 +67,8 @@ export interface SystemInfoEvent extends BaseEvent {
   level: 'info' | 'warning' | 'error';
   message: string;
   context?: any;
+  source?: 'tool' | 'system' | 'agent';
+  sourceId?: string;
 }
 
 export interface UserInputEvent extends BaseEvent {

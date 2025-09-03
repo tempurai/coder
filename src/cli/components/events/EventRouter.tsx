@@ -17,17 +17,17 @@ export const EventRouter: React.FC<EventRouterProps> = ({ event, index }) => {
       const toolEvent = event as any;
       const toolName = toolEvent.toolName;
 
-      // Shell 相关工具
+      // 根据工具类型选择不同的渲染组件
       if (toolName === 'shell_executor' || toolName === 'multi_command') {
         return <ShellExecutionEventItem event={event} index={index} />;
       }
 
-      // Diff/Patch 工具
+      // 如果是patch工具，使用diff渲染
       if (toolName === 'apply_patch') {
         return <DiffEventItem event={event} index={index} />;
       }
 
-      // 其他所有工具
+      // 其他工具使用通用渲染
       return <GenericToolEventItem event={event} index={index} />;
 
     case UIEventType.TextGenerated:

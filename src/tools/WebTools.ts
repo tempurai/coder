@@ -4,7 +4,7 @@ import { URL } from 'url';
 import { z } from 'zod';
 import { tool } from 'ai';
 import { ToolContext, ToolNames } from './ToolRegistry.js';
-import { ToolExecutionStartedEvent, ToolExecutionOutputEvent } from '../events/EventTypes.js';
+import { ToolExecutionStartedEvent, ToolExecutionOutputEvent, SystemInfoEvent } from '../events/EventTypes.js';
 import { ToolExecutionResult } from './ToolRegistry.js';
 
 interface WebSearchResult extends ToolExecutionResult {
@@ -103,6 +103,7 @@ const truncateContent = (content: string, maxLength: number): { content: string;
   if (content.length <= maxLength) {
     return { content, truncated: false };
   }
+
   return {
     content: content.substring(0, maxLength) + '\n\n[Content truncated due to length]',
     truncated: true
@@ -127,8 +128,16 @@ export const createWebSearchTool = (context: ToolContext) => tool({
 
     try {
       if (!query || typeof query !== 'string' || query.trim().length === 0) {
+        context.eventEmitter.emit({
+          type: 'system_info',
+          level: 'error',
+          source: 'tool',
+          sourceId: toolExecutionId!,
+          message: 'Search query cannot be empty'
+        } as SystemInfoEvent);
+
         return {
-          error: 'Search query cannot be empty',
+          result: null,
           summary: '',
           sources: [],
           displayDetails: 'Empty query provided',
@@ -137,8 +146,16 @@ export const createWebSearchTool = (context: ToolContext) => tool({
 
       const tavilyApiKey = context.configLoader.getConfig().tools.tavilyApiKey;
       if (!tavilyApiKey) {
+        context.eventEmitter.emit({
+          type: 'system_info',
+          level: 'error',
+          source: 'tool',
+          sourceId: toolExecutionId!,
+          message: 'Web search disabled (no API key configured)'
+        } as SystemInfoEvent);
+
         return {
-          error: 'Web search functionality is disabled. Please add "tavilyApiKey" field to config file ~/.tempurai/config.json to enable this functionality. You can get a free API Key at https://tavily.com.',
+          result: null,
           summary: '',
           sources: [],
           displayDetails: 'Web search disabled (no API key)',
@@ -170,8 +187,16 @@ export const createWebSearchTool = (context: ToolContext) => tool({
       });
 
       if (response.statusCode !== 200) {
+        context.eventEmitter.emit({
+          type: 'system_info',
+          level: 'error',
+          source: 'tool',
+          sourceId: toolExecutionId!,
+          message: `Tavily API request failed: HTTP ${response.statusCode}`
+        } as SystemInfoEvent);
+
         return {
-          error: `Tavily API request failed: HTTP ${response.statusCode}`,
+          result: null,
           summary: '',
           sources: [],
           displayDetails: `API request failed (${response.statusCode})`,
@@ -179,6 +204,7 @@ export const createWebSearchTool = (context: ToolContext) => tool({
       }
 
       const data = await response.body.json() as TavilyResponse;
+
       const sources: WebSearchSource[] = data.results.map(result => ({
         title: result.title,
         url: result.url,
@@ -193,10 +219,17 @@ export const createWebSearchTool = (context: ToolContext) => tool({
         sources,
         displayDetails: `Found ${sources.length} sources:\n${sourcesList}`,
       };
-
     } catch (error) {
+      context.eventEmitter.emit({
+        type: 'system_info',
+        level: 'error',
+        source: 'tool',
+        sourceId: toolExecutionId!,
+        message: `Search error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      } as SystemInfoEvent);
+
       return {
-        error: `Search error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        result: null,
         summary: '',
         sources: [],
         displayDetails: `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -216,6 +249,7 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
     const requestTimeout = webToolsConfig.requestTimeout ?? 15000;
     const maxContentLength = webToolsConfig.maxContentLength ?? 10000;
     const userAgent = webToolsConfig.userAgent ?? 'Tempurai-Bot/1.0 (Security-Enhanced)';
+
     const displayTitle = `UrlFetch(${url})`;
 
     context.eventEmitter.emit({
@@ -227,8 +261,16 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
 
     try {
       if (!url || typeof url !== 'string') {
+        context.eventEmitter.emit({
+          type: 'system_info',
+          level: 'error',
+          source: 'tool',
+          sourceId: toolExecutionId!,
+          message: 'Invalid URL parameter'
+        } as SystemInfoEvent);
+
         return {
-          error: 'Invalid URL parameter',
+          result: null,
           content: '',
           truncated: false,
           displayDetails: 'Invalid URL provided',
@@ -236,8 +278,16 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
       }
 
       if (isPrivateOrLocalUrl(url)) {
+        context.eventEmitter.emit({
+          type: 'system_info',
+          level: 'error',
+          source: 'tool',
+          sourceId: toolExecutionId!,
+          message: 'Access to private network addresses is prohibited for security'
+        } as SystemInfoEvent);
+
         return {
-          error: 'Access to local or private network addresses is prohibited for security reasons. This restriction prevents Server-Side Request Forgery (SSRF) attacks.',
+          result: null,
           content: '',
           truncated: false,
           displayDetails: 'Security blocked (private network)',
@@ -277,8 +327,16 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
         clearTimeout(timeoutId);
 
         if (response.statusCode !== 200) {
+          context.eventEmitter.emit({
+            type: 'system_info',
+            level: 'error',
+            source: 'tool',
+            sourceId: toolExecutionId!,
+            message: `HTTP request failed: ${response.statusCode}`
+          } as SystemInfoEvent);
+
           return {
-            error: `HTTP request failed: ${response.statusCode} - ${response.statusCode === 403 ? 'Access denied' : response.statusCode === 404 ? 'Page not found' : response.statusCode === 500 ? 'Internal server error' : 'Request failed'}`,
+            result: null,
             content: '',
             truncated: false,
             displayDetails: `HTTP ${response.statusCode} error`,
@@ -287,8 +345,16 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
 
         const contentLength = response.headers['content-length'];
         if (contentLength && parseInt(contentLength as string) > maxContentLength * 2) {
+          context.eventEmitter.emit({
+            type: 'system_info',
+            level: 'error',
+            source: 'tool',
+            sourceId: toolExecutionId!,
+            message: `Response content too large (${contentLength} bytes)`
+          } as SystemInfoEvent);
+
           return {
-            error: `Response content too large (${contentLength} bytes), exceeds safety limit. Please try accessing a smaller page.`,
+            result: null,
             content: '',
             truncated: false,
             displayDetails: `Content too large (${contentLength} bytes)`,
@@ -297,25 +363,39 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
 
         html = await response.body.text();
         if (html.length > maxContentLength * 3) {
+          context.eventEmitter.emit({
+            type: 'system_info',
+            level: 'error',
+            source: 'tool',
+            sourceId: toolExecutionId!,
+            message: `Web page content too large (${html.length} characters)`
+          } as SystemInfoEvent);
+
           return {
-            error: `Web page content too large (${html.length} characters), exceeds processing limit. Please try accessing a smaller page.`,
+            result: null,
             content: '',
             truncated: false,
             displayDetails: `Content too large (${html.length} chars)`,
           };
         }
-
       } catch (requestError) {
         clearTimeout(timeoutId);
         if (controller.signal.aborted) {
+          context.eventEmitter.emit({
+            type: 'system_info',
+            level: 'error',
+            source: 'tool',
+            sourceId: toolExecutionId!,
+            message: `Request timeout (${requestTimeout}ms)`
+          } as SystemInfoEvent);
+
           return {
-            error: `Request timeout (${requestTimeout}ms). Website response time too long, please try again later.`,
+            result: null,
             content: '',
             truncated: false,
             displayDetails: 'Request timeout',
           };
         }
-
         const error = requestError as Error;
         let errorMsg = 'Network error';
         if (error.message.includes('ENOTFOUND')) {
@@ -362,10 +442,17 @@ export const createUrlFetchTool = (context: ToolContext) => tool({
         truncated,
         displayDetails: finalContent.substring(0, 500) + (finalContent.length > 500 ? '...' : ''),
       };
-
     } catch (error) {
+      context.eventEmitter.emit({
+        type: 'system_info',
+        level: 'error',
+        source: 'tool',
+        sourceId: toolExecutionId!,
+        message: `Failed to fetch URL: ${error instanceof Error ? error.message : 'Unknown error'}`
+      } as SystemInfoEvent);
+
       return {
-        error: `Failed to fetch URL content: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        result: null,
         content: '',
         truncated: false,
         displayDetails: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

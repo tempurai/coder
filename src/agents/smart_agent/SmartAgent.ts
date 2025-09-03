@@ -45,12 +45,14 @@ export class SmartAgent {
     console.log(`Starting intelligent task execution: ${initialQuery} (mode: ${executionMode})`);
 
     const startTime = Date.now();
+
     try {
       if (executionMode != ExecutionMode.PLAN) {
         await this.initialPlanningExecution(initialQuery);
       }
 
       const result = await this.executeMainLoop(initialQuery, executionMode);
+
       return {
         ...result,
         metadata: {
@@ -61,6 +63,13 @@ export class SmartAgent {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.eventEmitter.emit({
+        type: 'system_info',
+        level: 'error',
+        source: 'agent',
+        message: `Task execution failed: ${errorMessage}`
+      } as SystemInfoEvent);
+
       return {
         terminateReason: 'ERROR',
         history: this.processHistory(this.memory),
@@ -71,6 +80,7 @@ export class SmartAgent {
 
   private async initialPlanningExecution(query: string): Promise<void> {
     console.log('Initializing task planning phase...');
+
     const planningMessages = [
       { role: 'system' as const, content: PLANNING_PROMPT },
       { role: 'user' as const, content: query }
@@ -90,6 +100,12 @@ export class SmartAgent {
 
       console.log("Planning completed", planningResponse);
     } catch (error) {
+      this.eventEmitter.emit({
+        type: 'system_info',
+        level: 'error',
+        source: 'agent',
+        message: `Initial planning failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      } as SystemInfoEvent);
       console.warn('Initial planning failed, proceeding with direct execution:', error);
     }
   }
@@ -103,6 +119,7 @@ export class SmartAgent {
       iteration: 0, role: 'system',
       content: executionMode === ExecutionMode.PLAN ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT
     });
+
     this.memory.push(
       { iteration: 0, role: "user", content: `Task: ${initialQuery}` }
     );
@@ -125,9 +142,16 @@ export class SmartAgent {
       const { response, error } = await this.executeSingleIteration(currentIteration, executionMode);
 
       if (currentIteration % 10 === 0) {
+        // 检测循环
         const iterationHistory = this.processHistory(this.memory);
         const loopDetection = await this.orchestrator.detectLoop(iterationHistory);
         if (loopDetection.isLoop) {
+          this.eventEmitter.emit({
+            type: 'system_info',
+            level: 'error',
+            source: 'agent',
+            message: `Loop detected: ${loopDetection.description}`
+          } as SystemInfoEvent);
           console.log(`Loop detected: ${loopDetection.description}`);
           return { terminateReason: 'ERROR', history: iterationHistory, error: loopDetection.description || 'Repetitive behavior detected' };
         }
@@ -146,6 +170,12 @@ export class SmartAgent {
 
       recentErrorCount += (error ? 1 : 0);
       if (recentErrorCount >= 2) {
+        this.eventEmitter.emit({
+          type: 'system_info',
+          level: 'error',
+          source: 'agent',
+          message: 'Too many consecutive errors, terminating task'
+        } as SystemInfoEvent);
         console.error('Too many consecutive errors, terminating');
         return { terminateReason: 'ERROR', history: this.processHistory(this.memory), error: 'Too many consecutive errors' };
       }
@@ -204,12 +234,16 @@ export class SmartAgent {
       return { response };
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
+      this.eventEmitter.emit({
+        type: 'system_info',
+        level: 'error',
+        source: 'agent',
+        message: `Iteration ${currentIteration} failed: ${errorMessage}`
+      } as SystemInfoEvent);
       console.error(`Iteration ${currentIteration} failed: ${errorMessage}`);
-      this.eventEmitter.emit({ type: 'system_info', level: 'error', message: errorMessage } as SystemInfoEvent);
 
       const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
       this.memory.push({ role: 'user', content: `Observation: ${response}`, iteration: currentIteration });
-
       return { response, error: errorMessage };
     }
   }

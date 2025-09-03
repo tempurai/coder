@@ -3,7 +3,7 @@ import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
 import { ToolContext, ToolNames } from './ToolRegistry.js';
-import { ToolExecutionStartedEvent, ToolExecutionOutputEvent, ToolExecutionCompletedEvent } from '../events/EventTypes.js';
+import { ToolExecutionStartedEvent, ToolExecutionOutputEvent, ToolExecutionCompletedEvent, SystemInfoEvent } from '../events/EventTypes.js';
 import { ToolExecutionResult } from './ToolRegistry.js';
 
 const execAsync = util.promisify(exec);
@@ -104,15 +104,24 @@ IMPORTANT: Always explain what command you're running and why.`,
                             };
                         }
                     } else {
+                        // 发送系统级错误
+                        context.eventEmitter.emit({
+                            type: 'system_info',
+                            level: 'error',
+                            source: 'tool',
+                            sourceId: toolExecutionId!,
+                            message: `Security blocked: ${validationResult.reason}`
+                        } as SystemInfoEvent);
+
                         return {
-                            error: `Security policy violation: ${validationResult.reason}`,
+                            error: `Security blocked: ${validationResult.reason}`,
                             command,
                             description,
                             cancelled: false,
                             securityBlocked: true,
                             suggestion: validationResult.suggestion,
                             commandClassification: classification,
-                            displayDetails: `Security blocked: ${validationResult.reason}`,
+                            displayDetails: `Security blocked: ${validationResult.reason}`
                         };
                     }
                 }
@@ -156,6 +165,15 @@ IMPORTANT: Always explain what command you're running and why.`,
                     displayDetails: displayContent || 'Command executed successfully',
                 };
             } catch (error: any) {
+                // 发送工具错误事件
+                context.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'tool',
+                    sourceId: toolExecutionId!,
+                    message: error?.message ?? String(error)
+                } as SystemInfoEvent);
+
                 const classification = context.securityEngine.classifyCommand(command);
                 const errorMessage = error?.message ?? String(error);
                 let displayContent = errorMessage;
@@ -200,6 +218,7 @@ Examples:
             toolExecutionId,
         }): Promise<MultiCommandExecutionResult> => {
             const displayTitle = `MultiCommand(${commands.length} commands)`;
+
             const validationResults = commands.map(c => context.securityEngine.validateCommand(c.command));
             const blockedCommands = validationResults
                 .map((res, idx) => ({ res, idx, original: commands[idx] }))
@@ -220,6 +239,14 @@ Examples:
                         `${item.original.command}: ${item.res.reason}${item.res.suggestion ? ` (Suggestion: ${item.res.suggestion})` : ''}`
                     )
                     .join(', ');
+
+                context.eventEmitter.emit({
+                    type: 'system_info',
+                    level: 'error',
+                    source: 'tool',
+                    sourceId: toolExecutionId!,
+                    message: `Security policy violations: ${blockedList}`
+                } as SystemInfoEvent);
 
                 return {
                     error: 'Security policy violations detected',
@@ -245,7 +272,7 @@ Examples:
 
             if (!confirmed) {
                 return {
-                    error: 'Multi-command execution cancelled by user',
+                    result: { cancelled: true },
                     results: [],
                     summary: 'Multi-command execution cancelled by user',
                     workingDirectory: workingDirectory || process.cwd(),
@@ -313,11 +340,18 @@ Examples:
                         toolExecutionId: subExecutionId,
                         displayDetails: stdout?.trim() || 'Command executed successfully',
                     } as ToolExecutionCompletedEvent);
-
                 } catch (error: any) {
+                    // 发送工具错误事件
+                    context.eventEmitter.emit({
+                        type: 'system_info',
+                        level: 'error',
+                        source: 'tool',
+                        sourceId: subExecutionId,
+                        message: error?.message ?? String(error)
+                    } as SystemInfoEvent);
+
                     const classification = context.securityEngine.classifyCommand(command);
                     const errorMsg = error?.message ?? String(error);
-
                     const result: MultiCommandResult = {
                         command,
                         description,
@@ -332,14 +366,14 @@ Examples:
 
                     results.push(result);
 
-                    // Emit failure event for sub-command
+                    // 发送failure事件给子命令
                     context.eventEmitter.emit({
                         type: 'tool_execution_completed',
                         toolName: ToolNames.SHELL_EXECUTOR,
-                        success: false,
-                        error: errorMsg,
+                        success: true,
+                        result: { exitCode: error?.code || 1 },
                         toolExecutionId: subExecutionId,
-                        displayDetails: errorMsg,
+                        displayDetails: `Command failed: ${command}`,
                     } as ToolExecutionCompletedEvent);
 
                     if (stopOnFirstError && !continueOnError) {

@@ -83,13 +83,16 @@ export class ToolAgent {
 
     async initializeAsync(): Promise<void> {
         if (this.isInitialized) return;
+
         this.logger.info('Initializing ToolAgent', {}, 'AGENT');
         await this.loadAllTools();
+
         console.log(`ToolAgent initialized with ${this.toolRegistry.getToolNames().length} tools`);
         this.logger.info('ToolAgent initialized', {
             toolCount: this.toolRegistry.getToolNames().length,
             tools: this.toolRegistry.getToolNames()
         }, 'AGENT');
+
         this.isInitialized = true;
     }
 
@@ -107,7 +110,7 @@ export class ToolAgent {
         const abortSignal = this.interruptService.getAbortSignal();
 
         try {
-            return this.retryGenerate(async () => {
+            return await this.retryGenerate(async () => {
                 const result = await generateText({
                     model: this.model,
                     messages: finalMessages,
@@ -116,11 +119,16 @@ export class ToolAgent {
                     temperature: this.config.temperature,
                     abortSignal,
                 });
-
                 return result.text;
             });
-
         } catch (error) {
+            this.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'agent',
+                message: `AI text generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             if (error instanceof Error && (error.name === 'AbortError' || this.interruptService.isInterrupted())) {
                 throw new Error('AI request interrupted by user');
             }
@@ -150,26 +158,35 @@ export class ToolAgent {
                         }
                     }
                 });
-
                 return result.experimental_output;
             });
         } catch (error) {
+            this.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'agent',
+                message: `AI object generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             if (error instanceof Error && (error.name === 'AbortError' || this.interruptService.isInterrupted())) {
                 throw new Error('AI request interrupted by user');
             }
-
             throw error;
         }
     }
 
     private async retryGenerate<T>(operation: () => Promise<T>): Promise<T> {
         const errorFn = async (error: Error, attempt: number): Promise<void> => {
-            // 如果被中断就不重试
+            // 检查是否被中断
             if (error instanceof Error && (error.name === 'AbortError' || this.interruptService.isInterrupted())) {
                 throw new Error('AI request interrupted by user');
             }
-
-            this.eventEmitter.emit({ type: 'system_info', level: 'error', message: error.message } as SystemInfoEvent);
+            this.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'agent',
+                message: `Retry attempt ${attempt}: ${error.message}`
+            } as SystemInfoEvent);
 
             if (attempt < 10) {
                 const delay = attempt <= 3 ? 1000 : 1000 + (attempt - 3) * 3000;
@@ -208,9 +225,11 @@ export class ToolAgent {
     private buildToolInfo(): string {
         const tools = this.toolRegistry.getAll();
         let out = "";
+
         for (const [name, tool] of Object.entries(tools)) {
             const json = zodToJsonSchema(tool.inputSchema as any) as any;
             const required: string[] = json.required || [];
+
             out += `name: ${name}\n`;
             out += `desc: ${tool.description || "(no description)"}\n`;
             out += "params:\n";
@@ -274,7 +293,6 @@ export class ToolAgent {
 
             console.log(`Tool executed successfully: ${toolName}`);
             return result?.result || result;
-
         } catch (error) {
             const duration = Date.now() - startTime;
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';

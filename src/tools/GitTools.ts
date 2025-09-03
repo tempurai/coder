@@ -3,7 +3,7 @@ import * as util from 'util';
 import { z } from 'zod';
 import { tool } from 'ai';
 import { ToolContext, ToolNames } from './ToolRegistry.js';
-import { ToolExecutionStartedEvent } from '../events/EventTypes.js';
+import { ToolExecutionStartedEvent, SystemInfoEvent } from '../events/EventTypes.js';
 import { ToolExecutionResult } from './ToolRegistry.js';
 
 const execAsync = util.promisify(exec);
@@ -33,8 +33,16 @@ export const createGitStatusTool = (context: ToolContext) => tool({
                 displayDetails: files.length > 0 ? files.join('\n') : 'Working directory clean',
             };
         } catch (error) {
+            context.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'tool',
+                sourceId: toolExecutionId!,
+                message: `Git status failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             return {
-                error: error instanceof Error ? error.message : 'Unknown error',
+                result: null,
                 displayDetails: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
@@ -66,8 +74,16 @@ export const createGitLogTool = (context: ToolContext) => tool({
                 displayDetails: commits.join('\n'),
             };
         } catch (error) {
+            context.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'tool',
+                sourceId: toolExecutionId!,
+                message: `Git log failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             return {
-                error: error instanceof Error ? error.message : 'Unknown error',
+                result: null,
                 displayDetails: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
@@ -102,8 +118,16 @@ export const createGitDiffTool = (context: ToolContext) => tool({
                 displayDetails: diffOutput,
             };
         } catch (error) {
+            context.eventEmitter.emit({
+                type: 'system_info',
+                level: 'error',
+                source: 'tool',
+                sourceId: toolExecutionId!,
+                message: `Git diff failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            } as SystemInfoEvent);
+
             return {
-                error: error instanceof Error ? error.message : 'Unknown error',
+                result: null,
                 displayDetails: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }

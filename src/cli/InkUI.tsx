@@ -24,7 +24,7 @@ interface MainUIProps {
 
 const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   const { currentTheme } = useTheme();
-  const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions, todoState, errorState } = useSessionEvents(sessionService);
+  const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions } = useSessionEvents(sessionService);
   const { staticEvents, dynamicEvents } = useEventSeparation(events);
   const [editModeStatus, setEditModeStatus] = useState<string>('');
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(ExecutionMode.CODE);
@@ -104,7 +104,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 
       {isProcessing && (
         <Box marginY={0}>
-          <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} todoState={todoState} errorState={errorState} />
+          <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} sessionService={sessionService} />
         </Box>
       )}
 
@@ -189,11 +189,14 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => (
 
 export const startInkUI = async (sessionService: SessionService) => {
   console.log('Starting InkUI Interface...');
+
   const exitFn = () => {
     sessionService.interrupt();
     process.exit(0);
   };
+
   process.on('SIGINT', exitFn);
   process.on('SIGTERM', exitFn);
+
   render(<CodeAssistantApp sessionService={sessionService} />, { patchConsole: false });
 };

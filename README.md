@@ -21,6 +21,8 @@ Tempurai Coder is a sophisticated, terminal-based AI assistant built for develop
 
 It's a tool designed to augment your workflow, handling the heavy lifting of multi-step refactoring, codebase analysis, and feature implementation, all without leaving the comfort of your terminal.
 
+<img width="890" height="511" alt="image" src="https://github.com/user-attachments/assets/6070fe3e-987a-4d07-8007-bae222ba6b08" />
+
 ---
 
 ### Core Philosophy

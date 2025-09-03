@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { tool } from 'ai';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 import { TextGeneratedEvent } from '../../events/EventTypes.js';
-import { inject } from 'inversify';
+import { inject, injectable } from 'inversify';
 import { TYPES } from '../../di/types.js';
 
 interface TodoItem {
@@ -27,6 +27,7 @@ interface TaskPlan {
     createdAt: Date;
 }
 
+@injectable()
 export class TodoManager {
     private todos: Map<string, TodoItem> = new Map();
     private plan: TaskPlan | null = null;

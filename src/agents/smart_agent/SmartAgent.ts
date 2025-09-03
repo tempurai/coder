@@ -23,7 +23,6 @@ export interface SmartAgentMessage extends Message {
 export class SmartAgent {
   private maxIterations: number;
   private memory: SmartAgentMessage[] = [];
-  private todoManager: TodoManager;
   private orchestrator: AgentOrchestrator;
 
   constructor(
@@ -33,11 +32,11 @@ export class SmartAgent {
     @inject(TYPES.ToolRegistry) private toolRegistry: ToolRegistry,
     @inject(TYPES.EditModeManager) private editModeManager: EditModeManager,
     @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine,
+    @inject(TYPES.TodoManager) private todoManager: TodoManager,
     @inject(TYPES.ToolInterceptor) private toolInterceptor: ToolInterceptor,
     maxIterations: number = 50
   ) {
     this.maxIterations = maxIterations;
-    this.todoManager = new TodoManager(eventEmitter);
     this.orchestrator = new AgentOrchestrator(toolAgent, eventEmitter);
   }
 

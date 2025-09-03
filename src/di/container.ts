@@ -91,6 +91,7 @@ export function createContainer(): Container {
         const eventEmitter = container.get<UIEventEmitter>(TYPES.UIEventEmitter);
         const interruptService = container.get<InterruptService>(TYPES.InterruptService);
         const toolRegistry = container.get<ToolRegistry>(TYPES.ToolRegistry);
+        const todoManager = container.get<TodoManager>(TYPES.TodoManager);
         const compressorService = container.get<CompressorService>(TYPES.CompressorService);
         const editModeManager = container.get<EditModeManager>(TYPES.EditModeManager);
 
@@ -101,6 +102,7 @@ export function createContainer(): Container {
           eventEmitter,
           interruptService,
           toolRegistry,
+          todoManager,
           compressorService,
           editModeManager,
         );

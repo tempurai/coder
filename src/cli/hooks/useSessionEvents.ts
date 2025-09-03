@@ -59,44 +59,62 @@ export const useSessionEvents = (sessionService: SessionService) => {
         if (state.completedEvent) {
             mergedEvent.completedData = state.completedEvent;
         }
+
         if (state.outputEvents.length > 0) {
             mergedEvent.outputData = state.outputEvents;
         }
+
         mergedEvent.executionStatus = state.currentStatus;
+
         return mergedEvent;
     }, [toolExecutions]);
 
-    const extractTodoState = useCallback((events: UIEvent[]): TodoState => {
-        const todoEvents = events.filter(event =>
-            event.type === UIEventType.ToolExecutionCompleted &&
-            (event as any).toolName === 'todo_manager'
-        );
+    const getTodoState = useCallback((): TodoState => {
+        try {
+            const todos = sessionService.todoManager.getAllTodos();
 
-        let current: { id: string; title: string } | undefined;
-        let next: { id: string; title: string } | undefined;
+            // 查找当前正在进行的todo (in_progress状态)
+            const currentTodo = todos.find(todo => todo.status === 'in_progress');
 
-        for (const event of todoEvents.reverse()) {
-            const result = (event as any).result;
-            if (result && result.nextTodo) {
-                current = result.nextTodo;
-                break;
-            }
+            // 查找下一个待执行的todo (pending状态，按创建时间排序)
+            const pendingTodos = todos
+                .filter(todo => todo.status === 'pending')
+                .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+            const nextTodo = pendingTodos[0];
+
+            return {
+                current: currentTodo ? {
+                    id: currentTodo.id,
+                    title: currentTodo.title
+                } : undefined,
+                next: nextTodo ? {
+                    id: nextTodo.id,
+                    title: nextTodo.title
+                } : undefined
+            };
+        } catch (error) {
+            // 如果TodoManager还没初始化或其他错误，返回空状态
+            return {};
         }
+    }, [sessionService]);
 
-        // Find next todo from the same events
-        for (const event of todoEvents.reverse()) {
-            const result = (event as any).result;
-            if (result && result.todos) {
-                const pendingTodos = result.todos.filter((t: any) => t.status === 'pending');
-                if (pendingTodos.length > 1) {
-                    next = pendingTodos[1];
-                    break;
+    useEffect(() => {
+        setTodoState(getTodoState());
+
+        const interval = setInterval(() => {
+            const newTodoState = getTodoState();
+            setTodoState(prevState => {
+                // 只在状态真正变化时更新，避免无意义的重渲染
+                if (JSON.stringify(prevState) !== JSON.stringify(newTodoState)) {
+                    return newTodoState;
                 }
-            }
-        }
+                return prevState;
+            });
+        }, 1000);
 
-        return { current, next };
-    }, []);
+        return () => clearInterval(interval);
+    }, [getTodoState]);
 
     useEffect(() => {
         const eventEmitter = sessionService.events;
@@ -110,6 +128,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     event.type === UIEventType.ToolExecutionOutput ||
                     event.type === UIEventType.ToolExecutionCompleted
                 );
+
                 const otherEvents = eventBuffer.filter(event =>
                     event.type !== UIEventType.ToolExecutionStarted &&
                     event.type !== UIEventType.ToolExecutionOutput &&
@@ -118,6 +137,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
                 setToolExecutions(prev => {
                     const newMap = new Map(prev);
+
                     toolEvents.forEach(event => {
                         const toolExecutionId = (event as any).toolExecutionId;
                         if (!toolExecutionId) return;
@@ -144,6 +164,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
                         newMap.set(toolExecutionId, existing);
                     });
+
                     return newMap;
                 });
 
@@ -165,6 +186,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
                                 (e as any).toolExecutionId === toolExecutionId &&
                                 e.type === UIEventType.ToolExecutionStarted
                             );
+
                             if (existingIndex !== -1) {
                                 const updatedEvent = {
                                     ...newEvents[existingIndex],
@@ -179,9 +201,8 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     return newEvents;
                 });
 
-                // Update todo state
-                const allEvents = [...events, ...eventBuffer];
-                setTodoState(extractTodoState(allEvents));
+                // 更新TodoState - 直接从TodoManager获取最新状态
+                setTodoState(getTodoState());
 
                 eventBuffer = [];
             }
@@ -204,9 +225,10 @@ export const useSessionEvents = (sessionService: SessionService) => {
                 case UIEventType.TaskStart:
                     setIsProcessing(true);
                     setCurrentActivity('Processing...');
-                    // Clear errors when new task starts
+                    // 清除之前的错误
                     setErrorState({ errors: [] });
                     break;
+
                 case UIEventType.TaskComplete:
                     setTimeout(() => {
                         setIsProcessing(false);
@@ -214,15 +236,17 @@ export const useSessionEvents = (sessionService: SessionService) => {
                         setTodoState({});
                     }, 500);
                     break;
+
                 case UIEventType.SystemInfo:
                     const systemEvent = event as any;
                     if (systemEvent.level === 'error') {
                         setErrorState(prev => ({
-                            errors: [...prev.errors, systemEvent.message].slice(-3),
+                            errors: [...prev.errors, systemEvent.message],
                             lastErrorTime: new Date()
                         }));
                     }
                     break;
+
                 case UIEventType.ToolConfirmationRequest:
                     const confirmEvent = event as any;
                     setPendingConfirmation({
@@ -233,13 +257,31 @@ export const useSessionEvents = (sessionService: SessionService) => {
                         options: confirmEvent.options,
                     });
                     break;
+
                 case UIEventType.ToolConfirmationResponse:
                     setPendingConfirmation(null);
                     break;
+
                 case UIEventType.ToolExecutionStarted:
-                    // Clear errors when new tool execution starts
+                    // 当有新的工具执行开始时，清除错误状态（表示重试成功）
                     if (errorState.errors.length > 0) {
                         setErrorState({ errors: [] });
+                    }
+                    break;
+
+                case UIEventType.ToolExecutionCompleted:
+                    // 如果是todo_manager工具执行完成，更新todo状态
+                    const toolEvent = event as any;
+                    if (toolEvent.toolName === 'todo_manager') {
+                        setTodoState(getTodoState());
+                    }
+                    break;
+
+                case UIEventType.TextGenerated:
+                    // 如果文本包含todo状态更新信息，也更新状态
+                    const textEvent = event as any;
+                    if (textEvent.text && (textEvent.text.includes('Todo "') || textEvent.text.includes('status updated'))) {
+                        setTodoState(getTodoState());
                     }
                     break;
             }
@@ -254,7 +296,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
             }
             flushEvents();
         };
-    }, [sessionService, pendingConfirmation, mergeToolExecutionEvents, extractTodoState, errorState.errors, events]);
+    }, [sessionService, pendingConfirmation, mergeToolExecutionEvents, getTodoState, errorState.errors, events]);
 
     const handleConfirmation = useCallback(
         (confirmationId: string, choice: 'yes' | 'no' | 'yes_and_remember') => {

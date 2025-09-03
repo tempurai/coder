@@ -12,6 +12,7 @@ import { ToolRegistry } from '../tools/ToolRegistry.js';
 import { SnapshotResult, SnapshotManager } from './SnapshotManager.js';
 import { EditModeManager } from './EditModeManager.js';
 import { ExecutionMode } from './ExecutionModeManager.js';
+import { TodoManager } from '../agents/smart_agent/TodoManager.js';
 
 export interface SessionStats {
     totalInteractions: number;
@@ -38,6 +39,7 @@ export class SessionService {
         private eventEmitter: UIEventEmitter,
         private interruptService: InterruptService,
         private toolRegistry: ToolRegistry,
+        public todoManager: TodoManager,
         private compressorService: CompressorService,
         editModeManager: EditModeManager,
     ) {
@@ -126,6 +128,7 @@ export class SessionService {
             // 确保工具初始化完成
             await smartAgent.initializeTools(executionMode);
             const taskResult = await smartAgent.executeTask(query, fullHistory, executionMode);
+            // TODO WAITING_FOR_USER
 
             taskResult.history = taskResult.history.filter(msg => msg.role !== 'system');
             this.recentHistory.push(...taskResult.history);

@@ -14,7 +14,7 @@ interface ProgressIndicatorProps {
   errorState?: ErrorState;
 }
 
-const TIPS = ['Tip: Use : to select execution mode', 'Tip: Use /help for available commands', 'Tip: Use Shift+Tab to cycle edit mode', 'Tip: Press Ctrl+C twice to exit', 'Tip: AI can make mistakes, please check output carefully'];
+const HELP_TEXTS = ['Ready for your next task', 'Type : to select execution mode', 'Use /help for available commands', 'Waiting for instructions...', 'AI assistant ready to help'];
 
 export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ phase, message, progress, isActive = true, showSpinner = true, todoState, errorState }) => {
   const { currentTheme } = useTheme();
@@ -53,75 +53,81 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ phase, mes
   const phaseSymbol = getPhaseSymbol(phase);
   const showProgress = typeof progress === 'number' && progress >= 0 && progress <= 100;
 
-  // Show errors if they exist
-  if (errorState && errorState.errors.length > 0) {
-    return (
-      <Box flexDirection='column'>
-        {errorState.errors.map((error, index) => (
-          <Box key={index}>
-            <Text color={currentTheme.colors.error}>!</Text>
-            <Box marginLeft={1}>
-              <Text color={currentTheme.colors.error}>{error}</Text>
-            </Box>
-          </Box>
-        ))}
-      </Box>
-    );
-  }
+  // 确定主标题内容
+  const getMainTitle = (): { symbol: string; content: string; color: string } => {
+    // 如果有当前ToDo，显示当前ToDo
+    if (todoState?.current) {
+      return {
+        symbol: '⏵',
+        content: todoState.current.title,
+        color: currentTheme.colors.accent,
+      };
+    }
 
-  // Show todo state if available
-  if (todoState && (todoState.current || todoState.next)) {
-    return (
-      <Box flexDirection='column'>
-        {todoState.current && (
-          <Box>
-            <Text color={currentTheme.colors.accent}>⏵</Text>
-            <Box marginLeft={1}>
-              <Text color={currentTheme.colors.accent}>Current: {todoState.current.title}</Text>
-            </Box>
-          </Box>
-        )}
-        {todoState.next && (
-          <Box>
-            <Text color={currentTheme.colors.text.muted}>◦</Text>
-            <Box marginLeft={1}>
-              <Text color={currentTheme.colors.text.muted}>Next: {todoState.next.title}</Text>
-            </Box>
-          </Box>
-        )}
-      </Box>
-    );
-  }
+    // 如果正在处理任务且有消息，显示任务信息
+    if (isActive && message) {
+      return {
+        symbol: isActive && showSpinner ? '' : phaseSymbol,
+        content: `${message}${showProgress ? ` (${progress}%)` : ''}`,
+        color: currentTheme.colors.semantic.result,
+      };
+    }
 
-  // Show main progress
-  if (isActive && message) {
-    return (
-      <Box>
-        {isActive && showSpinner ? (
-          <Text color={currentTheme.colors.info}>
-            <Spinner type='dots' />
-          </Text>
-        ) : (
-          <Text color={currentTheme.colors.semantic.indicator}>{phaseSymbol}</Text>
-        )}
-        <Box marginLeft={1}>
-          <Text color={currentTheme.colors.semantic.result}>
-            {message}
-            {showProgress && <Text color={currentTheme.colors.semantic.metadata}> ({progress}%)</Text>}
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
+    // 否则显示帮助文本
+    const randomHelp = HELP_TEXTS[Math.floor(Math.random() * HELP_TEXTS.length)];
+    return {
+      symbol: '💡',
+      content: randomHelp,
+      color: currentTheme.colors.text.muted,
+    };
+  };
 
-  // Show random tip when idle
-  const randomTip = TIPS[Math.floor(Math.random() * TIPS.length)];
+  const mainTitle = getMainTitle();
+
   return (
-    <Box>
-      <Text color={currentTheme.colors.text.muted}>💡</Text>
-      <Box marginLeft={1}>
-        <Text color={currentTheme.colors.text.muted}>{randomTip}</Text>
+    <Box flexDirection='column'>
+      {/* 主标题 */}
+      <Box>
+        {mainTitle.symbol && (
+          <>
+            {isActive && showSpinner && !todoState?.current ? (
+              <Text color={currentTheme.colors.info}>
+                <Spinner type='dots' />
+              </Text>
+            ) : (
+              <Text color={mainTitle.color}>{mainTitle.symbol}</Text>
+            )}
+            <Box marginLeft={1}>
+              <Text color={mainTitle.color}>{mainTitle.content}</Text>
+            </Box>
+          </>
+        )}
+        {!mainTitle.symbol && <Text color={mainTitle.color}>{mainTitle.content}</Text>}
       </Box>
+
+      {/* 副标题 - 下一个ToDo */}
+      {todoState?.next && (
+        <Box>
+          <Text color={currentTheme.colors.text.muted}>◦</Text>
+          <Box marginLeft={1}>
+            <Text color={currentTheme.colors.text.muted}>{todoState.next.title}</Text>
+          </Box>
+        </Box>
+      )}
+
+      {/* 错误列表 - 显示在ToDo信息下方 */}
+      {errorState && errorState.errors.length > 0 && (
+        <Box flexDirection='column' marginTop={todoState?.current || todoState?.next ? 1 : 0}>
+          {errorState.errors.map((error, index) => (
+            <Box key={index}>
+              <Text color={currentTheme.colors.error}>!</Text>
+              <Box marginLeft={1}>
+                <Text color={currentTheme.colors.error}>{error}</Text>
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 };

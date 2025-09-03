@@ -10,7 +10,6 @@ import { FileWatcherService } from '../services/FileWatcherService.js';
 import { UIEventEmitter } from '../events/index.js';
 import type { LanguageModel } from 'ai';
 
-// Mock ConfigLoader for tests
 class MockConfigLoader extends ConfigLoader {
   override reloadConfig(): any {
     return TEST_CONFIG;
@@ -33,42 +32,56 @@ class MockConfigLoader extends ConfigLoader {
   }
 }
 
-// Mock ToolAgent for tests  
 class MockToolAgent extends ToolAgent {
   constructor() {
-    // This will be called by the DI container, so we need to use super() with proper types
-    // The actual dependencies will be injected by the container
+    // Call parent constructor with all required parameters including UIEventEmitter and Logger
     super(
       TEST_CONFIG,
       mockAISDK.createMockModel() as unknown as LanguageModel,
       {
         getToolNames: jest.fn().mockReturnValue([]),
-        getTools: jest.fn().mockReturnValue([]),
+        getAll: jest.fn().mockReturnValue({}),
+        get: jest.fn(),
         register: jest.fn(),
         registerMultiple: jest.fn(),
-        getContext: jest.fn().mockReturnValue({})
+        getContext: jest.fn().mockReturnValue({
+          configLoader: {},
+          securityEngine: {},
+          eventEmitter: {},
+          hitlManager: {}
+        })
       } as any,
       {
         getAbortSignal: jest.fn().mockReturnValue(new AbortController().signal),
         isInterrupted: jest.fn().mockReturnValue(false),
         startTask: jest.fn(),
-        stopTask: jest.fn(),
         interrupt: jest.fn(),
-        interrupted: false,
-        abortController: new AbortController()
+        reset: jest.fn()
+      } as any,
+      {
+        emit: jest.fn(),
+        on: jest.fn(),
+        onAll: jest.fn(),
+        once: jest.fn(),
+        clear: jest.fn(),
+        getListenerCount: jest.fn().mockReturnValue(0),
+        getSessionId: jest.fn().mockReturnValue('test-session')
       } as any,
       {
         info: jest.fn(),
         error: jest.fn(),
         warn: jest.fn(),
         debug: jest.fn(),
-        log: jest.fn()
+        log: jest.fn(),
+        setLogLevel: jest.fn(),
+        restoreConsole: jest.fn(),
+        cleanupOldLogs: jest.fn()
       } as any
     );
   }
 
   override async initializeAsync(customContext?: string): Promise<void> {
-    // Skip real initialization for tests
+    // Mock implementation
     return Promise.resolve();
   }
 
@@ -98,33 +111,31 @@ class MockToolAgent extends ToolAgent {
   }
 }
 
-/**
- * Create test container with all required dependencies for SessionService testing
- */
 export function createTestContainer(): Container {
   const container = new Container();
 
-  // Bind configuration
+  // Config bindings
   container.bind<any>(TYPES.Config).toConstantValue(TEST_CONFIG);
 
-  // Bind mock language model
+  // Model bindings
   container.bind<LanguageModel>(TYPES.LanguageModel).toDynamicValue(() => {
     return mockAISDK.createMockModel() as unknown as LanguageModel;
   }).inSingletonScope();
 
-  // Bind mock config loader
+  // ConfigLoader binding
   container.bind<ConfigLoader>(TYPES.ConfigLoader).to(MockConfigLoader).inSingletonScope();
 
-  // Bind mock ToolRegistry
+  // ToolRegistry binding
   container.bind(TYPES.ToolRegistry).toDynamicValue(() => ({
     getToolNames: jest.fn().mockReturnValue([]),
-    getTools: jest.fn().mockReturnValue([]),
+    getAll: jest.fn().mockReturnValue({}),
+    get: jest.fn(),
     register: jest.fn(),
     registerMultiple: jest.fn(),
     getContext: jest.fn().mockReturnValue({})
   })).inSingletonScope();
 
-  // Bind mock InterruptService
+  // InterruptService binding
   container.bind(TYPES.InterruptService).toDynamicValue(() => ({
     getAbortSignal: jest.fn().mockReturnValue(new AbortController().signal),
     isInterrupted: jest.fn().mockReturnValue(false),
@@ -136,7 +147,7 @@ export function createTestContainer(): Container {
     reset: jest.fn()
   })).inSingletonScope();
 
-  // Bind mock CompressorService
+  // CompressorService binding
   container.bind(TYPES.CompressorService).toDynamicValue(() => ({
     compressContextIfNeeded: jest.fn().mockResolvedValue(true),
     compressContext: jest.fn().mockResolvedValue('compressed'),
@@ -144,7 +155,7 @@ export function createTestContainer(): Container {
     reset: jest.fn()
   })).inSingletonScope();
 
-  // Bind mock EditModeManager
+  // EditModeManager binding
   container.bind(TYPES.EditModeManager).toDynamicValue(() => ({
     getCurrentMode: jest.fn().mockReturnValue('normal'),
     setMode: jest.fn(),
@@ -157,16 +168,29 @@ export function createTestContainer(): Container {
     reset: jest.fn()
   })).inSingletonScope();
 
-  // Bind mock agent
+  // TodoManager binding
+  container.bind(TYPES.TodoManager).toDynamicValue(() => ({
+    createTool: jest.fn().mockReturnValue({
+      description: 'Mock todo manager',
+      inputSchema: {},
+      execute: jest.fn().mockResolvedValue({ success: true })
+    }),
+    createPlan: jest.fn().mockReturnValue({ success: true }),
+    addTodo: jest.fn().mockReturnValue({ success: true }),
+    getAllTodos: jest.fn().mockReturnValue([]),
+    getPlan: jest.fn().mockReturnValue(null)
+  })).inSingletonScope();
+
+  // ToolAgent binding
   container.bind<ToolAgent>(TYPES.ToolAgent).to(MockToolAgent).inSingletonScope();
 
-  // Bind file watcher service
+  // FileWatcherService binding
   container.bind<FileWatcherService>(TYPES.FileWatcherService).to(FileWatcherService).inSingletonScope();
 
-  // Bind event emitter
+  // UIEventEmitter binding
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter).toDynamicValue(() => new UIEventEmitter()).inSingletonScope();
 
-  // SessionService factory
+  // SessionServiceFactory binding
   container.bind(TYPES.SessionServiceFactory).toDynamicValue(() => {
     return () => {
       const agent = container.get<ToolAgent>(TYPES.ToolAgent);
@@ -175,6 +199,7 @@ export function createTestContainer(): Container {
       const eventEmitter = container.get<UIEventEmitter>(TYPES.UIEventEmitter);
       const interruptService = container.get(TYPES.InterruptService) as any;
       const toolRegistry = container.get(TYPES.ToolRegistry) as any;
+      const todoManager = container.get(TYPES.TodoManager) as any;
       const compressorService = container.get(TYPES.CompressorService) as any;
       const editModeManager = container.get(TYPES.EditModeManager) as any;
 
@@ -185,6 +210,7 @@ export function createTestContainer(): Container {
         eventEmitter,
         interruptService,
         toolRegistry,
+        todoManager,
         compressorService,
         editModeManager
       );

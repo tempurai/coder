@@ -34,14 +34,15 @@ Once a plan is in place, the `SmartAgent` begins the execution loop, orchestrati
 
 - **`SmartAgent` (Strategic Layer)**: The high-level orchestrator that directs the entire process. It queries the `TodoManager` for the next step, decides which tools are needed, and processes the results to inform its next move.
 
-- **`ToolAgent` (Execution Layer)**: The tactical agent that receives concrete instructions from the `SmartAgent` (e.g., "run this shell command," "patch this file"). Its sole purpose is to execute one or more tools and report the results.
+- **`ToolAgent` (Execution Layer)**: The tactical agent that serves as the **common execution layer** for the entire agentic core. It receives concrete instructions from either the `SmartAgent` or a `SubAgent` (e.g., "run this shell command") and is solely responsible for interfacing with the Tooling System.
 
 - **`SubAgent` (The Specialist)**: For highly complex, self-contained tasks, the `SmartAgent` can delegate the work to an autonomous `SubAgent`. This is a powerful delegation pattern.
-  - **When is it used?** For tasks like "Perform a deep analysis of the entire codebase to find all usages of this deprecated library" or "Refactor this entire module and ensure all corresponding tests pass."
-  - **Benefit**: The `SubAgent` works in an isolated context, tackling the complex task without polluting the main agent's workflow with intermediate steps. It returns only the final, comprehensive result.
+  - **When is it used?** For tasks like "Perform a deep analysis of the entire codebase to find all usages of this deprecated library."
+  - **Benefit**: The `SubAgent` works in an isolated context. It follows the same architectural pattern as the main agent—performing its own reasoning and then **directing the `ToolAgent`** to execute its commands. It returns only the final, comprehensive result.
 
-- **`CompressedAgent` (The Memory Manager)**: To handle long conversations without losing context or exceeding LLM token limits, this agent is responsible for the system's "long-term memory."
-  - **Function**: It periodically takes the older parts of the conversation history and compresses them into a concise summary, preserving key facts, user preferences, and important outcomes. This summary is then used as context for future steps.
+- **`CompressedAgent` (The Memory Manager)**: To handle long conversations without losing context, this agent is responsible for the system's "long-term memory." It periodically compresses older parts of the conversation history into a concise summary that is fed back into the `SmartAgent`'s context.
+
+- **`AgentOrchestrator` (The Governor)**: This is a meta-level component that monitors the `SmartAgent`'s execution loop. Its key feature is the **`LoopDetector`**, which analyzes the agent's recent actions to identify repetitive, non-productive behavior and prevent the agent from getting stuck.
 
 - **Agentic Interaction Model (ASCII)**:
 
@@ -53,14 +54,14 @@ Once a plan is in place, the `SmartAgent` begins the execution loop, orchestrati
                                     v                        v
                          +-------------------+      +--------------------+
                          | CompressedAgent   |      |    SmartAgent      |----uses---->+-------------+
-                         | (provides memory) |      | (Execution Loop)   |             | TodoManager |
-                         +-------------------+      +--------------------+             +-------------+
-                                                          |
-                                     +--------------------+--------------------+
-                                     | (delegates)        | (instructs)        |
-                                     v                    v                    v
+                         | (provides memory) |<-----| (Execution Loop)   |             | TodoManager |
+                         +-------------------+      +--------------------+<------------+-------------+
+                                                          |                            | Agent         |
+                                     +--------------------+--------------------------+ | Orchestrator  |
+                                     | (delegates)        | (instructs)                | (LoopDetector)|
+                                     v                    v                            +---------------+
                          +----------------------+      +-------------+      +----------------+
-                         |    SubAgent          |      |  ToolAgent  |----->| Tooling System |
+                         |    SubAgent          |----->|  ToolAgent  |----->| Tooling System |
                          | (for complex tasks)  |      +-------------+      +----------------+
                          +----------------------+
   ```

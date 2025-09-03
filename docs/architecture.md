@@ -46,23 +46,23 @@ Once a plan is in place, the `SmartAgent` begins the execution loop, orchestrati
 - **Agentic Interaction Model (ASCII)**:
 
   ```
-  +-----------------+      +--------------------+
-  |  User's Goal    |----->|   Planning Phase   |
-  +-----------------+      +--------------------+
-                                   | (creates plan)
-                                   v
-  +-----------------+      +--------------------+
-  | CompressedAgent |<---->|    SmartAgent      |----uses---->+-------------+
-  | (provides memory) |      | (Execution Loop)   |           | TodoManager |
-  +-----------------+      +--------------------+             +-------------+
-                                   |
-              +--------------------+--------------------+
-              | (delegates)        | (instructs)        |
-              v                    v                    v
-  +----------------------+      +-------------+      +----------------+
-  |    SubAgent          |      |  ToolAgent  |----->| Tooling System |
-  | (for complex tasks)  |      +-------------+      +----------------+
-  +----------------------+
+  +-----------------+      +--------------------+      +--------------------+
+  |  User's Goal    |----->|   Session Service  |----->|   Planning Phase   |
+  +-----------------+      +--------------------+      +--------------------+
+                                    | (Compress Context)     | (creates plan)
+                                    v                        v
+                         +-------------------+      +--------------------+
+                         | CompressedAgent   |      |    SmartAgent      |----uses---->+-------------+
+                         | (provides memory) |      | (Execution Loop)   |             | TodoManager |
+                         +-------------------+      +--------------------+             +-------------+
+                                                          |
+                                     +--------------------+--------------------+
+                                     | (delegates)        | (instructs)        |
+                                     v                    v                    v
+                         +----------------------+      +-------------+      +----------------+
+                         |    SubAgent          |      |  ToolAgent  |----->| Tooling System |
+                         | (for complex tasks)  |      +-------------+      +----------------+
+                         +----------------------+
   ```
 
 #### 2. The Session & Service Layer (The "Coordinator")

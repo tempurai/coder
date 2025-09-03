@@ -13,6 +13,9 @@
   <a href="#core-philosophy">Core Philosophy</a>
 </p>
 
+> ⚠️ **Currently in Beta**  
+> Tempurai Coder is still under active development. Features and behaviors may change frequently.
+
 ---
 
 **An AI-Powered Command-Line Assistant for Complex Software Engineering**

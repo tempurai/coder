@@ -73,14 +73,14 @@ Shell commands are the PRIMARY tool for most development operations. Use ${ToolN
 ## MANDATORY Dedicated Tools - NO SHELL ALTERNATIVES
 **NEVER use shell commands for operations that have dedicated tools:**
 - **File Writing/Creation**: ALWAYS use ${ToolNames.WRITE_FILE} or ${ToolNames.CREATE_FILE}
-  - ❌ DON'T: \`echo "content" > file.txt\`, \`cat > file.txt\`, \`sed -i\`, \`awk\`, \`tee\`
-  - ✅ DO: Use ${ToolNames.WRITE_FILE} or ${ToolNames.CREATE_FILE}
+  - DON'T: \`echo "content" > file.txt\`, \`cat > file.txt\`, \`sed -i\`, \`awk\`, \`tee\`
+  - DO: Use ${ToolNames.WRITE_FILE} or ${ToolNames.CREATE_FILE}
 - **File Patching/Modification**: ALWAYS use ${ToolNames.APPLY_PATCH}
-  - ❌ DON'T: \`sed -i\`, \`awk -i\`, \`perl -i\`, manual text replacement with shell
-  - ✅ DO: Use ${ToolNames.APPLY_PATCH} with proper unified diff format
+  - DON'T: \`sed -i\`, \`awk -i\`, \`perl -i\`, manual text replacement with shell
+  - DO: Use ${ToolNames.APPLY_PATCH} with proper unified diff format
 - **Web Operations**: ALWAYS use dedicated tools
-  - ❌ DON'T: \`curl\`, \`wget\`, \`lynx\`
-  - ✅ DO: Use ${ToolNames.WEB_SEARCH} or ${ToolNames.URL_FETCH}
+  - DON'T: \`curl\`, \`wget\`, \`lynx\`
+  - DO: Use ${ToolNames.WEB_SEARCH} or ${ToolNames.URL_FETCH}
 
 ## Decision Framework
 1. **Does a dedicated tool exist for this specific operation?** → Use the dedicated tool

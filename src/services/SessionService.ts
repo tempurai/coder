@@ -130,7 +130,6 @@ export class SessionService {
 
             const taskResult = await smartAgent.executeTask(query, fullHistory, executionMode);
 
-            // TODO WAITING_FOR_USER
             taskResult.history = taskResult.history.filter(msg => msg.role !== 'system');
             this.recentHistory.push(...taskResult.history);
             this.interactionCount++;
@@ -140,10 +139,9 @@ export class SessionService {
             this.eventEmitter.emit({
                 type: 'task_completed',
                 displayTitle: "Finished",
-                success: taskResult.terminateReason === 'FINISHED',
+                terminateReason: taskResult.terminateReason,
                 duration: taskResult.metadata?.duration,
                 iterations: taskResult.metadata?.iterations,
-                summary: taskResult.terminateReason === 'FINISHED' ? 'Task completed successfully' : 'Task failed',
                 error: taskResult.error,
             } as TaskCompletedEvent);
 

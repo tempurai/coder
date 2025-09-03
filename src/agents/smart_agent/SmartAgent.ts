@@ -9,7 +9,7 @@ import { InterruptService } from '../../services/InterruptService.js';
 import { ToolRegistry, ToolNames } from '../../tools/ToolRegistry.js';
 import { z, ZodSchema } from "zod";
 import { SystemInfoEvent, TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent, TodoEndEvent } from '../../events/EventTypes.js';
-import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PLAN_PROMPT, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
+import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PLAN_PROMPT, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
 import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
 import { ExecutionMode } from '../../services/ExecutionModeManager.js';
 import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
@@ -42,8 +42,8 @@ export class SmartAgent {
 
   async executeTask(initialQuery: string, sessionHistory: Messages = [], executionMode: ExecutionMode = ExecutionMode.CODE): Promise<TaskExecutionResult> {
     this.memory = [...sessionHistory.map((msg, i) => ({ ...msg, iteration: 0 }))];
-    console.log(`Starting intelligent task execution: ${initialQuery} (mode: ${executionMode})`);
 
+    console.log(`Starting intelligent task execution: ${initialQuery} (mode: ${executionMode})`);
     const startTime = Date.now();
 
     try {
@@ -52,7 +52,6 @@ export class SmartAgent {
       }
 
       const result = await this.executeMainLoop(initialQuery, executionMode);
-
       return {
         ...result,
         metadata: {
@@ -108,6 +107,7 @@ export class SmartAgent {
         source: 'agent',
         message: `Initial planning failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       } as SystemInfoEvent);
+
       console.warn('Initial planning failed, proceeding with direct execution:', error);
     }
   }
@@ -143,33 +143,42 @@ export class SmartAgent {
 
       const { response, error } = await this.executeSingleIteration(currentIteration, executionMode);
 
+      // Check orchestrator every 10 iterations for loop detection and continuation
       if (currentIteration % 10 === 0) {
         const iterationHistory = this.processHistory(this.memory);
+
         const loopDetection = await this.orchestrator.detectLoop(iterationHistory);
         if (loopDetection.isLoop) {
-          this.eventEmitter.emit({
-            type: 'system_info',
-            level: 'error',
-            source: 'agent',
-            message: `Loop detected: ${loopDetection.description}`
-          } as SystemInfoEvent);
+          this.eventEmitter.emit({ type: 'system_info', level: 'error', source: 'agent', message: `Loop detected: ${loopDetection.description}` } as SystemInfoEvent);
           console.log(`Loop detected: ${loopDetection.description}`);
           return { terminateReason: 'ERROR', history: iterationHistory, error: loopDetection.description || 'Repetitive behavior detected' };
         }
-
-        const shouldContinue = await this.orchestrator.shouldContinue(iterationHistory);
-        if (!shouldContinue) {
-          return { terminateReason: 'WAITING_FOR_USER', history: iterationHistory };
-        }
       }
 
-      isCompleted = response.finished;
+      isCompleted = response.finished === 'finished';
+
       if (isCompleted) {
-        this.eventEmitter.emit({ type: 'text_generated', text: response.result } as TextGeneratedEvent);
+        this.eventEmitter.emit({ type: 'text_generated', text: response.result || 'Task completed' } as TextGeneratedEvent);
         break;
       }
 
+      // Handle awaiting_user state
+      if (response.finished === 'awaiting_user') {
+        this.eventEmitter.emit({ type: 'text_generated', text: response.reasoning } as TextGeneratedEvent);
+
+        this.eventEmitter.emit({ type: 'text_generated', text: response.result } as TextGeneratedEvent);
+
+        return {
+          terminateReason: 'WAITING_FOR_USER',
+          history: this.processHistory(this.memory),
+          metadata: {
+            iterations: currentIteration,
+          }
+        };
+      }
+
       recentErrorCount += (error ? 1 : 0);
+
       if (recentErrorCount >= 2) {
         this.eventEmitter.emit({
           type: 'system_info',
@@ -216,7 +225,11 @@ export class SmartAgent {
 
       console.log(`Agent Response: ${JSON.stringify(response)}`);
 
-      if (response.finished) {
+      if (response.finished === 'finished') {
+        return { response };
+      }
+
+      if (response.finished === 'awaiting_user') {
         return { response };
       }
 
@@ -235,16 +248,19 @@ export class SmartAgent {
       return { response };
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
+
       this.eventEmitter.emit({
         type: 'system_info',
         level: 'error',
         source: 'agent',
         message: `Iteration ${currentIteration} failed: ${errorMessage}`
       } as SystemInfoEvent);
+
       console.error(`Iteration ${currentIteration} failed: ${errorMessage}`);
 
-      const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "" } as SmartAgentResponseFinished;
+      const response = { reasoning: 'Iteration error occurred', actions: [], finished: 'finished' as const, result: "Task failed due to iteration error" } satisfies SmartAgentResponse;
       this.memory.push({ role: 'user', content: `Observation: ${response}`, iteration: currentIteration });
+
       return { response, error: errorMessage };
     }
   }

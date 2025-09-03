@@ -24,11 +24,13 @@ export interface ToolExecutionState {
 
 export const enum CLISymbol {
     USER_INPUT = '>',
-    AI_RESPONSE = '●',
+    AI_RESPONSE = '✦',
     TOOL_EXECUTING = '~',
     TOOL_SUCCESS = '✓',
     TOOL_FAILED = '✗',
-    SYSTEM_ERROR = '!'
+    SYSTEM_ERROR = '!',
+    WAITING_INPUT = '●',
+    USER_INTERRUPT = '␛'
 }
 
 export const enum CLIEventType {
@@ -53,6 +55,41 @@ export interface CLIEvent {
     subEvent?: CLISubEvent[];
     timestamp: Date;
     originalEvent?: UIEvent;
+}
+
+function getTaskCompleteDisplay(terminateReason: string, error?: string): { symbol: CLISymbol, content: string } {
+    switch (terminateReason) {
+        case 'FINISHED':
+            return {
+                symbol: CLISymbol.AI_RESPONSE,
+                content: 'Task completed'
+            };
+        case 'WAITING_FOR_USER':
+            return {
+                symbol: CLISymbol.WAITING_INPUT,
+                content: 'Waiting for your input to continue'
+            };
+        case 'INTERRUPTED':
+            return {
+                symbol: CLISymbol.USER_INTERRUPT,
+                content: 'Task interrupted by user'
+            };
+        case 'TIMEOUT':
+            return {
+                symbol: CLISymbol.SYSTEM_ERROR,
+                content: 'Task timed out after maximum iterations'
+            };
+        case 'ERROR':
+            return {
+                symbol: CLISymbol.SYSTEM_ERROR,
+                content: `Task failed: ${error || 'Unknown error'}`
+            };
+        default:
+            return {
+                symbol: CLISymbol.SYSTEM_ERROR,
+                content: `Task ended with status: ${terminateReason}`
+            };
+    }
 }
 
 export const useSessionEvents = (sessionService: SessionService) => {
@@ -106,7 +143,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     ...baseEvent,
                     type: CLIEventType.SYSTEM_INFO,
                     symbol: CLISymbol.AI_RESPONSE,
-                    content: `Todo started: ${todoStartEvent.title}`
+                    content: `Started: ${todoStartEvent.title}`
                 };
 
             case UIEventType.TodoEnd:
@@ -161,11 +198,13 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
             case UIEventType.TaskComplete:
                 const taskCompleteEvent = uiEvent as any;
+                if (taskCompleteEvent.terminateReason == "FINISHED") {
+                    return null
+                }
                 return {
                     ...baseEvent,
                     type: CLIEventType.SYSTEM_INFO,
-                    symbol: taskCompleteEvent.success ? CLISymbol.AI_RESPONSE : CLISymbol.SYSTEM_ERROR,
-                    content: taskCompleteEvent.success ? 'Task completed' : `Task failed: ${taskCompleteEvent.error || 'Unknown error'}`
+                    ...getTaskCompleteDisplay(taskCompleteEvent.terminateReason, taskCompleteEvent.error),
                 };
 
             case UIEventType.SystemInfo:

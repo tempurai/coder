@@ -1,3 +1,4 @@
+import { TerminateReason } from '../agents/tool_agent/ToolAgent.js';
 import { ConfirmationChoice } from '../services/HITLManager.js';
 
 export interface BaseEvent {
@@ -17,7 +18,7 @@ export interface TaskStartedEvent extends BaseEvent {
 export interface TaskCompletedEvent extends BaseEvent {
   type: 'task_completed';
   displayTitle: string;
-  success: boolean;
+  terminateReason: TerminateReason;
   duration: number;
   iterations: number;
   summary: string;

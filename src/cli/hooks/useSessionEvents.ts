@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { SessionService } from '../../services/SessionService.js';
-import { UIEvent, UIEventType, ToolConfirmationResponseEvent, SystemInfoEvent } from '../../events/index.js';
+import { UIEvent, UIEventType, ToolConfirmationResponseEvent, SystemInfoEvent, TodoStartEvent, TodoEndEvent } from '../../events/index.js';
 import { ConfirmationChoice } from '../../services/HITLManager.js';
 
 export interface PendingConfirmation {
@@ -22,12 +22,197 @@ export interface ToolExecutionState {
     currentStatus: 'started' | 'executing' | 'completed' | 'failed';
 }
 
+export const enum CLISymbol {
+    USER_INPUT = '>',
+    AI_RESPONSE = '●',
+    TOOL_EXECUTING = '~',
+    TOOL_SUCCESS = '✓',
+    TOOL_FAILED = '✗',
+    SYSTEM_ERROR = '!'
+}
+
+export const enum CLIEventType {
+    USER_INPUT = 'user_input',
+    AI_RESPONSE = 'ai_response',
+    TOOL_EXECUTION = 'tool_execution',
+    SYSTEM_INFO = 'system_info'
+}
+
+export interface CLISubEvent {
+    type: 'error' | 'info' | 'output';
+    content: string;
+    source?: string;
+    sourceId?: string;
+}
+
+export interface CLIEvent {
+    id: string;
+    type: CLIEventType;
+    symbol: CLISymbol;
+    content: string;
+    subEvent?: CLISubEvent[];
+    timestamp: Date;
+    originalEvent?: UIEvent;
+}
+
 export const useSessionEvents = (sessionService: SessionService) => {
     const [events, setEvents] = useState<UIEvent[]>([]);
+    const [cliEvents, setCLIEvents] = useState<CLIEvent[]>([]);
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
     const [currentActivity, setCurrentActivity] = useState<string>('');
     const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
     const [toolExecutions, setToolExecutions] = useState<Map<string, ToolExecutionState>>(new Map());
+
+    const convertToCLIEvent = useCallback((uiEvent: UIEvent): CLIEvent | null => {
+        const baseEvent = {
+            id: uiEvent.id || `cli-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp: uiEvent.timestamp || new Date(),
+            originalEvent: uiEvent
+        };
+
+        const subEvent: CLISubEvent[] = [];
+
+        switch (uiEvent.type) {
+            case UIEventType.UserInput:
+                const userEvent = uiEvent as any;
+                if (userEvent.error) {
+                    subEvent.push({
+                        type: 'error',
+                        content: userEvent.error
+                    });
+                }
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.USER_INPUT,
+                    symbol: CLISymbol.USER_INPUT,
+                    content: userEvent.input?.trim() || '',
+                    subEvent: subEvent.length > 0 ? subEvent : undefined
+                };
+
+            case UIEventType.TextGenerated:
+            case UIEventType.ThoughtGenerated:
+                const textEvent = uiEvent as any;
+                const text = textEvent.text || textEvent.thought || '';
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.AI_RESPONSE,
+                    symbol: CLISymbol.AI_RESPONSE,
+                    content: text.trim()
+                };
+
+            case UIEventType.TodoStart:
+                const todoStartEvent = uiEvent as TodoStartEvent;
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.SYSTEM_INFO,
+                    symbol: CLISymbol.AI_RESPONSE,
+                    content: `Todo started: ${todoStartEvent.title}`
+                };
+
+            case UIEventType.TodoEnd:
+                const todoEndEvent = uiEvent as TodoEndEvent;
+                return null
+
+            case UIEventType.ToolExecutionStarted:
+                const toolStartEvent = uiEvent as any;
+                const executionStatus = toolStartEvent.executionStatus || 'started';
+                const isCompleted = executionStatus === 'completed' || executionStatus === 'failed';
+                const isError = executionStatus === 'failed';
+
+                let symbol: CLISymbol = CLISymbol.TOOL_EXECUTING;
+                if (isCompleted) {
+                    symbol = isError ? CLISymbol.TOOL_FAILED : CLISymbol.TOOL_SUCCESS;
+                }
+
+                const displayTitle = toolStartEvent.displayTitle || `${toolStartEvent.toolName}()`;
+
+                if (toolStartEvent.completedData?.displayDetails) {
+                    subEvent.push({
+                        type: isError ? 'error' : 'output',
+                        content: toolStartEvent.completedData.displayDetails
+                    });
+                }
+
+                if (toolStartEvent.outputData && toolStartEvent.outputData.length > 0) {
+                    toolStartEvent.outputData.forEach((output: any) => {
+                        if (output.content && !output.content.startsWith('Executing:')) {
+                            subEvent.push({
+                                type: 'output',
+                                content: output.content
+                            });
+                        }
+                    });
+                }
+
+                if (toolStartEvent.completedData?.error) {
+                    subEvent.push({
+                        type: 'error',
+                        content: toolStartEvent.completedData.error
+                    });
+                }
+
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.TOOL_EXECUTION,
+                    symbol,
+                    content: displayTitle,
+                    subEvent: subEvent.length > 0 ? subEvent : undefined
+                };
+
+            case UIEventType.TaskComplete:
+                const taskCompleteEvent = uiEvent as any;
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.SYSTEM_INFO,
+                    symbol: taskCompleteEvent.success ? CLISymbol.AI_RESPONSE : CLISymbol.SYSTEM_ERROR,
+                    content: taskCompleteEvent.success ? 'Task completed' : `Task failed: ${taskCompleteEvent.error || 'Unknown error'}`
+                };
+
+            case UIEventType.SystemInfo:
+                const sysEvent = uiEvent as SystemInfoEvent;
+                const subEventForSysInfo: CLISubEvent[] = [];
+
+                if (sysEvent.source && sysEvent.sourceId) {
+                    subEventForSysInfo.push({
+                        type: sysEvent.level === 'error' ? 'error' : 'info',
+                        content: sysEvent.message?.trim() || '',
+                        source: sysEvent.source,
+                        sourceId: sysEvent.sourceId
+                    });
+                }
+
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.SYSTEM_INFO,
+                    symbol: sysEvent.level === 'error' ? CLISymbol.SYSTEM_ERROR : CLISymbol.AI_RESPONSE,
+                    content: sysEvent.message?.trim() || '',
+                    subEvent: subEventForSysInfo.length > 0 ? subEventForSysInfo : undefined
+                };
+
+            case UIEventType.SnapshotCreated:
+                const snapEvent = uiEvent as any;
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.SYSTEM_INFO,
+                    symbol: CLISymbol.AI_RESPONSE,
+                    content: `Snapshot created: ${snapEvent.snapshotId?.substring(0, 8)}...`
+                };
+
+            case UIEventType.ToolConfirmationRequest:
+            case UIEventType.ToolConfirmationResponse:
+            case UIEventType.TaskStart:
+                return null;
+
+            default:
+                const defaultEvent = uiEvent as any;
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.SYSTEM_INFO,
+                    symbol: CLISymbol.AI_RESPONSE,
+                    content: defaultEvent.displayTitle?.trim() || uiEvent.type
+                };
+        }
+    }, []);
 
     const mergeToolExecutionEvents = useCallback((toolExecutionId: string): UIEvent | null => {
         const state = toolExecutions.get(toolExecutionId);
@@ -47,6 +232,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
         }
 
         mergedEvent.executionStatus = state.currentStatus;
+
         return mergedEvent;
     }, [toolExecutions]);
 
@@ -158,6 +344,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
                                 (e as any).toolExecutionId === toolExecutionId &&
                                 e.type === UIEventType.ToolExecutionStarted
                             );
+
                             if (existingIndex !== -1) {
                                 const updatedEvent = {
                                     ...newEvents[existingIndex],
@@ -171,12 +358,12 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
                     return newEvents;
                 });
+
                 eventBuffer = [];
             }
         };
 
         const handleEvent = (event: UIEvent) => {
-            // 处理系统信息错误事件
             if (event.type === 'system_info') {
                 const sysEvent = event as SystemInfoEvent;
                 if (sysEvent.level === 'error') {
@@ -194,6 +381,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
             if (batchTimeout) {
                 clearTimeout(batchTimeout);
             }
+
             batchTimeout = setTimeout(flushEvents, 16);
 
             switch (event.type) {
@@ -201,12 +389,14 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     setIsProcessing(true);
                     setCurrentActivity('Processing...');
                     break;
+
                 case UIEventType.TaskComplete:
                     setTimeout(() => {
                         setIsProcessing(false);
                         setCurrentActivity('');
                     }, 500);
                     break;
+
                 case UIEventType.ToolConfirmationRequest:
                     const confirmEvent = event as any;
                     setPendingConfirmation({
@@ -217,9 +407,11 @@ export const useSessionEvents = (sessionService: SessionService) => {
                         options: confirmEvent.options,
                     });
                     break;
+
                 case UIEventType.ToolConfirmationResponse:
                     setPendingConfirmation(null);
                     break;
+
                 case UIEventType.ToolExecutionStarted:
                     break;
             }
@@ -236,6 +428,14 @@ export const useSessionEvents = (sessionService: SessionService) => {
         };
     }, [sessionService, pendingConfirmation, mergeToolExecutionEvents, handleSystemInfoError]);
 
+    useEffect(() => {
+        const convertedEvents = events
+            .map(convertToCLIEvent)
+            .filter((event): event is CLIEvent => event !== null);
+
+        setCLIEvents(convertedEvents);
+    }, [events, convertToCLIEvent]);
+
     const handleConfirmation = useCallback(
         (confirmationId: string, choice: 'yes' | 'no' | 'yes_and_remember') => {
             if (pendingConfirmation?.confirmationId === confirmationId) {
@@ -245,6 +445,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     approved: choice === ConfirmationChoice.YES || choice === ConfirmationChoice.YES_AND_REMEMBER,
                     choice,
                 } as Omit<ToolConfirmationResponseEvent, 'id' | 'timestamp' | 'sessionId'>);
+
                 setPendingConfirmation(null);
             }
         },
@@ -253,6 +454,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
     return {
         events,
+        cliEvents,
         isProcessing,
         pendingConfirmation,
         currentActivity,

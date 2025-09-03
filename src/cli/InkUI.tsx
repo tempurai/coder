@@ -7,10 +7,9 @@ import { ThemeSelector } from './components/ThemeSelector.js';
 import { InputContainer } from './components/InputContainer.js';
 import { useSessionEvents } from './hooks/useSessionEvents.js';
 import { useEventSeparation } from './hooks/useEventSeparation.js';
-import { EventItem } from './components/EventItem.js';
+import { EventRouter } from './components/events/EventRouter.js';
 import { ProgressIndicator } from './components/ProgressIndicator.js';
 import { ExecutionMode, getExecutionModeDisplayInfo } from '../services/ExecutionModeManager.js';
-import { UIEventType } from '../events/EventTypes.js';
 
 type AppState = 'welcome' | 'theme-selection' | 'ready';
 
@@ -24,8 +23,9 @@ interface MainUIProps {
 
 const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
   const { currentTheme } = useTheme();
-  const { events, isProcessing, pendingConfirmation, currentActivity, handleConfirmation, toolExecutions } = useSessionEvents(sessionService);
-  const { staticEvents, dynamicEvents } = useEventSeparation(events);
+  const { cliEvents, isProcessing, pendingConfirmation, currentActivity, handleConfirmation } = useSessionEvents(sessionService);
+  const { staticEvents, dynamicEvents } = useEventSeparation(cliEvents);
+
   const [editModeStatus, setEditModeStatus] = useState<string>('');
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(ExecutionMode.CODE);
 
@@ -82,12 +82,13 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
     </Box>,
     ...staticEvents
       .filter((event) => {
-        const hiddenEventTypes = [UIEventType.TaskStart, UIEventType.ToolConfirmationRequest, UIEventType.ToolConfirmationResponse];
-        return !hiddenEventTypes.includes(event.type as any);
+        // 过滤掉确认相关事件
+        const hiddenEventTypes = ['tool_confirmation_request', 'tool_confirmation_response'];
+        return !hiddenEventTypes.includes(event.type);
       })
       .map((event, index) => (
         <Box key={event.id || `static-${index}`} marginBottom={1}>
-          <EventItem event={event} index={index} />
+          <EventRouter event={event} index={index} />
         </Box>
       )),
   ];
@@ -98,11 +99,11 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 
       {dynamicEvents.map((event, index) => (
         <Box key={event.id || `dynamic-${index}`} marginBottom={0}>
-          <EventItem event={event} index={index} />
+          <EventRouter event={event} index={index} />
         </Box>
       ))}
 
-      {isProcessing && (
+      {(isProcessing || !staticEvents.length) && (
         <Box marginY={0}>
           <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} sessionService={sessionService} />
         </Box>

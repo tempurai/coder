@@ -1,86 +1,66 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { UIEvent, TaskCompletedEvent, SystemInfoEvent } from '../../../events/index.js';
+import { CLIEvent, CLISymbol } from '../../hooks/useSessionEvents.js';
 import { useTheme } from '../../themes/index.js';
-import { StatusIndicator } from '../StatusIndicator.js';
-import { EventRouter } from './EventRouter.js';
 
 interface SystemEventItemProps {
-  event: UIEvent;
+  event: CLIEvent;
   index: number;
 }
 
 export const SystemEventItem: React.FC<SystemEventItemProps> = ({ event }) => {
   const { currentTheme } = useTheme();
 
-  const getEventContent = () => {
-    switch (event.type) {
-      case 'user_input':
-        const userEvent = event as any;
-        return {
-          indicatorType: 'user' as const,
-          content: userEvent.input?.trim() || '',
-        };
-      case 'task_completed':
-        const taskCompleteEvent = event as TaskCompletedEvent;
-        return {
-          indicatorType: taskCompleteEvent.success ? ('system' as const) : ('error' as const),
-          content: taskCompleteEvent.success ? 'Task completed' : `Task failed: ${taskCompleteEvent.error || 'Unknown error'}`,
-        };
-      case 'system_info':
-        const sysEvent = event as any;
-        return {
-          indicatorType: sysEvent.level === 'error' ? ('error' as const) : ('system' as const),
-          content: sysEvent.message?.trim() || '',
-        };
-      case 'system_info':
-        const systemEvent = event as SystemInfoEvent;
-        return {
-          indicatorType: systemEvent.level === 'error' ? ('error' as const) : ('system' as const),
-          content: systemEvent.message?.trim() || '',
-        };
-
-      case 'snapshot_created':
-        const snapEvent = event as any;
-        return {
-          indicatorType: 'system' as const,
-          content: `Snapshot created: ${snapEvent.snapshotId?.substring(0, 8)}...`,
-        };
+  const getSymbolColor = (symbol: CLISymbol) => {
+    switch (symbol) {
+      case CLISymbol.USER_INPUT:
+        return currentTheme.colors.semantic.functionCall;
+      case CLISymbol.AI_RESPONSE:
+        return currentTheme.colors.info;
+      case CLISymbol.TOOL_EXECUTING:
+        return currentTheme.colors.warning;
+      case CLISymbol.TOOL_SUCCESS:
+        return currentTheme.colors.success;
+      case CLISymbol.TOOL_FAILED:
+      case CLISymbol.SYSTEM_ERROR:
+        return currentTheme.colors.error;
       default:
-        const deafultEvent = event as any;
-        return {
-          indicatorType: 'system' as const,
-          content: deafultEvent.displayTitle?.trim() || event.type,
-        };
+        return currentTheme.colors.text.primary;
     }
   };
 
-  const { indicatorType, content } = getEventContent();
+  const getContentColor = (symbol: CLISymbol) => {
+    switch (symbol) {
+      case CLISymbol.TOOL_FAILED:
+      case CLISymbol.SYSTEM_ERROR:
+        return currentTheme.colors.error;
+      default:
+        return currentTheme.colors.text.primary;
+    }
+  };
 
   return (
     <Box flexDirection='column'>
       <Box>
-        <Box marginRight={1}>
-          <StatusIndicator type={indicatorType} />
+        <Text color={getSymbolColor(event.symbol)}>{event.symbol}</Text>
+        <Box marginLeft={1} flexGrow={1} width={process.stdout.columns - 6}>
+          <Text color={getContentColor(event.symbol)} wrap='wrap'>
+            {event.content}
+          </Text>
         </Box>
-        <Text color={currentTheme.colors.text.primary} wrap='wrap'>
-          {content}
-        </Text>
       </Box>
 
-      {/* 显示子事件 */}
-      {event.subEvents && event.subEvents.length > 0 && (
-        <Box flexDirection='column' marginLeft={2}>
-          {event.subEvents.map((subEvent, index) => (
-            <Box key={index}>
-              <Text color={currentTheme.colors.text.muted}>⎿ </Text>
-              <Box flexGrow={1}>
-                <EventRouter event={subEvent} index={index} />
-              </Box>
+      {event.subEvent &&
+        event.subEvent.map((subItem, index) => (
+          <Box key={index}>
+            <Text color={currentTheme.colors.text.muted}>{'  '}L</Text>
+            <Box marginLeft={1} flexGrow={1} width={process.stdout.columns - 8}>
+              <Text color={subItem.type === 'error' ? currentTheme.colors.error : currentTheme.colors.text.secondary} wrap='wrap'>
+                {subItem.content}
+              </Text>
             </Box>
-          ))}
-        </Box>
-      )}
+          </Box>
+        ))}
     </Box>
   );
 };

@@ -1,8 +1,8 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { ThemeConfig } from '../themes/index.js';
-import { EventItem } from './EventItem.js';
-import { UIEvent } from '../../events/index.js';
+import { EventRouter } from './events/EventRouter.js';
+import { CLIEvent, CLIEventType, CLISymbol, CLISubEvent } from '../hooks/useSessionEvents.js';
 import { ThemeProvider } from '../themes/ThemeProvider.js';
 
 interface CodePreviewProps {
@@ -10,127 +10,112 @@ interface CodePreviewProps {
 }
 
 export const CodePreview: React.FC<CodePreviewProps> = ({ theme }) => {
-  // Create realistic mock events that match actual usage
-  const mockEvents: UIEvent[] = [
-    // User input event
+  const mockEvents: CLIEvent[] = [
+    // User input
     {
       id: 'preview-1',
-      type: 'user_input',
+      type: CLIEventType.USER_INPUT,
+      symbol: CLISymbol.USER_INPUT,
+      content: 'Fix authentication bug',
       timestamp: new Date(),
-      sessionId: 'preview',
-      input: 'Fix the authentication bug in user login',
-    } as any,
+    },
 
     // AI response
     {
       id: 'preview-2',
-      type: 'text_generated',
+      type: CLIEventType.AI_RESPONSE,
+      symbol: CLISymbol.AI_RESPONSE,
+      content: "I'll analyze the auth system and fix the security issue.",
       timestamp: new Date(),
-      sessionId: 'preview',
-      text: "I'll analyze the auth system and identify the issue.",
-    } as any,
+    },
 
-    // Shell command execution
+    // Todo start
     {
       id: 'preview-3',
-      type: 'tool_execution_started',
+      type: CLIEventType.SYSTEM_INFO,
+      symbol: CLISymbol.AI_RESPONSE,
+      content: 'Todo started: Analyze authentication system',
       timestamp: new Date(),
-      sessionId: 'preview',
-      toolName: 'shell_executor',
-      displayTitle: 'Bash(grep -r "authentication" src/)',
-      executionStatus: 'completed',
-      completedData: {
-        displayDetails: 'src/auth/login.ts:42:  const isAuthenticated = validate(token);\nsrc/middleware/auth.js:15:  // TODO: Fix authentication logic',
-      },
-    } as any,
+    },
 
-    // File diff operation - with realistic diff
+    // Shell execution with output
     {
       id: 'preview-4',
-      type: 'tool_execution_started',
+      type: CLIEventType.TOOL_EXECUTION,
+      symbol: CLISymbol.TOOL_SUCCESS,
+      content: 'Bash(grep -r "auth" src/)',
+      subEvent: [
+        {
+          type: 'output',
+          content: 'src/auth/login.ts:42:  const isAuth = validate(token);',
+        },
+      ] as CLISubEvent[],
       timestamp: new Date(),
-      sessionId: 'preview',
-      toolName: 'apply_patch',
-      displayTitle: 'Update(src/auth/login.ts)',
-      executionStatus: 'completed',
-      completedData: {
-        displayDetails: `--- a/src/auth/login.ts
-+++ b/src/auth/login.ts
-@@ -40,6 +40,6 @@
-   const user = await User.findById(userId);
-   if (!user) throw new Error('User not found');
--   return user.password === plainText; // UNSAFE!
-+   return await bcrypt.compare(plainText, user.hash);
- }`,
-      },
-    } as any,
+    },
 
-    // File creation
+    // File patch with diff
     {
       id: 'preview-5',
-      type: 'tool_execution_started',
+      type: CLIEventType.TOOL_EXECUTION,
+      symbol: CLISymbol.TOOL_SUCCESS,
+      originalEvent: {
+        toolName: 'apply_patch',
+      } as any,
+      content: 'Update(src/auth/login.ts)',
+      subEvent: [
+        {
+          type: 'output',
+          content: `--- a/src/auth/login.ts
++++ b/src/auth/login.ts
+@@ -40,3 +40,3 @@
+-   return user.password === plainText;
++   return await bcrypt.compare(plainText, user.hash);`,
+        },
+      ] as CLISubEvent[],
       timestamp: new Date(),
-      sessionId: 'preview',
-      toolName: 'create_file',
-      displayTitle: 'Create(src/utils/password.ts)',
-      executionStatus: 'completed',
-      completedData: {
-        displayDetails: 'New file created successfully (247 characters)',
-      },
-    } as any,
+    },
 
-    // Git status check
+    // Tool with error
     {
       id: 'preview-6',
-      type: 'tool_execution_started',
+      type: CLIEventType.TOOL_EXECUTION,
+      symbol: CLISymbol.TOOL_FAILED,
+      content: 'Bash(npm test)',
+      subEvent: [
+        {
+          type: 'error',
+          content: 'Tests failed: 2 failing in auth.test.js',
+        },
+      ] as CLISubEvent[],
       timestamp: new Date(),
-      sessionId: 'preview',
-      toolName: 'git_status',
-      displayTitle: 'Git Status',
-      executionStatus: 'completed',
-      completedData: {
-        displayDetails: 'M src/auth/login.ts\nA src/utils/password.ts',
-      },
-    } as any,
+    },
 
-    // Web search
+    // Todo completion
     {
       id: 'preview-7',
-      type: 'tool_execution_started',
+      type: CLIEventType.SYSTEM_INFO,
+      symbol: CLISymbol.AI_RESPONSE,
+      content: 'Todo completed: todo-1',
       timestamp: new Date(),
-      sessionId: 'preview',
-      toolName: 'web_search',
-      displayTitle: 'WebSearch(bcrypt best practices)',
-      executionStatus: 'completed',
-      completedData: {
-        displayDetails:
-          'Found 5 sources:\n1. bcrypt.js Official Documentation - https://github.com/kelektiv/node.bcrypt.js\n2. OWASP Password Storage Guide - https://owasp.org/\n3. Node.js Security Best Practices - https://nodejs.org/',
-      },
-    } as any,
+    },
 
-    // Error example
+    // Snapshot creation
     {
       id: 'preview-8',
-      type: 'tool_execution_started',
+      type: CLIEventType.SYSTEM_INFO,
+      symbol: CLISymbol.AI_RESPONSE,
+      content: 'Snapshot created: a1b2c3d4...',
       timestamp: new Date(),
-      sessionId: 'preview',
-      toolName: 'shell_executor',
-      displayTitle: 'Bash(npm test)',
-      executionStatus: 'failed',
-      completedData: {
-        error: 'Tests failed: 2 failing, 1 error in auth.test.js',
-        displayDetails: "Tests failed: 2 failing, 1 error in auth.test.js\n\n  ✗ should validate correct password\n  ✗ should reject invalid password\n\nERROR: Cannot read property 'password' of undefined at auth.test.js:25",
-      },
-    } as any,
+    },
 
-    // Final success response
+    // Final success
     {
       id: 'preview-9',
-      type: 'text_generated',
+      type: CLIEventType.AI_RESPONSE,
+      symbol: CLISymbol.AI_RESPONSE,
+      content: 'Authentication security fixed! Added bcrypt hashing and proper validation.',
       timestamp: new Date(),
-      sessionId: 'preview',
-      text: 'Authentication system refactored successfully! Added bcrypt hashing, updated login validation, and created utility functions. All security vulnerabilities have been resolved.',
-    } as any,
+    },
   ];
 
   return (
@@ -143,15 +128,14 @@ export const CodePreview: React.FC<CodePreviewProps> = ({ theme }) => {
         <Box flexDirection='column' marginTop={1}>
           {mockEvents.map((event, index) => (
             <Box key={event.id} marginBottom={index === mockEvents.length - 1 ? 0 : 1}>
-              <EventItem event={event} index={index} />
+              <EventRouter event={event} index={index} />
             </Box>
           ))}
         </Box>
 
-        {/* Bottom info bar */}
         <Box marginTop={1} justifyContent='space-between' borderStyle='round' borderColor={theme.colors.ui.border} paddingX={1}>
           <Text color={theme.colors.info}>Preview Mode • {mockEvents.length} events</Text>
-          <Text color={theme.colors.text.muted}>Authentication refactor workflow</Text>
+          <Text color={theme.colors.text.muted}>Authentication security workflow</Text>
         </Box>
       </Box>
     </ThemeProvider>

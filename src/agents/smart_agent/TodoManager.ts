@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { tool } from 'ai';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
-import { TextGeneratedEvent } from '../../events/EventTypes.js';
+import { TodoStartEvent, TodoEndEvent } from '../../events/EventTypes.js';
 import { inject, injectable } from 'inversify';
 import { TYPES } from '../../di/types.js';
 
@@ -38,6 +38,7 @@ export class TodoManager {
     public createTool() {
         return tool({
             description: `Manages a structured task list for the current objective. This is your primary tool for planning and tracking progress on any non-trivial task.
+
 ## Core Function
 Use this tool to create a plan, add/update tasks, and track progress. It is ESSENTIAL for any task requiring more than two steps.
 
@@ -77,7 +78,6 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
                 context: z.any().optional().describe('Any additional JSON-serializable context or data relevant to the todo.')
             }),
             execute: async (args) => {
-                // ... (The rest of the `execute` logic remains unchanged as it is functionally correct)
                 switch (args.action) {
                     case 'create_plan':
                         return this.createPlan(args.summary || 'Untitled Plan');
@@ -120,11 +120,6 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
             createdAt: new Date()
         };
 
-        this.eventEmitter.emit({
-            type: 'text_generated',
-            text: summary,
-        } as TextGeneratedEvent);
-
         return {
             success: true,
             planId: this.plan.id,
@@ -152,6 +147,7 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
             context: todoData.context,
             createdAt: new Date()
         };
+
         this.todos.set(todo.id, todo);
         if (this.plan) {
             this.plan.todos.push(todo);
@@ -159,11 +155,6 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
         }
 
         console.log(`Added todo: ${todo.title} (${todo.priority} priority)`);
-        // this.eventEmitter.emit({
-        //     type: 'text_generated',
-        //     text: `Todo "${todo.title}" added`
-        // } as TextGeneratedEvent);
-
         return {
             success: true,
             todoId: todo.id,
@@ -177,19 +168,26 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
         if (!todo) {
             return { success: false, error: `Todo with ID ${todoId} not found` };
         }
+
         const oldStatus = todo.status;
         todo.status = status;
 
         if (status === 'in_progress' && !todo.startedAt) {
             todo.startedAt = new Date();
+            // 发送开始事件
+            this.eventEmitter.emit({
+                type: 'todo_start',
+                todoId: todo.id,
+                title: todo.title
+            } as TodoStartEvent);
         } else if (status === 'completed' && !todo.completedAt) {
             todo.completedAt = new Date();
+            // 发送结束事件
+            this.eventEmitter.emit({
+                type: 'todo_end',
+                todoId: todo.id
+            } as TodoEndEvent);
         }
-
-        this.eventEmitter.emit({
-            type: 'text_generated',
-            text: `Todo "${todo.title}" status updated: ${oldStatus} → ${status}`
-        } as TextGeneratedEvent);
 
         return {
             success: true,
@@ -257,6 +255,7 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
         const inProgress = todos.filter(t => t.status === 'in_progress');
         const pending = todos.filter(t => t.status === 'pending');
         const blocked = todos.filter(t => t.status === 'blocked');
+
         const completionPercentage = todos.length > 0
             ? Math.round((completed.length / todos.length) * 100)
             : 0;
@@ -304,6 +303,7 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
     private allDependenciesCompleted(todoId: string): boolean {
         const todo = this.todos.get(todoId);
         if (!todo) return false;
+
         return todo.dependencies.every(depId => {
             const dep = this.todos.get(depId);
             return dep?.status === 'completed';
@@ -314,10 +314,12 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
         let score = 0;
         if (todo.priority === 'high') score += 10;
         else if (todo.priority === 'medium') score += 5;
+
         const blockedCount = Array.from(this.todos.values())
             .filter(t => t.dependencies.includes(todo.id) && t.status === 'pending')
             .length;
         score += blockedCount * 2;
+
         return score;
     }
 

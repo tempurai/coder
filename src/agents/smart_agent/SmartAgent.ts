@@ -8,7 +8,7 @@ import { createSubAgentTool, SubAgent } from './SubAgent.js';
 import { InterruptService } from '../../services/InterruptService.js';
 import { ToolRegistry, ToolNames } from '../../tools/ToolRegistry.js';
 import { z, ZodSchema } from "zod";
-import { SystemInfoEvent, TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent } from '../../events/EventTypes.js';
+import { SystemInfoEvent, TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent, TodoEndEvent } from '../../events/EventTypes.js';
 import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PLAN_PROMPT, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseFinished, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
 import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
 import { ExecutionMode } from '../../services/ExecutionModeManager.js';
@@ -63,6 +63,7 @@ export class SmartAgent {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
       this.eventEmitter.emit({
         type: 'system_info',
         level: 'error',
@@ -94,6 +95,7 @@ export class SmartAgent {
       });
 
       this.todoManager.createPlan(planningResponse.analysis);
+
       planningResponse.todos.forEach(todo => {
         this.todoManager.addTodo({ ...todo, dependencies: [] });
       });
@@ -142,7 +144,6 @@ export class SmartAgent {
       const { response, error } = await this.executeSingleIteration(currentIteration, executionMode);
 
       if (currentIteration % 10 === 0) {
-        // 检测循环
         const iterationHistory = this.processHistory(this.memory);
         const loopDetection = await this.orchestrator.detectLoop(iterationHistory);
         if (loopDetection.isLoop) {

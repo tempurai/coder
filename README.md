@@ -7,289 +7,132 @@
 </p>
 
 <p align="center">
-  <a href="#installation">Installation</a> •
-  <a href="#features">Features</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#configuration">Configuration</a>
+  <a href="#getting-started">Getting Started</a> •
+  <a href="#key-features">Key Features</a> •
+  <a href="#usage-guide">Usage Guide</a> •
+  <a href="#core-philosophy">Core Philosophy</a>
 </p>
 
 ---
 
-A next-generation intelligent code assistant that brings the power of multi-agent AI systems directly to your terminal. Built with TypeScript and powered by advanced reasoning capabilities, @tempurai/coder transforms how developers interact with their codebases.
+**An AI-Powered Command-Line Assistant for Complex Software Engineering**
 
-## ✨ Key Highlights
+Tempurai Coder is a sophisticated, terminal-based AI assistant built for developers who need a powerful partner for complex coding tasks. It moves beyond simple code completion, employing an intelligent, multi-agent architecture to understand high-level goals, formulate detailed execution plans, and safely interact with your development environment.
 
-- 🧠 **Multi-Agent Intelligence**: Smart reasoning + precise action execution
-- 🛠️ **Rich Tool Ecosystem**: 15+ specialized tools for comprehensive code assistance
-- 🎨 **Beautiful Terminal UI**: React-powered CLI with real-time updates
-- 🔧 **Multi-Model Support**: Works with OpenAI, Anthropic, Google, and more
-- 🔌 **Extensible Architecture**: MCP integration for custom tool development
-- 📝 **Session Management**: Persistent conversations with snapshot capabilities
+It's a tool designed to augment your workflow, handling the heavy lifting of multi-step refactoring, codebase analysis, and feature implementation, all without leaving the comfort of your terminal.
 
-## 🚀 Installation
+---
 
-### Prerequisites
+### Core Philosophy
 
-- Node.js 18+
-- API key for supported AI models
+Tempurai Coder is built on two fundamental principles that guide its behavior:
 
-### Global Installation
+1.  **Plan-then-Execute**: For any non-trivial task, the agent's first step is to stop and think. It uses a `TodoManager` to create a structured, transparent plan that breaks the problem down into logical steps. This avoids reactive, error-prone behavior and ensures a methodical approach to complex problems. You always know what the agent is planning to do and why.
 
-```bash
-npm install -g @tempurai/coder
-```
+2.  **Shell First, Safety Always**: The agent's primary tool for interacting with your project is the shell. This gives it the same power and flexibility as a human developer, allowing it to use `git`, `grep`, `ls`, and run project-specific scripts. This power is balanced by a robust safety layer, including a `SecurityPolicyEngine` to block dangerous commands and a `Human-in-the-Loop` confirmation system for all file modifications.
 
-### Quick Setup
+### Getting Started
 
-1. **Install the package**
+#### Prerequisites
 
-   ```bash
-   npm install -g @tempurai/coder
-   ```
+- Node.js (v18.0 or higher recommended)
+- A supported LLM API key (e.g., OpenAI, Google, Anthropic)
 
-2. **Set your AI model API key**
-
-   ```bash
-   # For OpenAI (recommended)
-   export OPENAI_API_KEY="your-key-here"
-
-   # Or for Anthropic Claude
-   export ANTHROPIC_API_KEY="your-key-here"
-   ```
-
-3. **Launch the application**
-   ```bash
-   coder
-   ```
-
-## 🌟 Features
-
-### 🧠 Intelligent Multi-Agent System
-
-**SmartAgent**: The core reasoning engine that breaks down complex tasks using advanced planning strategies
-
-```
-Planning Phase → Task Decomposition → Intelligent Execution → Result Synthesis
-```
-
-**ToolAgent**: Specialized tool executor managing 15+ built-in tools for comprehensive development assistance
-
-**SubAgent**: Parallel task processor for handling complex, multi-step operations
-
-**AgentOrchestrator**: Coordinates multiple agents to tackle sophisticated development workflows
-
-### 🛠️ Comprehensive Tool Suite
-
-| Category   | Tools                                                  | Description                                           |
-| ---------- | ------------------------------------------------------ | ----------------------------------------------------- |
-| **Shell**  | `shell_executor`, `multi_command`                      | Direct terminal command execution with error handling |
-| **Files**  | `read_file`, `write_file`, `apply_patch`, `find_files` | Complete file management and intelligent patching     |
-| **Web**    | `web_search`, `url_fetch`                              | Real-time web search and content retrieval            |
-| **Git**    | `git_status`, `git_log`, `git_diff`                    | Comprehensive version control operations              |
-| **Memory** | `save_memory`                                          | Persistent context across sessions                    |
-| **MCP**    | Extensible via Model Context Protocol                  | Custom tool integration                               |
-
-### 🎨 Modern Terminal Experience
-
-Built with **React + Ink** for a native-like terminal interface featuring:
-
-- **Real-time Streaming**: Live AI responses with thought processes
-- **Interactive Components**: Progress bars, spinners, and dynamic updates
-- **Code Syntax Highlighting**: Automatic language detection and formatting
-- **Multi-Theme Support**: 6 beautiful themes (Dark, Light, Dracula, Solarized, etc.)
-- **Responsive Design**: Adapts to any terminal size
-
-### 🔧 Enterprise-Grade Architecture
-
-- **Dependency Injection**: Clean, testable architecture with Inversify
-- **Event-Driven**: Reactive system with comprehensive event handling
-- **Security-First**: Configurable execution policies and path restrictions
-- **Human-in-the-Loop**: Confirmation system for destructive operations
-- **Graceful Interruption**: Ctrl+C handling with proper cleanup
-
-## 📖 Quick Start
-
-### Basic Usage
+#### 1. Installation
 
 ```bash
-# Start the interactive CLI
-coder
-
-# Example conversation:
-👤 Analyze the current project structure and suggest improvements
-
-🤖 I'll analyze your project comprehensively...
-
-💭 Planning: First I'll examine the project structure, then check dependencies,
-   analyze code quality, and provide actionable recommendations.
-
-🔧 Actions:
-   ├── shell_executor: "find . -type f -name '*.json' | head -10"
-   ├── read_file: "package.json"
-   ├── shell_executor: "npm list --depth=0"
-   └── find_files: "src/**/*.{ts,js,tsx,jsx}"
-
-📊 Analysis Complete: Found TypeScript project with 23 components,
-   React frontend, Express backend. Suggesting: dependency updates,
-   test coverage improvement, and performance optimizations.
+# Assuming the package is published to npm under this name
+npm install -g tempurai-coder
 ```
 
-### Advanced Workflows
+#### 2. Configuration
 
-**Multi-Step Feature Implementation**
+On the first run, the application will create a global configuration directory and files at `~/.tempurai/`.
 
-```bash
-👤 Add user authentication with JWT tokens, including login/logout APIs and middleware
-
-🤖 This is a complex task. Let me break it down systematically:
-
-📋 TODO List:
-   ☐ Analyze current project architecture
-   ☐ Design authentication system architecture
-   ☐ Implement JWT token utilities
-   ☐ Create authentication middleware
-   ☐ Build login/logout API endpoints
-   ☐ Add route protection
-   ☐ Write comprehensive tests
-   ☐ Update documentation
-
-🔧 Executing step 1/8: Analyzing current architecture...
-```
-
-**Intelligent Code Refactoring**
-
-```bash
-👤 Refactor the user service to use dependency injection
-
-🤖 I'll refactor your user service to implement proper dependency injection:
-
-💭 Analysis: Found UserService class with hard-coded dependencies.
-   Will convert to constructor injection pattern with interfaces.
-
-🔧 Actions:
-   ├── read_file: "src/services/UserService.ts"
-   ├── write_file: "src/interfaces/IUserRepository.ts"
-   ├── apply_patch: Convert to dependency injection pattern
-   ├── write_file: "src/services/UserService.ts" (refactored)
-   └── shell_executor: "npm test -- UserService"
-
-✅ Refactoring complete! UserService now uses dependency injection
-   with proper interfaces and is fully testable.
-```
-
-### Technology Stack
-
-| Layer              | Technology                      | Purpose                    |
-| ------------------ | ------------------------------- | -------------------------- |
-| **AI Integration** | AI SDK, Multi-provider support  | LLM orchestration          |
-| **Agent System**   | Custom multi-agent architecture | Intelligent task execution |
-| **Tool Ecosystem** | Modular tool system + MCP       | Extensible functionality   |
-| **UI Framework**   | React + Ink                     | Modern terminal interface  |
-| **Architecture**   | Inversify DI + TypeScript       | Clean, maintainable code   |
-| **Testing**        | Jest + comprehensive test suite | Quality assurance          |
-
-## ⚙️ Configuration
-
-### Basic Configuration
-
-The tool automatically creates a configuration directory at `~/.tempurai/`:
-
-```
-~/.tempurai/
-├── config.json          # Main configuration
-├── .tempurai.md         # Personal context & preferences
-├── sessions/            # Conversation history
-└── snapshots/           # Project state snapshots
-```
-
-## 🔒 Security
-
-### Safe Execution Environment
-
-- **Command Validation**: All shell commands validated before execution
-- **Path Restrictions**: Configurable file system access controls
-- **Permission System**: Human confirmation for destructive operations
-- **API Key Protection**: Secure credential management
-- **Audit Logging**: Comprehensive operation tracking
-
-### Security Configuration
+1.  Open `~/.tempurai/config.json` in your editor.
+2.  In the `models` array, specify your provider, model name, and add your API key.
+3.  (Optional) To enable web search, add your Tavily API key under `tools.tavilyApiKey`.
 
 ```json
 {
-  "security": {
-    "allowShellExecution": true,
-    "allowFileWrite": true,
-    "restrictedPaths": ["/etc", "/sys", "/proc"],
-    "requireConfirmation": ["rm", "del", "format"],
-    "maxFileSize": "10MB",
-    "sessionTimeout": 3600
+  "models": [
+    {
+      "provider": "openai",
+      "name": "gpt-4o",
+      "apiKey": "sk-..."
+    }
+  ],
+  "tools": {
+    "tavilyApiKey": "tvly-..."
   }
 }
 ```
 
-## 🤝 Contributing
+### Usage Guide
 
-We welcome contributions! Here's how to get started:
+#### Launching the Application
 
-### Development Workflow
+Navigate to your project's root directory and run the command:
 
-1. **Fork & Clone**
+```bash
+tempurai
+```
 
-   ```bash
-   git clone https://github.com/your-username/coder.git
-   cd coder
-   ```
+#### Core Actions
 
-2. **Setup Development Environment**
+- **Submit a Task**: Type your request (e.g., `Add a new endpoint '/status' to the main server that returns { status: 'ok' }`) and press `Enter`.
+- **Open Execution Mode Selector**: Type `:` to choose between `Plan Mode` and `Code Mode`.
+- **Open Command Palette**: Type `/` to access internal commands like `/help` or `/theme`.
 
-   ```bash
-   npm install
-   npm run dev
-   ```
+#### Key Hotkeys
 
-3. **Create Feature Branch**
+| Hotkey            | Action           | Description                                                                                            |
+| :---------------- | :--------------- | :----------------------------------------------------------------------------------------------------- |
+| `Shift` + `Tab`   | Cycle Edit Mode  | Toggle between `Normal` (confirm every edit) and `Always Accept` (auto-approve edits for the session). |
+| `Ctrl` + `T`      | Cycle Theme      | Quickly switch between available UI themes.                                                            |
+| `Esc`             | Interrupt Agent  | Stop the agent's current operation.                                                                    |
+| `Ctrl` + `C` (x2) | Exit Application | Forcefully exit the application.                                                                       |
 
-   ```bash
-   git checkout -b feature/amazing-feature
-   ```
+### Key Features
 
-4. **Make Changes & Test**
+#### Intelligent Agentic Core
 
-   ```bash
-   npm test
-   npm run build
-   ```
+- **Hierarchical Agent System**: Employs a `SmartAgent` for high-level strategy, which delegates tasks to a tactical `ToolAgent`. For highly complex sub-problems, it can even spawn a specialized `SubAgent` to work autonomously.
+- **Structured Task Planning**: Automatically generates a step-by-step `Todo` list for complex requests, providing a clear and predictable execution path.
+- **Contextual Compression**: Features a `CompressedAgent` that intelligently summarizes long conversations, ensuring the agent maintains critical context over extended tasks without hitting token limits.
 
-5. **Submit Pull Request**
+#### Robust Safety Features
 
-### Bug Reports
+- **Automatic Snapshots**: Before executing any task, the system automatically creates a git-based snapshot of your project's current state. This acts as a safety net, allowing you to instantly revert any changes if needed.
+- **Human-in-the-Loop (HITL) Confirmation**: You are always in control. The agent will pause and ask for explicit permission before creating, modifying, or deleting any files.
+- **Configurable Security Engine**: A `SecurityPolicyEngine` validates all shell commands against allow/block lists and internal heuristics to prevent the execution of dangerous or unintended operations.
 
-Please use GitHub Issues with:
+#### Developer-Centric Experience
 
-- OS and Node.js version
-- Steps to reproduce
-- Expected vs actual behavior
-- Error logs/screenshots
+- **Interactive Terminal UI**: A rich, responsive interface built with React (Ink) that feels like a native part of the modern terminal workflow.
+- **Dual Execution Modes**:
+  - **`Code Mode`**: Full development capabilities, enabling the agent to write and modify files.
+  - **`Plan Mode`**: A read-only sandbox for research, analysis, and strategy formulation without any risk of side effects.
+- **Customizable Themes**: Choose from multiple built-in color schemes to match your terminal setup.
+
+### How It Works (High-Level)
+
+Tempurai Coder operates on a decoupled, event-driven architecture. The terminal UI is a pure rendering layer that subscribes to a stream of events from the backend. The backend is coordinated by a `SessionService` which manages state and invokes the **Agentic Core**.
+
+The Agentic Core is where the real intelligence lies. A `SmartAgent` analyzes the user's request, creates a plan using the `TodoManager`, and then executes the plan step-by-step by instructing a `ToolAgent` to use tools like the `ShellExecutor` or `FilePatcher`.
+
+> For a detailed breakdown of the components and their interactions, see our **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+### Comparison with Other Tools
+
+Tempurai Coder finds its niche by combining the power of an agentic framework with a terminal-native workflow:
+
+- **vs. Gemini CLI / Cline**: These are excellent general-purpose AI CLIs. Tempurai is hyper-focused on the **in-project software development lifecycle**, integrating deeply with the file system, version control, and safety mechanisms like snapshots.
+- **vs. Continue / iFlow**: These tools excel as IDE extensions. Tempurai is designed for developers who prefer a **terminal-native, keyboard-driven workflow**, offering a powerful, self-contained environment without leaving the command line.
+- **vs. Qwen-Code / Raw LLM CLIs**: Tempurai provides a robust **agentic framework** around the LLM. Instead of simple prompt-in/code-out, it performs multi-step reasoning, planning, and safe tool execution, enabling it to handle much more complex, long-running tasks.
+
+---
 
 ## 📄 License
 
 Apache-2.0 License with amendments - see [LICENSE](LICENSE) for details.
-
-## 🙏 Acknowledgments
-
-Built with exceptional open-source tools:
-
-- [**AI SDK**](https://sdk.vercel.ai/) - Multi-model AI integration
-- [**Ink**](https://github.com/vadimdemedes/ink) - React for CLI
-- [**Inversify**](https://inversify.io/) - Dependency injection
-- [**Zod**](https://zod.dev/) - Type-safe validation
-- [**Jest**](https://jestjs.io/) - Testing framework
-
----
-
-<p align="center">
-  <strong>Made with ❤️ by the Tempurai team</strong><br>
-  <a href="https://tempurai.dev">Website</a> • 
-  <a href="https://discord.gg/tempurai">Discord</a> • 
-  <a href="https://github.com/tempurai/coder/issues">Issues</a>
-</p>

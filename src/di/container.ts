@@ -28,9 +28,8 @@ export { TYPES } from './types.js';
 export function createContainer(): Container {
   const container = new Container();
 
-  // --- Core Configuration ---
+  // Configuration
   container.bind<ConfigLoader>(TYPES.ConfigLoader).to(ConfigLoader).inSingletonScope();
-
   container.bind<Config>(TYPES.Config)
     .toDynamicValue(() => {
       const configLoader = container.get<ConfigLoader>(TYPES.ConfigLoader);
@@ -39,14 +38,15 @@ export function createContainer(): Container {
     .inSingletonScope();
 
   container.bind<DefaultModelFactory>(TYPES.ModelFactory).to(DefaultModelFactory).inSingletonScope();
-
   container.bind<LanguageModel>(TYPES.LanguageModel)
     .toDynamicValue(async () => {
       const config = container.get<Config>(TYPES.Config);
       const modelFactory = container.get<DefaultModelFactory>(TYPES.ModelFactory);
+
       if (!config.models || config.models.length === 0) {
         throw new Error('No models configured. Please add at least one model to your configuration.');
       }
+
       const firstModel = config.models[0];
       console.log('🔄 正在初始化AI模型...');
       const model = await modelFactory.createModel(firstModel);
@@ -55,36 +55,36 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  // --- Global Services (Singleton) ---
+  // Core services - singletons
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter).toDynamicValue(() => new UIEventEmitter()).inSingletonScope();
   container.bind<FileWatcherService>(TYPES.FileWatcherService).to(FileWatcherService).inSingletonScope();
   container.bind<Logger>(TYPES.Logger).to(Logger).inSingletonScope();
   container.bind<SecurityPolicyEngine>(TYPES.SecurityPolicyEngine).to(SecurityPolicyEngine).inSingletonScope();
   container.bind<ToolRegistry>(TYPES.ToolRegistry).to(ToolRegistry).inSingletonScope();
 
-  // --- Session-scoped Services (inRequestScope for optimization) ---
+  // Session-scoped services
   container.bind<InterruptService>(TYPES.InterruptService).to(InterruptService).inRequestScope();
   container.bind<EditModeManager>(TYPES.EditModeManager).to(EditModeManager).inRequestScope();
   container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inRequestScope();
   container.bind<CompressorService>(TYPES.CompressorService).to(CompressorService).inRequestScope();
 
-  // --- Per-Task Services (Transient) ---
+  // CRITICAL FIX: TodoManager should be singleton to maintain state across operations
+  container.bind<TodoManager>(TYPES.TodoManager).to(TodoManager).inSingletonScope();
+
+  // Agent services - transient
   container.bind<ToolAgent>(TYPES.ToolAgent).to(ToolAgent);
   container.bind<ToolInterceptor>(TYPES.ToolInterceptor).to(ToolInterceptor);
 
-  // --- Core Agents (Transient - per task) ---
+  // Agent orchestration - transient 
   container.bind<SmartAgent>(TYPES.SmartAgent).to(SmartAgent);
-  container.bind<TodoManager>(TYPES.TodoManager).to(TodoManager);
   container.bind<AgentOrchestrator>(TYPES.AgentOrchestrator).to(AgentOrchestrator);
   container.bind<SubAgent>(TYPES.SubAgent).to(SubAgent);
   container.bind<CompressedAgent>(TYPES.CompressedAgent).to(CompressedAgent);
 
-
-  // --- Factories ---
+  // Session factory
   container.bind<SessionServiceFactory>(TYPES.SessionServiceFactory)
     .toFactory(() => {
       return () => {
-        // 一次性解析所有session-scoped依赖，inRequestScope确保它们内部共享
         const toolAgent = container.get<ToolAgent>(TYPES.ToolAgent);
         const fileWatcherService = container.get<FileWatcherService>(TYPES.FileWatcherService);
         const config = container.get<Config>(TYPES.Config);
@@ -118,7 +118,7 @@ export function createContainer(): Container {
       };
     });
 
-  console.log('🏗️ 依赖注入容器已配置完成');
+  console.log('依赖注入容器已配置完成');
   return container;
 }
 

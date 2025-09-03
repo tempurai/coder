@@ -2,7 +2,7 @@ import { ToolAgent, Messages } from '../tool_agent/ToolAgent.js';
 import { UIEventEmitter } from '../../events/UIEventEmitter.js';
 import { hasWriteOperations, ToolNames } from '../../tools/ToolRegistry.js';
 import { z } from "zod";
-import { SystemInfoEvent, TextGeneratedEvent, ThoughtGeneratedEvent } from '../../events/EventTypes.js';
+import { SystemInfoEvent, TextGeneratedEvent, ThoughtGeneratedEvent, TodoEndEvent } from '../../events/EventTypes.js';
 import { inject } from 'inversify';
 import { TYPES } from '../../di/types.js';
 import { tool } from 'ai';
@@ -47,6 +47,7 @@ export class SubAgent {
     const timeout = this.executionTimeout;
 
     console.log(`SubAgent executing: ${task.type} - ${task.description}`);
+
     this.eventEmitter.emit({
       type: 'system_info',
       level: 'info',
@@ -61,6 +62,7 @@ export class SubAgent {
       ]);
 
       const duration = Date.now() - startTime;
+
       this.eventEmitter.emit({
         type: 'system_info',
         level: result.terminateReason === 'FINISHED' ? 'info' : 'warning',
@@ -78,6 +80,7 @@ export class SubAgent {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
       return {
         terminateReason: 'ERROR',
         history: [],
@@ -117,11 +120,13 @@ Complete this task efficiently.`
       }
 
       currentIteration++;
-
       const { response, error } = await this.executeSingleIteration(currentIteration);
 
       if (response.finished) {
-        this.eventEmitter.emit({ type: 'text_generated', text: response.result, } as TextGeneratedEvent);
+        this.eventEmitter.emit({
+          type: 'text_generated',
+          text: response.result,
+        } as TextGeneratedEvent);
         isCompleted = true;
         break;
       }
@@ -177,7 +182,6 @@ Complete this task efficiently.`
       });
 
       return { response };
-
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error(`Sub Agent Iteration ${currentIteration} failed: ${errorMessage}`);
@@ -185,7 +189,6 @@ Complete this task efficiently.`
 
       const response = { reasoning: 'Iteration error occurred', actions: [], finished: true, result: "", criticalInfo: true } as SubAgentResponseFinished;
       this.memory.push({ role: 'user', content: `Observation: ${response}` });
-
       return { response: response, error: errorMessage };
     }
   }
@@ -199,10 +202,12 @@ Complete this task efficiently.`
 
     for (let i = 1; i < this.memory.length; i++) {
       const message = this.memory[i];
+
       if (message.role === 'assistant') {
         try {
           const response = JSON.parse(message.content) as SubAgentResponse;
           const isCritical = response.criticalInfo || hasWriteOperations(response.actions || [], this.securityEngine);
+
           if (isCritical) {
             criticalHistory.push(message);
             if (this.memory[i + 1]?.role === 'user') {
@@ -233,6 +238,7 @@ export const createSubAgentTool = (executionMode: ExecutionMode) => {
   const startSubAgent = async (args: any): Promise<TaskExecutionResult> => {
     console.log('Starting sub-agent for specialized task');
     const subAgent = getContainer().get<SubAgent>(TYPES.SubAgent);
+    subAgent.setExecutionMode(executionMode);
     return await subAgent.executeTask(args);
   };
 
@@ -242,6 +248,7 @@ export const createSubAgentTool = (executionMode: ExecutionMode) => {
 - Tasks requiring deep focus without user interaction
 - Specialized operations that benefit from dedicated execution context
 - When you need to delegate a specific subtask while continuing with the main workflow
+
 The sub-agent will work autonomously until task completion or failure.`,
     inputSchema: z.object({
       taskType: z.string().describe('Type of task (e.g., "file_analysis", "code_refactor", "testing")'),
@@ -254,6 +261,7 @@ The sub-agent will work autonomously until task completion or failure.`,
     }),
     execute: async (args) => {
       const taskId = `subagent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
       const task = {
         id: taskId,
         type: args.taskType,

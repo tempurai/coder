@@ -95,6 +95,18 @@ export interface SnapshotCreatedEvent extends BaseEvent {
   filesCount: number;
 }
 
+// 简单的Todo事件
+export interface TodoStartEvent extends BaseEvent {
+  type: 'todo_start';
+  todoId: string;
+  title: string;
+}
+
+export interface TodoEndEvent extends BaseEvent {
+  type: 'todo_end';
+  todoId: string;
+}
+
 export interface ToolConfirmationRequestEvent extends BaseEvent {
   type: 'tool_confirmation_request';
   confirmationId: string;
@@ -127,6 +139,8 @@ export type UIEvent =
   | SystemInfoEvent
   | UserInputEvent
   | SessionStatsEvent
+  | TodoStartEvent
+  | TodoEndEvent
   | ToolConfirmationRequestEvent
   | ToolConfirmationResponseEvent
 
@@ -144,6 +158,8 @@ export const UIEventType = {
   UserInput: 'user_input' as const,
   SessionStats: 'session_stats' as const,
   SnapshotCreated: 'snapshot_created' as const,
+  TodoStart: 'todo_start' as const,
+  TodoEnd: 'todo_end' as const,
   ToolConfirmationRequest: 'tool_confirmation_request' as const,
   ToolConfirmationResponse: 'tool_confirmation_response' as const,
 } as const;

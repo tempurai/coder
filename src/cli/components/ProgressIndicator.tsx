@@ -4,7 +4,7 @@ import Spinner from 'ink-spinner';
 import { useTheme } from '../themes/index.js';
 import { SessionService } from '../../services/SessionService.js';
 import { useState, useEffect } from 'react';
-import { TodoManager } from '../../agents/smart_agent/TodoManager.js';
+import { TodoStartEvent, TodoEndEvent } from '../../events/EventTypes.js';
 
 interface ProgressIndicatorProps {
   phase: string;
@@ -15,154 +15,132 @@ interface ProgressIndicatorProps {
   sessionService?: SessionService;
 }
 
+interface ActiveTodo {
+  todoId: string;
+  title: string;
+}
+
+interface TodoDisplayState {
+  activeTodos: ActiveTodo[];
+  nextTodo?: string;
+}
+
 const HELP_TEXTS = ['Ready for your next task', 'Type : to select execution mode', 'Use /help for available commands', 'Waiting for instructions...', 'AI assistant ready to help'];
 
 export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ phase, message, progress, isActive = true, showSpinner = true, sessionService }) => {
   const { currentTheme } = useTheme();
-  const [currentTodo, setCurrentTodo] = useState<string | null>(null);
-  const [nextTodo, setNextTodo] = useState<string | null>(null);
-  const [todoManager, setTodoManager] = useState<TodoManager | null>(null);
-  const [todoDisplay, setTodoDisplay] = useState<{ current?: string; next?: string }>({});
+  const [todoDisplay, setTodoDisplay] = useState<TodoDisplayState>({
+    activeTodos: [],
+  });
 
   useEffect(() => {
-    if (!sessionService) return;
+    if (!sessionService?.events) {
+      return;
+    }
 
-    const updateTodos = () => {
+    const updateTodoDisplay = (activeTodos: ActiveTodo[]) => {
+      let nextTodo: string | undefined;
       try {
         const todos = sessionService.todoManager.getAllTodos();
-        const current = todos.find((todo) => todo.status === 'in_progress');
-        const pending = todos.filter((todo) => todo.status === 'pending').sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-
-        setCurrentTodo(current?.title || null);
-        setNextTodo(pending[0]?.title || null);
-      } catch (error) {
-        setCurrentTodo(null);
-        setNextTodo(null);
+        const pending = todos.filter((t) => t.status === 'pending')[0];
+        nextTodo = pending?.title;
+      } catch {
+        nextTodo = undefined;
       }
+
+      setTodoDisplay({
+        activeTodos: [...activeTodos],
+        nextTodo,
+      });
     };
 
-    updateTodos();
-    const interval = setInterval(updateTodos, 1000);
-    return () => clearInterval(interval);
-  }, [sessionService]);
+    let activeTodos: ActiveTodo[] = [];
 
-  useEffect(() => {
-    if (!sessionService?.todoManager) return;
+    const todoStartSubscription = sessionService.events.on('todo_start', (event: TodoStartEvent) => {
+      // 添加到队列
+      activeTodos.push({
+        todoId: event.todoId,
+        title: event.title,
+      });
+      updateTodoDisplay(activeTodos);
+    });
 
-    const updateTodos = () => {
-      try {
-        const todos = sessionService.todoManager.getAllTodos();
-        const current = todos.find((todo) => todo.status === 'in_progress');
-        const pending = todos.filter((todo) => todo.status === 'pending').sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const todoEndSubscription = sessionService.events.on('todo_end', (event: TodoEndEvent) => {
+      // 从队列中删除
+      activeTodos = activeTodos.filter((todo) => todo.todoId !== event.todoId);
+      updateTodoDisplay(activeTodos);
+    });
 
-        setTodoDisplay({
-          current: current?.title,
-          next: pending[0]?.title,
-        });
-      } catch (error) {
-        setTodoDisplay({});
-      }
+    // 初始化
+    updateTodoDisplay(activeTodos);
+
+    return () => {
+      todoStartSubscription.unsubscribe();
+      todoEndSubscription.unsubscribe();
     };
-
-    updateTodos();
-    const interval = setInterval(updateTodos, 1000);
-    return () => clearInterval(interval);
   }, [sessionService]);
 
-  const getPhaseSymbol = (phase: string) => {
-    switch (phase.toLowerCase()) {
-      case 'searching':
-      case 'finding':
-        return '?';
-      case 'reading':
-      case 'loading':
-        return '>';
-      case 'writing':
-      case 'saving':
-        return '<';
-      case 'executing':
-      case 'running':
-        return '~';
-      case 'analyzing':
-      case 'processing':
-        return '*';
-      case 'connecting':
-      case 'fetching':
-        return '^';
-      case 'completed':
-      case 'done':
-        return '✓';
-      case 'failed':
-      case 'error':
-        return '!';
-      default:
-        return '•';
-    }
-  };
+  const renderTodoStatus = () => {
+    const currentTodo = todoDisplay.activeTodos[0];
 
-  const phaseSymbol = getPhaseSymbol(phase);
-  const showProgress = typeof progress === 'number' && progress >= 0 && progress <= 100;
-
-  // 获取主要显示内容
-  const getMainTitle = (): { symbol: string; content: string; color: string } => {
-    if (todoDisplay.current) {
-      return {
-        symbol: '⏵',
-        content: todoDisplay.current,
-        color: currentTheme.colors.accent,
-      };
+    if (currentTodo) {
+      return (
+        <Box flexDirection='column'>
+          <Box>
+            <Text color={currentTheme.colors.semantic.functionCall}>
+              <Spinner type='dots' />
+            </Text>
+            <Box marginLeft={1}>
+              <Text color={currentTheme.colors.accent}>当前任务：{currentTodo.title}</Text>
+            </Box>
+          </Box>
+          {todoDisplay.nextTodo && (
+            <Box>
+              <Text color={currentTheme.colors.text.muted}>{'  '}L</Text>
+              <Box marginLeft={1}>
+                <Text color={currentTheme.colors.text.muted}>下一个：{todoDisplay.nextTodo}</Text>
+              </Box>
+            </Box>
+          )}
+        </Box>
+      );
     }
 
-    // 如果正在处理任务且有消息，显示任务信息
-    if (isActive && message) {
-      return {
-        symbol: isActive && showSpinner ? '' : phaseSymbol,
-        content: `${message}${showProgress ? ` (${progress}%)` : ''}`,
-        color: currentTheme.colors.semantic.result,
-      };
-    }
-
-    // 否则显示帮助文本
     const randomHelp = HELP_TEXTS[Math.floor(Math.random() * HELP_TEXTS.length)];
-    return {
-      symbol: '💡',
-      content: randomHelp,
-      color: currentTheme.colors.text.muted,
-    };
+    return (
+      <Box>
+        <Text color={currentTheme.colors.info}>●</Text>
+        <Box marginLeft={1}>
+          <Text color={currentTheme.colors.text.muted}>{randomHelp}</Text>
+        </Box>
+      </Box>
+    );
   };
 
-  const mainTitle = getMainTitle();
+  const renderProcessingStatus = () => {
+    const showProgress = typeof progress === 'number' && progress >= 0 && progress <= 100;
+
+    return (
+      <Box>
+        <Text color={currentTheme.colors.info}>
+          <Spinner type='dots' />
+        </Text>
+        <Box marginLeft={1}>
+          <Text color={currentTheme.colors.semantic.result}>
+            {message}
+            {showProgress ? ` (${progress}%)` : ''}
+          </Text>
+        </Box>
+      </Box>
+    );
+  };
+
+  const hasActiveTodo = todoDisplay.activeTodos.length > 0;
+  const shouldShowProcessing = !hasActiveTodo && isActive && message;
 
   return (
     <Box flexDirection='column' marginTop={1}>
-      {/* 主要内容 */}
-      <Box>
-        {mainTitle.symbol && (
-          <>
-            {isActive && showSpinner && !todoDisplay.current ? (
-              <Text color={currentTheme.colors.info}>
-                <Spinner type='dots' />
-              </Text>
-            ) : (
-              <Text color={mainTitle.color}>{mainTitle.symbol}</Text>
-            )}
-            <Box marginLeft={1}>
-              <Text color={mainTitle.color}>{mainTitle.content}</Text>
-            </Box>
-          </>
-        )}
-        {!mainTitle.symbol && <Text color={mainTitle.color}>{mainTitle.content}</Text>}
-      </Box>
-
-      {/* 显示下一个待处理的todo */}
-      {todoDisplay.next && (
-        <Box>
-          <Text color={currentTheme.colors.text.muted}>◦</Text>
-          <Box marginLeft={1}>
-            <Text color={currentTheme.colors.text.muted}>{todoDisplay.next}</Text>
-          </Box>
-        </Box>
-      )}
+      {shouldShowProcessing ? renderProcessingStatus() : renderTodoStatus()}
     </Box>
   );
 };

@@ -299,7 +299,7 @@ You are currently in PLAN MODE - focus on research and analysis rather than maki
 - Use ${ToolNames.WEB_SEARCH} and ${ToolNames.URL_FETCH} for documentation and research
 - Read files to understand structure before proposing changes
 - When planning changes: Describe what you would do, but prefer analysis tools
-- Avoid write operations unless specifically requested and critical
+- Avoid write operations for all cases!
 
 ## Recommended Tool Priority in Plan Mode:
 1. ${ToolNames.SHELL_EXECUTOR} (ls, cat, grep, find, git status) - for exploration

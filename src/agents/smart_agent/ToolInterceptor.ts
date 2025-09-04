@@ -19,6 +19,7 @@ export class ToolInterceptor {
         action: { tool: string, args?: any },
         executionMode: ExecutionMode
     ): Promise<{ result?: any, error?: string, duration?: number }> {
+        console.log(`Iteration ${iteration}: Preparing to execute tool: ${action.tool} with args: ${JSON.stringify(action.args)}`);
         const startTime = Date.now();
 
         if (executionMode === ExecutionMode.PLAN) {

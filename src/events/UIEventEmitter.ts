@@ -26,6 +26,7 @@ export class UIEventEmitter {
       sessionId: this.sessionId,
     } as UIEvent;
 
+    console.log(`Emitting event: ${event.type}`, fullEvent);
     this.emitter.emit(event.type, fullEvent);
     this.emitter.emit('*', fullEvent);
   }

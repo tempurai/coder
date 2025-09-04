@@ -6,7 +6,6 @@ import { WelcomeScreen } from './components/WelcomeScreen.js';
 import { ThemeSelector, ThemeSelectorWithPreview } from './components/ThemeSelector.js';
 import { InputContainer } from './components/InputContainer.js';
 import { useSessionEvents } from './hooks/useSessionEvents.js';
-import { useEventSeparation } from './hooks/useEventSeparation.js';
 import { EventRouter } from './components/events/EventRouter.js';
 import { ProgressIndicator } from './components/ProgressIndicator.js';
 import { ExecutionMode, getExecutionModeDisplayInfo } from '../services/ExecutionModeManager.js';
@@ -30,15 +29,10 @@ interface MainUIProps {
 const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
   const { currentTheme } = useTheme();
   const { cliEvents, isProcessing, pendingConfirmation, currentActivity, handleConfirmation } = useSessionEvents(sessionService);
-  const { staticEvents, dynamicEvents } = useEventSeparation(cliEvents);
-
   const { executionMode, activePanel, actions } = useUiStore();
   const { setExecutionMode, setActivePanel } = actions;
-
   const [editModeStatus, setEditModeStatus] = useState<string>('');
   const [inputKey, setInputKey] = useState(1);
-
-  const [renderedStaticNodes, setRenderedStaticNodes] = useState<React.ReactNode[]>([]);
 
   const headerItems = useMemo(
     () => [
@@ -69,30 +63,6 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
     ],
     [currentTheme, editModeStatus, executionMode],
   );
-
-  useEffect(() => {
-    setRenderedStaticNodes(headerItems);
-  }, [headerItems]);
-
-  useEffect(() => {
-    const currentStaticEventCount = renderedStaticNodes.length - headerItems.length;
-    if (staticEvents.length > currentStaticEventCount) {
-      const newEvents = staticEvents.slice(currentStaticEventCount);
-      const newNodes = newEvents
-        .filter((event) => {
-          const hiddenEventTypes = ['tool_confirmation_request', 'tool_confirmation_response'];
-          // FIX: Check the originalEvent's type, not the converted CLI event's type.
-          return event.originalEvent ? !hiddenEventTypes.includes(event.originalEvent.type) : true;
-        })
-        .map((event, index) => (
-          <Box key={event.id || `static-${currentStaticEventCount + index}`} marginBottom={1}>
-            <EventRouter event={event} index={currentStaticEventCount + index} />
-          </Box>
-        ));
-
-      setRenderedStaticNodes((prev) => [...prev, ...newNodes]);
-    }
-  }, [staticEvents, renderedStaticNodes.length, headerItems.length]);
 
   useEffect(() => {
     const updateStatus = () => {
@@ -155,10 +125,10 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
 
   return (
     <Box flexDirection='column'>
-      <Static items={renderedStaticNodes}>{(item) => item}</Static>
-
-      {dynamicEvents.map((event, index) => (
-        <Box key={event.id || `dynamic-${index}`} marginBottom={0}>
+      {/* Unified Rendering Logic */}
+      {headerItems.map((item) => item)}
+      {cliEvents.map((event, index) => (
+        <Box key={event.id || `event-${index}`} marginBottom={1}>
           <EventRouter event={event} index={index} />
         </Box>
       ))}
@@ -169,9 +139,9 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
         </Box>
       )}
 
-      {/* Dynamic Interactive Zone */}
+      {}
       <Box flexDirection='column' marginTop={1}>
-        {/* Modal Panel Slot (Above Input) */}
+        {}
         {isModalPanelVisible && pendingConfirmation && (
           <Box marginBottom={1}>
             <ConfirmationPanel
@@ -187,10 +157,8 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
             />
           </Box>
         )}
-
         <InputContainer key={inputKey} onSubmit={handleSubmit} isProcessing={isProcessing || !!pendingConfirmation} onEditModeToggle={handleEditModeToggle} sessionService={sessionService} exit={exit} focus={isInputFocused} />
-
-        {/* Command/Menu Panel Slot (Below Input) */}
+        {}
         {isMenuPanelVisible && (
           <Box marginTop={1}>
             {activePanel === 'COMMAND_PALETTE' && (
@@ -340,7 +308,6 @@ export const startInkUI = async (sessionService: SessionService) => {
     sessionService.interrupt();
     process.exit(0);
   };
-
   process.on('SIGTERM', exitFn);
 
   render(<CodeAssistantApp sessionService={sessionService} />, {

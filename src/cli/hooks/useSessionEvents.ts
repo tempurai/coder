@@ -97,6 +97,7 @@ function getTaskCompleteDisplay(terminateReason: string, error?: string): { symb
 export const useSessionEvents = (sessionService: SessionService) => {
     const [events, setEvents] = useState<UIEvent[]>([]);
     const [cliEvents, setCLIEvents] = useState<CLIEvent[]>([]);
+    const [nonToolEvents, setNonToolEvents] = useState<UIEvent[]>([]);
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
     const [currentActivity, setCurrentActivity] = useState<string>('');
     const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
@@ -109,9 +110,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
             timestamp: uiEvent.timestamp || new Date(),
             originalEvent: uiEvent
         };
-
         const subEvent: CLISubEvent[] = [];
-
         switch (uiEvent.type) {
             case UIEventType.UserInput:
                 const userEvent = uiEvent as any;
@@ -128,7 +127,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     content: userEvent.input?.trim() || '',
                     subEvent: subEvent.length > 0 ? subEvent : undefined
                 };
-
             case UIEventType.TextGenerated:
             case UIEventType.ThoughtGenerated:
                 const textEvent = uiEvent as any;
@@ -139,7 +137,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     symbol: CLISymbol.AI_RESPONSE,
                     content: text.trim()
                 };
-
             case UIEventType.TodoStart:
                 const todoStartEvent = uiEvent as TodoStartEvent;
                 return {
@@ -148,7 +145,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     symbol: CLISymbol.AI_RESPONSE,
                     content: `Started: ${todoStartEvent.title}`
                 };
-
             case UIEventType.TodoEnd:
                 const todoEndEvent = uiEvent as TodoEndEvent;
                 return null
@@ -209,11 +205,9 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     type: CLIEventType.SYSTEM_INFO,
                     ...getTaskCompleteDisplay(taskCompleteEvent.terminateReason, taskCompleteEvent.error),
                 };
-
             case UIEventType.SystemInfo:
                 const sysEvent = uiEvent as SystemInfoEvent;
                 const subEventForSysInfo: CLISubEvent[] = [];
-
                 if (sysEvent.source && sysEvent.sourceId) {
                     subEventForSysInfo.push({
                         type: sysEvent.level === 'error' ? 'error' : 'info',
@@ -222,7 +216,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
                         sourceId: sysEvent.sourceId
                     });
                 }
-
                 return {
                     ...baseEvent,
                     type: CLIEventType.SYSTEM_INFO,
@@ -230,7 +223,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     content: sysEvent.message?.trim() || '',
                     subEvent: subEventForSysInfo.length > 0 ? subEventForSysInfo : undefined
                 };
-
             case UIEventType.SnapshotCreated:
                 const snapEvent = uiEvent as any;
                 return {
@@ -239,19 +231,11 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     symbol: CLISymbol.AI_RESPONSE,
                     content: `Snapshot created: ${snapEvent.snapshotId?.substring(0, 8)}...`
                 };
-
             case UIEventType.ToolConfirmationRequest:
             case UIEventType.ToolConfirmationResponse:
-                return {
-                    ...baseEvent,
-                    type: CLIEventType.SYSTEM_INFO,
-                    symbol: CLISymbol.WAITING_INPUT,
-                    content: uiEvent.type,
-                };
-            case UIEventType.TaskStart:
-                // This is a pure control event to show the spinner, it shouldn't be a chat bubble.
                 return null;
-
+            case UIEventType.TaskStart:
+                return null;
             default:
                 const defaultEvent = uiEvent as any;
                 return {
@@ -263,66 +247,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
         }
     }, []);
 
-    const mergeToolExecutionEvents = useCallback((toolExecutionId: string): UIEvent | null => {
-        const state = toolExecutions.get(toolExecutionId);
-        if (!state || !state.startEvent) return null;
-
-        const mergedEvent: any = {
-            ...state.startEvent,
-            type: state.startEvent.type,
-        };
-
-        if (state.completedEvent) {
-            mergedEvent.completedData = state.completedEvent;
-        }
-
-        if (state.outputEvents.length > 0) {
-            mergedEvent.outputData = state.outputEvents;
-        }
-
-        mergedEvent.executionStatus = state.currentStatus;
-
-        return mergedEvent;
-    }, [toolExecutions]);
-
-    const handleSystemInfoError = useCallback((errorEvent: SystemInfoEvent) => {
-        switch (errorEvent.source) {
-            case 'tool':
-                if (errorEvent.sourceId) {
-                    setEvents(prevEvents => prevEvents.map(event => {
-                        if ((event as any).toolExecutionId === errorEvent.sourceId) {
-                            return {
-                                ...event,
-                                subEvents: [...(event.subEvents || []), errorEvent]
-                            };
-                        }
-                        return event;
-                    }));
-                }
-                break;
-            case 'agent':
-                const recentUserInput = [...events].reverse().find(e => e.type === 'user_input');
-                if (recentUserInput?.id) {
-                    setEvents(prevEvents => prevEvents.map(event => {
-                        if (event.id === recentUserInput.id) {
-                            return {
-                                ...event,
-                                subEvents: [...(event.subEvents || []), errorEvent]
-                            };
-                        }
-                        return event;
-                    }));
-                } else {
-                    setEvents(prevEvents => [...prevEvents, errorEvent as UIEvent]);
-                }
-                break;
-            case 'system':
-            default:
-                setEvents(prevEvents => [...prevEvents, errorEvent as UIEvent]);
-                break;
-        }
-    }, [events]);
-
     useEffect(() => {
         const eventEmitter = sessionService.events;
         let eventBuffer: UIEvent[] = [];
@@ -330,13 +254,12 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
         const flushEvents = () => {
             if (eventBuffer.length > 0) {
-                const toolEvents = eventBuffer.filter(event =>
+                const currentToolEvents = eventBuffer.filter(event =>
                     event.type === UIEventType.ToolExecutionStarted ||
                     event.type === UIEventType.ToolExecutionOutput ||
                     event.type === UIEventType.ToolExecutionCompleted
                 );
-
-                const otherEvents = eventBuffer.filter(event =>
+                const currentNonToolEvents = eventBuffer.filter(event =>
                     event.type !== UIEventType.ToolExecutionStarted &&
                     event.type !== UIEventType.ToolExecutionOutput &&
                     event.type !== UIEventType.ToolExecutionCompleted
@@ -344,8 +267,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
                 setToolExecutions(prev => {
                     const newMap = new Map(prev);
-
-                    toolEvents.forEach(event => {
+                    currentToolEvents.forEach(event => {
                         const toolExecutionId = (event as any).toolExecutionId;
                         if (!toolExecutionId) return;
 
@@ -361,91 +283,42 @@ export const useSessionEvents = (sessionService: SessionService) => {
                             existing.outputEvents.push(event);
                             existing.currentStatus = 'executing';
                         } else if (event.type === UIEventType.ToolExecutionCompleted) {
-                            if (existing.startEvent) {
-                                existing.completedEvent = event;
-                                existing.currentStatus = (event as any).success ? 'completed' : 'failed';
-                            } else {
-                                return;
-                            }
+                            existing.completedEvent = event;
+                            existing.currentStatus = (event as any).success ? 'completed' : 'failed';
                         }
-
                         newMap.set(toolExecutionId, existing);
                     });
-
                     return newMap;
                 });
 
-                setEvents((prevEvents) => {
-                    const newEvents = [...prevEvents];
-
-                    otherEvents.forEach(event => {
-                        newEvents.push(event);
-                    });
-
-                    toolEvents.forEach(event => {
-                        const toolExecutionId = (event as any).toolExecutionId;
-                        if (!toolExecutionId) return;
-
-                        if (event.type === UIEventType.ToolExecutionStarted) {
-                            newEvents.push(event);
-                        } else if (event.type === UIEventType.ToolExecutionCompleted) {
-                            const existingIndex = newEvents.findIndex(e =>
-                                (e as any).toolExecutionId === toolExecutionId &&
-                                e.type === UIEventType.ToolExecutionStarted
-                            );
-
-                            if (existingIndex !== -1) {
-                                const updatedEvent = {
-                                    ...newEvents[existingIndex],
-                                    completedData: event,
-                                    executionStatus: (event as any).success ? 'completed' : 'failed'
-                                };
-                                newEvents[existingIndex] = updatedEvent as UIEvent;
-                            }
-                        }
-                    });
-
-                    return newEvents;
-                });
+                if (currentNonToolEvents.length > 0) {
+                    setNonToolEvents(prev => [...prev, ...currentNonToolEvents]);
+                }
 
                 eventBuffer = [];
             }
         };
 
         const handleEvent = (event: UIEvent) => {
-            if (event.type === 'system_info') {
-                const sysEvent = event as SystemInfoEvent;
-                if (sysEvent.level === 'error') {
-                    handleSystemInfoError(sysEvent);
-                    return;
-                }
-            }
-
             if (pendingConfirmation) {
                 return;
             }
-
             eventBuffer.push(event);
-
             if (batchTimeout) {
                 clearTimeout(batchTimeout);
             }
-
             batchTimeout = setTimeout(flushEvents, 16);
-
             switch (event.type) {
                 case UIEventType.TaskStart:
                     setIsProcessing(true);
                     setCurrentActivity('Processing...');
                     break;
-
                 case UIEventType.TaskComplete:
                     setTimeout(() => {
                         setIsProcessing(false);
                         setCurrentActivity('');
                     }, 500);
                     break;
-
                 case UIEventType.ToolConfirmationRequest:
                     const confirmEvent = event as any;
                     setPendingConfirmation({
@@ -457,18 +330,14 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     });
                     setActivePanel('CONFIRMATION');
                     break;
-
                 case UIEventType.ToolConfirmationResponse:
                     setPendingConfirmation(null);
                     break;
-
                 case UIEventType.ToolExecutionStarted:
                     break;
             }
         };
-
         const subscription = eventEmitter.onAll(handleEvent);
-
         return () => {
             subscription.unsubscribe();
             if (batchTimeout) {
@@ -476,12 +345,41 @@ export const useSessionEvents = (sessionService: SessionService) => {
             }
             flushEvents();
         };
-    }, [sessionService, pendingConfirmation, mergeToolExecutionEvents, handleSystemInfoError, setActivePanel]);
+    }, [sessionService, pendingConfirmation, setActivePanel]);
+
+    useEffect(() => {
+        const mergedToolEvents = Array.from(toolExecutions.values())
+            .map(state => {
+                if (!state.startEvent) return null;
+                const mergedEvent: any = { ...state.startEvent };
+                if (state.completedEvent) {
+                    mergedEvent.completedData = state.completedEvent;
+                    mergedEvent.executionStatus = (state.completedEvent as any).success ? 'completed' : 'failed';
+                } else {
+                    mergedEvent.executionStatus = state.currentStatus;
+                }
+                if (state.outputEvents.length > 0) {
+                    mergedEvent.outputData = state.outputEvents;
+                }
+                return mergedEvent as UIEvent;
+            })
+            .filter((e): e is UIEvent => e !== null);
+
+        const allEvents = [...nonToolEvents, ...mergedToolEvents];
+
+        allEvents.sort((a, b) => {
+            const tsA = a.timestamp || new Date(0);
+            const tsB = b.timestamp || new Date(0);
+            return tsA.getTime() - tsB.getTime();
+        });
+
+        setEvents(allEvents);
+    }, [nonToolEvents, toolExecutions]);
+
     useEffect(() => {
         const convertedEvents = events
             .map(convertToCLIEvent)
             .filter((event): event is CLIEvent => event !== null);
-
         setCLIEvents(convertedEvents);
     }, [events, convertToCLIEvent]);
 
@@ -494,7 +392,6 @@ export const useSessionEvents = (sessionService: SessionService) => {
                     approved: choice === ConfirmationChoice.YES || choice === ConfirmationChoice.YES_AND_REMEMBER,
                     choice,
                 } as Omit<ToolConfirmationResponseEvent, 'id' | 'timestamp' | 'sessionId'>);
-
                 setPendingConfirmation(null);
             }
         },

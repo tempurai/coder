@@ -276,7 +276,7 @@ export class ToolAgent {
             const result = await (tool as any).execute(argsWithId);
             const duration = Date.now() - startTime;
 
-            this.toolRegistry.getContext().eventEmitter.emit({
+            this.eventEmitter.emit({
                 type: 'tool_execution_completed',
                 toolName,
                 success: !result?.error,
@@ -297,8 +297,7 @@ export class ToolAgent {
             const duration = Date.now() - startTime;
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-            // 外层异常捕获
-            this.toolRegistry.getContext().eventEmitter.emit({
+            this.eventEmitter.emit({
                 type: 'tool_execution_completed',
                 toolName,
                 success: false,

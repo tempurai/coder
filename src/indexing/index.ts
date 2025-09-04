@@ -1,3 +1,5 @@
+import { getContainer } from '../di/container.js';
+import { TYPES } from '../di/types.js';
 import { ProjectIndexer } from './ProjectIndexer.js';
 
 export interface IndexOptions {
@@ -22,13 +24,9 @@ export interface ProjectIndexResult {
     error?: string;
 }
 
-let indexer: ProjectIndexer | null = null;
-
 export async function indexProject(options: IndexOptions = {}): Promise<ProjectIndexResult> {
-    if (!indexer) {
-        indexer = new ProjectIndexer();
-    }
-
+    const container = getContainer();
+    const indexer = container.get<ProjectIndexer>(TYPES.ProjectIndexer);
     return await indexer.analyze(options);
 }
 
@@ -37,9 +35,7 @@ export async function getIndexStatus(): Promise<{
     lastUpdated?: Date;
     gitHash?: string;
 }> {
-    if (!indexer) {
-        indexer = new ProjectIndexer();
-    }
-
+    const container = getContainer();
+    const indexer = container.get<ProjectIndexer>(TYPES.ProjectIndexer);
     return await indexer.getStatus();
 }

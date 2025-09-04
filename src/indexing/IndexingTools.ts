@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { indexProject, getIndexStatus } from './index.js';
+import { getContainer } from '../di/container.js';
+import { TYPES } from '../di/types.js';
+import { ProjectIndexer } from './ProjectIndexer.js';
 
 export const IndexingTools = {
     project_index: {
@@ -10,17 +13,17 @@ Suitable for:
 - Viewing project tech stack and frameworks  
 - Getting project directory organization and purpose descriptions
 Supports both incremental and full analysis modes.`,
-
         parameters: z.object({
             mode: z.enum(['incremental', 'full']).default('incremental').describe('Analysis mode: incremental=incremental analysis, full=full re-analysis'),
-            outputPath: z.string().optional().describe('Output path, defaults to .tempurai/project-index.json')
+            outputPath: z.string().optional().describe('Output path, defaults to .tempurai/indexing.json')
         }),
-
         execute: async (args: { mode: 'incremental' | 'full'; outputPath?: string }) => {
             try {
-                const result = await indexProject({
-                    force: args.mode === 'full',
-                    outputPath: args.outputPath
+                const container = getContainer();
+                const indexer = container.get<ProjectIndexer>(TYPES.ProjectIndexer);
+
+                const result = await indexer.analyze({
+                    force: args.mode === 'full'
                 });
 
                 if (result.success) {
@@ -50,12 +53,13 @@ Supports both incremental and full analysis modes.`,
 
     project_index_status: {
         description: `Check project index status including existence, last update time, Git version, etc.`,
-
         parameters: z.object({}),
-
         execute: async () => {
             try {
-                const status = await getIndexStatus();
+                const container = getContainer();
+                const indexer = container.get<ProjectIndexer>(TYPES.ProjectIndexer);
+
+                const status = await indexer.getStatus();
 
                 if (status.exists) {
                     return {

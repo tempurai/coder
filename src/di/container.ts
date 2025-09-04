@@ -22,6 +22,7 @@ import { Logger } from '../utils/Logger.js';
 import { CompressorService } from '../services/CompressorService.js';
 import { EditModeManager } from '../services/EditModeManager.js';
 import { ToolInterceptor } from '../agents/smart_agent/ToolInterceptor.js';
+import { ProjectIndexer } from '../indexing/ProjectIndexer.js';
 
 export { TYPES } from './types.js';
 
@@ -55,31 +56,34 @@ export function createContainer(): Container {
     })
     .inSingletonScope();
 
-  // Core services - singletons
+  // Core services
   container.bind<UIEventEmitter>(TYPES.UIEventEmitter).toDynamicValue(() => new UIEventEmitter()).inSingletonScope();
   container.bind<FileWatcherService>(TYPES.FileWatcherService).to(FileWatcherService).inSingletonScope();
   container.bind<Logger>(TYPES.Logger).to(Logger).inSingletonScope();
   container.bind<SecurityPolicyEngine>(TYPES.SecurityPolicyEngine).to(SecurityPolicyEngine).inSingletonScope();
   container.bind<ToolRegistry>(TYPES.ToolRegistry).to(ToolRegistry).inSingletonScope();
 
-  // Session-scoped services
+  // Request-scoped services
   container.bind<InterruptService>(TYPES.InterruptService).to(InterruptService).inRequestScope();
   container.bind<EditModeManager>(TYPES.EditModeManager).to(EditModeManager).inRequestScope();
   container.bind<HITLManager>(TYPES.HITLManager).to(HITLManager).inRequestScope();
   container.bind<CompressorService>(TYPES.CompressorService).to(CompressorService).inRequestScope();
 
-  // CRITICAL FIX: TodoManager should be singleton to maintain state across operations
+  // Agents and managers
   container.bind<TodoManager>(TYPES.TodoManager).to(TodoManager).inSingletonScope();
 
-  // Agent services - transient
+  // Tool agents
   container.bind<ToolAgent>(TYPES.ToolAgent).to(ToolAgent);
   container.bind<ToolInterceptor>(TYPES.ToolInterceptor).to(ToolInterceptor);
 
-  // Agent orchestration - transient 
+  // AI agents
   container.bind<SmartAgent>(TYPES.SmartAgent).to(SmartAgent);
   container.bind<AgentOrchestrator>(TYPES.AgentOrchestrator).to(AgentOrchestrator);
   container.bind<SubAgent>(TYPES.SubAgent).to(SubAgent);
   container.bind<CompressedAgent>(TYPES.CompressedAgent).to(CompressedAgent);
+
+  // Indexing services
+  container.bind<ProjectIndexer>(TYPES.ProjectIndexer).to(ProjectIndexer).inSingletonScope();
 
   // Session factory
   container.bind<SessionServiceFactory>(TYPES.SessionServiceFactory)

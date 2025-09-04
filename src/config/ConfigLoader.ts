@@ -7,7 +7,6 @@ import deepmergeFactory from '@fastify/deepmerge';
 import { ConfigInitializer } from './ConfigInitializer.js';
 import { ModelConfig } from '../models/index.js';
 
-
 interface ShellExecutorSecurityConfig {
   allowlist: string[];
   blocklist: string[];
@@ -53,6 +52,7 @@ export class ConfigLoader {
   private readonly projectConfigDir: string;
   private readonly projectConfigFilePath: string;
   private readonly projectContextFilePath: string;
+  private readonly projectIndexingFilePath: string;
   private readonly deepMerge: (target: any, source: any) => any;
 
   public constructor() {
@@ -63,6 +63,7 @@ export class ConfigLoader {
     this.projectConfigDir = path.join(process.cwd(), '.tempurai');
     this.projectConfigFilePath = path.join(this.projectConfigDir, 'config.json');
     this.projectContextFilePath = path.join(this.projectConfigDir, '.tempurai.md');
+    this.projectIndexingFilePath = path.join(this.projectConfigDir, 'indexing.json');
 
     this.deepMerge = deepmergeFactory({
       mergeArray: (opts) => (target: any[], source: any[]) => opts.clone(source)
@@ -75,10 +76,17 @@ export class ConfigLoader {
     return { ...this.config };
   }
 
+  public getIndexingFilePath(): string {
+    return this.projectIndexingFilePath;
+  }
+
+  public hasIndexingFile(): boolean {
+    return fs.existsSync(this.projectIndexingFilePath);
+  }
+
   public async updateConfig(updates: Partial<Config>, saveToProject: boolean = false): Promise<void> {
     try {
       this.config = this.deepMerge(this.config, updates);
-
       const targetConfigDir = saveToProject ? this.projectConfigDir : this.globalConfigDir;
       const targetConfigPath = saveToProject ? this.projectConfigFilePath : this.globalConfigFilePath;
 
@@ -181,7 +189,7 @@ export class ConfigLoader {
       }
     }
 
-    // 加载项目配置
+    // 确保项目配置存在
     if (!initializer.projectConfigExists()) {
       initializer.createProjectFiles();
     }
@@ -218,6 +226,7 @@ export class ConfigLoader {
     if (!this.config.models || this.config.models.length === 0) {
       return 'No models configured';
     }
+
     const firstModel = this.config.models[0];
     return `${firstModel.provider}:${firstModel.name}`;
   }

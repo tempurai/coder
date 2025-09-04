@@ -1,59 +1,38 @@
-/**
- * 应用启动器
- * 统一管理应用的初始化、依赖注入和启动流程
- */
-
 import 'reflect-metadata';
 import { getContainer } from '../di/container.js';
 import { TYPES } from '../di/types.js';
 import { ConfigLoader } from '../config/ConfigLoader.js';
 import { SessionServiceFactory } from '../di/interfaces.js';
+import { ProjectIndexer } from '../indexing/ProjectIndexer.js';
 import type { LanguageModel } from 'ai';
 import { startInkUI } from './InkUI.js';
 import { Logger } from '../utils/Logger.js';
 
-/**
- * 应用启动模式
- */
 export enum LaunchMode {
-  /** 代码编辑界面 (InkUI) - 主要模式 */
   CODE_EDITOR = 'code_editor',
-  /** 系统命令模式 (CLI) - 辅助功能 */
   SYSTEM_COMMAND = 'system_command'
 }
 
-/**
- * 启动上下文
- */
 export interface LaunchContext {
   mode: LaunchMode;
   args: string[];
   workingDirectory: string;
 }
 
-/**
- * 应用启动器类
- */
 export class ApplicationBootstrap {
   private container = getContainer();
   private logger: Logger;
   private currentSession?: { sessionService: any; clearSession(): void };
 
   constructor() {
-    // 早期初始化logger，确保后续所有操作都能被记录
     this.logger = this.container.get<Logger>(TYPES.Logger);
     this.logger.info('Application bootstrap started');
-
-    // 清理旧日志文件
     this.logger.cleanupOldLogs();
   }
 
-  /**
-   * 验证配置和环境
-   * @returns 验证结果
-   */
   private async validateEnvironment(): Promise<{ valid: boolean; error?: string }> {
     this.logger.info('Starting environment validation');
+
     try {
       const configLoader = this.container.get<ConfigLoader>(TYPES.ConfigLoader);
 
@@ -93,9 +72,6 @@ export class ApplicationBootstrap {
     }
   }
 
-  /**
-   * 启动代码编辑界面 (InkUI)
-   */
   async launchCodeEditor(): Promise<void> {
     console.log('🎨 启动代码编辑界面...');
     this.logger.info('Launching code editor interface');
@@ -109,20 +85,19 @@ export class ApplicationBootstrap {
     }
 
     try {
-      // 使用SessionServiceFactory创建新的会话
+      // 创建新的会话
       const sessionFactory = this.container.get<SessionServiceFactory>(TYPES.SessionServiceFactory);
       this.currentSession = sessionFactory();
 
       console.log('✅ 新的依赖注入架构已初始化');
       this.logger.info('Dependency injection architecture initialized successfully');
 
-      // 拦截console输出，确保日志记录
+      // 启动控制台拦截
       this.logger.interceptConsole();
 
-      // 启动InkUI界面
+      // 启动UI
       this.logger.info('Starting Ink UI interface');
       await startInkUI(this.currentSession.sessionService);
-
     } catch (error) {
       console.error('❌ 启动代码编辑界面失败:', error instanceof Error ? error.message : '未知错误');
       this.logger.error('Failed to launch code editor interface', { error: error instanceof Error ? error.message : error });
@@ -130,9 +105,6 @@ export class ApplicationBootstrap {
     }
   }
 
-  /**
-   * 清理当前会话
-   */
   clearCurrentSession(): void {
     if (this.currentSession) {
       this.currentSession.clearSession();
@@ -141,10 +113,6 @@ export class ApplicationBootstrap {
     }
   }
 
-  /**
-   * 处理系统命令
-   * @param args 命令行参数
-   */
   async handleSystemCommand(args: string[]): Promise<void> {
     const [command, ...subArgs] = args;
     const configLoader = this.container.get<ConfigLoader>(TYPES.ConfigLoader);
@@ -193,9 +161,6 @@ export class ApplicationBootstrap {
     }
   }
 
-  /**
-   * 显示帮助信息
-   */
   private displayHelp(): void {
     console.log('Tempurai Coder - AI辅助编程CLI工具\\n');
     console.log('使用方法:');
@@ -212,9 +177,6 @@ export class ApplicationBootstrap {
     console.log('  coder config        # 显示当前配置');
   }
 
-  /**
-   * 显示配置信息
-   */
   private async displayConfig(): Promise<void> {
     const configLoader = this.container.get<ConfigLoader>(TYPES.ConfigLoader);
     const config = configLoader.getConfig();
@@ -229,17 +191,12 @@ export class ApplicationBootstrap {
     console.log(`   配置文件: ${configLoader.getConfigPath()}`);
   }
 
-  /**
-   * @param args 命令行参数
-   * 处理项目索引命令
-   * 支持全量索引 (--full) 和增量索引 (默认)
-   */
   private async handleIndexCommand(args: string[]): Promise<void> {
     const [mode] = args;
-    const { ProjectIndexer } = await import('../indexing/ProjectIndexer.js');
 
     try {
-      const indexer = new ProjectIndexer();
+      const indexer = this.container.get<ProjectIndexer>(TYPES.ProjectIndexer);
+
       if (mode === '--full' || mode === '-f') {
         console.log('Starting full project analysis...');
         let result = await indexer.analyze({ force: true });
@@ -255,10 +212,6 @@ export class ApplicationBootstrap {
     }
   }
 
-  /**
-   * 主启动方法
-   * @param context 启动上下文
-   */
   async launch(context: LaunchContext): Promise<void> {
     console.log(`🚀 Tempurai 启动 (模式: ${context.mode})`);
 
@@ -282,15 +235,10 @@ export class ApplicationBootstrap {
   }
 }
 
-/**
- * 解析命令行参数确定启动模式
- * @param args 命令行参数
- * @returns 启动上下文
- */
 export function parseArguments(args: string[]): LaunchContext {
   const workingDirectory = process.cwd();
 
-  // 如果没有参数，启动代码编辑界面
+  // 如果没有参数，启动代码编辑器
   if (args.length === 0) {
     return {
       mode: LaunchMode.CODE_EDITOR,
@@ -299,7 +247,7 @@ export function parseArguments(args: string[]): LaunchContext {
     };
   }
 
-  // 有参数则是系统命令模式
+  // 否则处理为系统命令
   return {
     mode: LaunchMode.SYSTEM_COMMAND,
     args,
@@ -307,10 +255,6 @@ export function parseArguments(args: string[]): LaunchContext {
   };
 }
 
-/**
- * 应用启动入口函数
- * @param args 命令行参数
- */
 export async function bootstrapApplication(args: string[] = []): Promise<void> {
   const context = parseArguments(args);
   const bootstrap = new ApplicationBootstrap();

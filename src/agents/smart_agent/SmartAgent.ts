@@ -9,11 +9,12 @@ import { InterruptService } from '../../services/InterruptService.js';
 import { ToolRegistry, ToolNames } from '../../tools/ToolRegistry.js';
 import { z, ZodSchema } from "zod";
 import { SystemInfoEvent, TextGeneratedEvent, ThoughtGeneratedEvent, ToolExecutionCompletedEvent, ToolExecutionStartedEvent, TodoEndEvent } from '../../events/EventTypes.js';
-import { PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PLAN_PROMPT, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
+import { INDEXING_ANALYSIS_PROMPT, PLANNING_PROMPT, PlanningResponse, PlanningResponseSchema, SMART_AGENT_PLAN_PROMPT, SMART_AGENT_PROMPT, SmartAgentResponse, SmartAgentResponseSchema } from './SmartAgentPrompt.js';
 import { EditModeManager, EditMode } from '../../services/EditModeManager.js';
 import { ExecutionMode } from '../../services/ExecutionModeManager.js';
 import { SecurityPolicyEngine } from '../../security/SecurityPolicyEngine.js';
 import { ToolInterceptor } from './ToolInterceptor.js';
+import { ConfigLoader } from '../../config/ConfigLoader.js';
 
 export interface SmartAgentMessage extends Message {
   iteration: number;
@@ -34,6 +35,7 @@ export class SmartAgent {
     @inject(TYPES.SecurityPolicyEngine) private securityEngine: SecurityPolicyEngine,
     @inject(TYPES.TodoManager) private todoManager: TodoManager,
     @inject(TYPES.ToolInterceptor) private toolInterceptor: ToolInterceptor,
+    @inject(TYPES.ConfigLoader) private configLoader: ConfigLoader,
     maxIterations: number = 50
   ) {
     this.maxIterations = maxIterations;
@@ -52,6 +54,7 @@ export class SmartAgent {
       }
 
       const result = await this.executeMainLoop(initialQuery, executionMode);
+
       return {
         ...result,
         metadata: {
@@ -62,7 +65,6 @@ export class SmartAgent {
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
       this.eventEmitter.emit({
         type: 'system_info',
         level: 'error',
@@ -117,10 +119,12 @@ export class SmartAgent {
     let isCompleted = false;
     let recentErrorCount = 0;
 
-    this.memory.unshift({
-      iteration: 0, role: 'system',
-      content: executionMode === ExecutionMode.PLAN ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT
-    });
+    let systemPrompt = executionMode === ExecutionMode.PLAN ? SMART_AGENT_PLAN_PROMPT : SMART_AGENT_PROMPT;
+    if (this.configLoader.hasIndexingFile()) {
+      systemPrompt += INDEXING_ANALYSIS_PROMPT;
+    }
+
+    this.memory.unshift({ iteration: 0, role: 'system', content: systemPrompt });
 
     this.memory.push(
       { iteration: 0, role: "user", content: `Task: ${initialQuery}` }
@@ -143,10 +147,9 @@ export class SmartAgent {
 
       const { response, error } = await this.executeSingleIteration(currentIteration, executionMode);
 
-      // Check orchestrator every 10 iterations for loop detection and continuation
+      // 每10次迭代检测是否陷入循环
       if (currentIteration % 10 === 0) {
         const iterationHistory = this.processHistory(this.memory);
-
         const loopDetection = await this.orchestrator.detectLoop(iterationHistory);
         if (loopDetection.isLoop) {
           this.eventEmitter.emit({ type: 'system_info', level: 'error', source: 'agent', message: `Loop detected: ${loopDetection.description}` } as SystemInfoEvent);
@@ -156,18 +159,15 @@ export class SmartAgent {
       }
 
       isCompleted = response.finished === 'finished';
-
       if (isCompleted) {
         this.eventEmitter.emit({ type: 'text_generated', text: response.result || 'Task completed' } as TextGeneratedEvent);
         break;
       }
 
-      // Handle awaiting_user state
+      // 处理等待用户输入状态
       if (response.finished === 'awaiting_user') {
         this.eventEmitter.emit({ type: 'text_generated', text: response.reasoning } as TextGeneratedEvent);
-
         this.eventEmitter.emit({ type: 'text_generated', text: response.result } as TextGeneratedEvent);
-
         return {
           terminateReason: 'WAITING_FOR_USER',
           history: this.processHistory(this.memory),
@@ -178,7 +178,6 @@ export class SmartAgent {
       }
 
       recentErrorCount += (error ? 1 : 0);
-
       if (recentErrorCount >= 2) {
         this.eventEmitter.emit({
           type: 'system_info',
@@ -248,7 +247,6 @@ export class SmartAgent {
       return { response };
     } catch (iterationError) {
       const errorMessage = iterationError instanceof Error ? iterationError.message : 'Unknown error';
-
       this.eventEmitter.emit({
         type: 'system_info',
         level: 'error',

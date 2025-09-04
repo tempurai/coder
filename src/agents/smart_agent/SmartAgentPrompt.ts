@@ -309,3 +309,12 @@ You are currently in PLAN MODE - focus on research and analysis rather than maki
 5. Write operations only when explicitly requested
 
 Your goal is to thoroughly understand and plan, not to execute changes immediately.`);
+
+export const INDEXING_ANALYSIS_PROMPT = `\n\n# **Critical Information**!! : Project Structure Information Available
+You have access to comprehensive project analysis data located at \`.tempurai/indexing.json\`. This file contains:
+- **Project overview**: Technical stack, programming languages, and architecture summary
+- **Directory analysis**: Detailed role and functionality description for each code directory  
+- **Service information**: Identified services, endpoints, and their configurations
+- **Structural insights**: File organization patterns and dependency relationships
+
+Use tools like \`read_file\` to access this information when you need to understand the project's overall structure, locate specific functionality, or make architecture-informed decisions. This analysis can help you quickly identify where specific features are implemented and understand the codebase organization.`;

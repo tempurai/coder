@@ -7,6 +7,7 @@ import { CodePreview } from './CodePreview.js';
 interface ThemeSelectorProps {
   onThemeSelected: () => void;
   onCancel: () => void;
+  isFocused: boolean;
 }
 
 interface ThemeSelectorWithPreviewProps {
@@ -33,27 +34,29 @@ const getThemePreview = (theme: string) => {
   }
 };
 
-export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onThemeSelected, onCancel }) => {
+export const ThemeSelector: React.FC<ThemeSelectorProps> = ({ onThemeSelected, onCancel, isFocused }) => {
   const { currentTheme, availableThemes = [], setTheme } = useTheme();
   const [selectedIndex, setSelectedIndex] = useState(() => {
     const currentIndex = availableThemes.findIndex((theme) => theme === currentTheme?.name);
     return currentIndex >= 0 ? currentIndex : 0;
   });
 
-  useInput((input, key) => {
-    if (!availableThemes.length) return;
-
-    if (key.upArrow) {
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : availableThemes.length - 1));
-    } else if (key.downArrow) {
-      setSelectedIndex((prev) => (prev < availableThemes.length - 1 ? prev + 1 : 0));
-    } else if (key.return) {
-      setTheme(availableThemes[selectedIndex]);
-      onThemeSelected();
-    } else if (key.escape) {
-      onCancel();
-    }
-  });
+  useInput(
+    (input, key) => {
+      if (!availableThemes.length) return;
+      if (key.upArrow) {
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : availableThemes.length - 1));
+      } else if (key.downArrow) {
+        setSelectedIndex((prev) => (prev < availableThemes.length - 1 ? prev + 1 : 0));
+      } else if (key.return) {
+        setTheme(availableThemes[selectedIndex]);
+        onThemeSelected();
+      } else if (key.escape) {
+        onCancel();
+      }
+    },
+    { isActive: isFocused },
+  );
 
   const c = currentTheme?.colors ?? ({} as any);
   const primary = c.primary ?? 'cyan';
@@ -104,7 +107,6 @@ export const ThemeSelectorWithPreview: React.FC<ThemeSelectorWithPreviewProps> =
 
   useInput((input, key) => {
     if (!availableThemes.length) return;
-
     if (key.upArrow) {
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : availableThemes.length - 1));
     } else if (key.downArrow) {
@@ -126,15 +128,14 @@ export const ThemeSelectorWithPreview: React.FC<ThemeSelectorWithPreviewProps> =
 
   return (
     <Box flexDirection='column' width='100%' alignItems='flex-start'>
-      {/* Live Preview */}
+      {}
       <Box flexDirection='column' paddingX={2} paddingY={1} marginY={1}>
         <Text color={accent} bold>
           🔍 Live Preview — {previewTheme?.charAt(0).toUpperCase() + previewTheme?.slice(1)}
         </Text>
         <CodePreview theme={themes[previewTheme]} />
       </Box>
-
-      {/* Theme Selection */}
+      {}
       <Box flexDirection='column' paddingX={2} paddingY={1}>
         <Box marginBottom={1}>
           <Text color={primary} bold>

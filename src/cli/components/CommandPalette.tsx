@@ -13,12 +13,12 @@ interface CommandPaletteProps {
   onCancel: () => void;
   onModeSelect?: () => void;
   onThemeSelect?: () => void;
+  isFocused: boolean;
 }
 
-export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCancel, onModeSelect, onThemeSelect }) => {
+export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCancel, onModeSelect, onThemeSelect, isFocused }) => {
   const { currentTheme } = useTheme();
   const [selectedIndex, setSelectedIndex] = useState(0);
-
   const commands: Command[] = [
     {
       name: 'help',
@@ -37,24 +37,27 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
     },
   ];
 
-  useInput((input, key) => {
-    if (key.upArrow) {
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : commands.length - 1));
-    } else if (key.downArrow) {
-      setSelectedIndex((prev) => (prev < commands.length - 1 ? prev + 1 : 0));
-    } else if (key.return) {
-      const selectedCommand = commands[selectedIndex];
-      if (selectedCommand.name === 'mode' && onModeSelect) {
-        onModeSelect();
-      } else if (selectedCommand.name === 'theme' && onThemeSelect) {
-        onThemeSelect();
-      } else {
-        onSelect(selectedCommand.usage);
+  useInput(
+    (input, key) => {
+      if (key.upArrow) {
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : commands.length - 1));
+      } else if (key.downArrow) {
+        setSelectedIndex((prev) => (prev < commands.length - 1 ? prev + 1 : 0));
+      } else if (key.return) {
+        const selectedCommand = commands[selectedIndex];
+        if (selectedCommand.name === 'mode' && onModeSelect) {
+          onModeSelect();
+        } else if (selectedCommand.name === 'theme' && onThemeSelect) {
+          onThemeSelect();
+        } else {
+          onSelect(selectedCommand.usage);
+        }
+      } else if (key.escape) {
+        onCancel();
       }
-    } else if (key.escape) {
-      onCancel();
-    }
-  });
+    },
+    { isActive: isFocused },
+  );
 
   return (
     <Box flexDirection='column' paddingLeft={1} paddingRight={3} borderStyle='round' borderColor={currentTheme.colors.ui.border}>

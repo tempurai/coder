@@ -12,6 +12,7 @@ export interface PendingConfirmation {
         showRememberOption?: boolean;
         defaultChoice?: 'yes' | 'no' | 'yes_and_remember';
         timeout?: number;
+        isEditOperation?: boolean;
     };
 }
 

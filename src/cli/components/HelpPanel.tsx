@@ -4,16 +4,20 @@ import { useTheme } from '../themes/index.js';
 
 interface HelpPanelProps {
   onCancel: () => void;
+  isFocused: boolean;
 }
 
-export const HelpPanel: React.FC<HelpPanelProps> = ({ onCancel }) => {
+export const HelpPanel: React.FC<HelpPanelProps> = ({ onCancel, isFocused }) => {
   const { currentTheme } = useTheme();
 
-  useInput((input, key) => {
-    if (key.escape || key.return) {
-      onCancel();
-    }
-  });
+  useInput(
+    (input, key) => {
+      if (key.escape || key.return) {
+        onCancel();
+      }
+    },
+    { isActive: isFocused },
+  );
 
   return (
     <Box flexDirection='column' paddingLeft={1} paddingRight={3} borderStyle='round' borderColor={currentTheme.colors.ui.border}>

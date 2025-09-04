@@ -7,9 +7,10 @@ interface ExecutionModeSelectorProps {
   currentMode: ExecutionMode;
   onModeSelected: (mode: ExecutionMode) => void;
   onCancel: () => void;
+  isFocused: boolean;
 }
 
-export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ currentMode, onModeSelected, onCancel }) => {
+export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ currentMode, onModeSelected, onCancel, isFocused }) => {
   const { currentTheme } = useTheme();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -20,22 +21,25 @@ export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ cu
     }
   }, [currentMode]);
 
-  useInput((input, key) => {
-    if (key.upArrow) {
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : ExecutionModeData.length - 1));
-    } else if (key.downArrow) {
-      setSelectedIndex((prev) => (prev < ExecutionModeData.length - 1 ? prev + 1 : 0));
-    } else if (key.return) {
-      onModeSelected(ExecutionModeData[selectedIndex].mode);
-    } else if (key.escape) {
-      onCancel();
-    } else if (input === '1' || input === '2') {
-      const index = parseInt(input) - 1;
-      if (index >= 0 && index < ExecutionModeData.length) {
-        onModeSelected(ExecutionModeData[index].mode);
+  useInput(
+    (input, key) => {
+      if (key.upArrow) {
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : ExecutionModeData.length - 1));
+      } else if (key.downArrow) {
+        setSelectedIndex((prev) => (prev < ExecutionModeData.length - 1 ? prev + 1 : 0));
+      } else if (key.return) {
+        onModeSelected(ExecutionModeData[selectedIndex].mode);
+      } else if (key.escape) {
+        onCancel();
+      } else if (input === '1' || input === '2') {
+        const index = parseInt(input) - 1;
+        if (index >= 0 && index < ExecutionModeData.length) {
+          onModeSelected(ExecutionModeData[index].mode);
+        }
       }
-    }
-  });
+    },
+    { isActive: isFocused },
+  );
 
   return (
     <Box flexDirection='column' paddingLeft={1} paddingRight={3} borderStyle='round' borderColor={currentTheme.colors.ui.border}>
@@ -44,7 +48,6 @@ export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ cu
           Select Execution Mode
         </Text>
       </Box>
-
       <Box flexDirection='column'>
         {ExecutionModeData.map((modeData, index) => (
           <Box key={modeData.mode} flexDirection='row' marginY={0}>
@@ -59,7 +62,6 @@ export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ cu
           </Box>
         ))}
       </Box>
-
       <Box marginTop={1}>
         <Text color={currentTheme.colors.text.muted}>
           <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate • <Text color={currentTheme.colors.accent}>Enter</Text> Select •<Text color={currentTheme.colors.accent}>1/2</Text> Quick select •

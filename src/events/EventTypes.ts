@@ -96,7 +96,6 @@ export interface SnapshotCreatedEvent extends BaseEvent {
   filesCount: number;
 }
 
-// 简单的Todo事件
 export interface TodoStartEvent extends BaseEvent {
   type: 'todo_start';
   todoId: string;
@@ -118,6 +117,7 @@ export interface ToolConfirmationRequestEvent extends BaseEvent {
     showRememberOption?: boolean;
     defaultChoice?: ConfirmationChoice;
     timeout?: number;
+    isEditOperation?: boolean;
   };
 }
 
@@ -144,7 +144,6 @@ export type UIEvent =
   | TodoEndEvent
   | ToolConfirmationRequestEvent
   | ToolConfirmationResponseEvent
-
 export type UIEventType = UIEvent['type'];
 
 export const UIEventType = {

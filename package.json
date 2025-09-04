@@ -112,6 +112,7 @@
     "socket.io": "^4.8.1",
     "undici": "^7.15.0",
     "zod": "^3.25.76",
-    "zod-to-json-schema": "^3.24.6"
+    "zod-to-json-schema": "^3.24.6",
+    "zustand": "^5.0.8"
   }
 }

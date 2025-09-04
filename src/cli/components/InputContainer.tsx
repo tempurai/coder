@@ -33,6 +33,7 @@ interface InputContainerProps {
   executionMode?: ExecutionMode;
   onExecutionModeChange?: (mode: ExecutionMode) => void;
   sessionService: any;
+  exit: () => void;
 }
 
 export const InputContainer: React.FC<InputContainerProps> = ({
@@ -45,6 +46,7 @@ export const InputContainer: React.FC<InputContainerProps> = ({
   executionMode = ExecutionMode.CODE,
   onExecutionModeChange,
   sessionService,
+  exit,
 }) => {
   const { currentTheme } = useTheme();
   const [input, setInput] = useState('');
@@ -55,7 +57,6 @@ export const InputContainer: React.FC<InputContainerProps> = ({
   const isConfirmationMode = !!confirmationData;
   const showRememberOption = confirmationData?.options?.showRememberOption !== false;
   const isEditOperation = confirmationData?.options?.isEditOperation || false;
-
   const choices: ConfirmationChoice[] = showRememberOption ? [ConfirmationChoice.YES, ConfirmationChoice.NO, ConfirmationChoice.YES_AND_REMEMBER] : [ConfirmationChoice.YES, ConfirmationChoice.NO];
 
   useEffect(() => {
@@ -69,7 +70,6 @@ export const InputContainer: React.FC<InputContainerProps> = ({
   const handleInputChange = useCallback(
     (value: string) => {
       setInput(value);
-
       if (value === '/') {
         setMode('command');
         setInput('');
@@ -130,47 +130,37 @@ export const InputContainer: React.FC<InputContainerProps> = ({
     setMode('normal');
   }, [setMode]);
 
-  // Handle global shortcuts - 这里是主要的输入处理逻辑
   useInput(
     (char, key) => {
-      // 只在 normal 模式下处理快捷键
       if (currentMode === 'normal' && !isConfirmationMode) {
-        // Handle Ctrl+C
-        if (key.ctrl && char === 'c') {
+        if (key.ctrl && char.toLowerCase() === 'c') {
           if (input.trim()) {
-            // 清空输入，保持焦点
             setInput('');
-            return;
           } else {
-            // 输入为空时，开始计数退出
             setCtrlCCount((prev) => prev + 1);
             if (ctrlCCount >= 1) {
               sessionService.interrupt();
-              process.exit(0);
+              exit();
             }
-            return;
           }
+          return;
         } else {
-          // 其他按键重置退出计数
           if (ctrlCCount > 0) {
             setCtrlCCount(0);
           }
         }
 
-        // Handle Ctrl+T for theme selection
         if (key.ctrl && char === 't') {
           setMode('theme');
           return;
         }
 
-        // Handle Shift+Tab for edit mode toggle
         if (key.shift && key.tab && onEditModeToggle) {
           onEditModeToggle();
           return;
         }
       }
 
-      // Handle confirmation mode input
       if (isConfirmationMode) {
         if (key.upArrow) {
           const currentIndex = choices.indexOf(selectedChoice);
@@ -229,7 +219,7 @@ export const InputContainer: React.FC<InputContainerProps> = ({
 
   return (
     <Box flexDirection='column'>
-      {/* Confirmation Mode */}
+      {}
       {isConfirmationMode && confirmationData && (
         <Box flexDirection='column' marginBottom={1}>
           <Box flexDirection='column' paddingX={2} paddingY={1} borderStyle='round' borderColor={currentTheme.colors.warning}>
@@ -278,12 +268,11 @@ export const InputContainer: React.FC<InputContainerProps> = ({
         </Box>
       )}
 
-      {/* Normal Input Mode */}
+      {}
       {!isConfirmationMode && (
         <Box flexDirection='column'>
-          <BaseInputField value={input} onChange={handleInputChange} onSubmit={handleInputSubmit} isProcessing={isProcessing} isActive={currentMode === 'normal'} />
+          <BaseInputField value={input} onChange={handleInputChange} onSubmit={handleInputSubmit} isProcessing={isProcessing} isActive={currentMode === 'normal'} executionMode={executionMode} />
 
-          {/* Mode Panels */}
           {isPanelMode && (
             <Box marginTop={1}>
               {currentMode === 'command' && <CommandPalette onSelect={handleCommandSelect} onCancel={handleCancel} onModeSelect={handleCommandModeSelect} onThemeSelect={handleCommandThemeSelect} />}
@@ -293,7 +282,6 @@ export const InputContainer: React.FC<InputContainerProps> = ({
             </Box>
           )}
 
-          {/* Status Info */}
           <Box flexDirection='column'>
             {editModeStatus && (
               <Box marginBottom={0}>

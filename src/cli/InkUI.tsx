@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { render, Text, Box, useInput, Static } from 'ink';
+import { render, Text, Box, useInput, Static, useApp } from 'ink';
 import { SessionService } from '../services/SessionService.js';
 import { ThemeName, ThemeProvider, useTheme } from './themes/index.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
@@ -19,13 +19,13 @@ interface CodeAssistantAppProps {
 
 interface MainUIProps {
   sessionService: SessionService;
+  exit: () => void;
 }
 
-const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
+const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
   const { currentTheme } = useTheme();
   const { cliEvents, isProcessing, pendingConfirmation, currentActivity, handleConfirmation } = useSessionEvents(sessionService);
   const { staticEvents, dynamicEvents } = useEventSeparation(cliEvents);
-
   const [editModeStatus, setEditModeStatus] = useState<string>('');
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(ExecutionMode.CODE);
 
@@ -82,7 +82,6 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
     </Box>,
     ...staticEvents
       .filter((event) => {
-        // 过滤掉确认相关事件
         const hiddenEventTypes = ['tool_confirmation_request', 'tool_confirmation_response'];
         return !hiddenEventTypes.includes(event.type);
       })
@@ -120,6 +119,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
           executionMode={executionMode}
           onExecutionModeChange={handleExecutionModeChange}
           sessionService={sessionService}
+          exit={exit}
         />
       </Box>
     </Box>
@@ -129,17 +129,16 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService }) => {
   const { setTheme, availableThemes, themeName } = useTheme();
   const [appState, setAppState] = useState<AppState>('welcome');
+  const { exit } = useApp();
 
   useInput((inputChar: string, key: any) => {
     if (key.escape) {
       sessionService.interrupt();
       return;
     }
-
     if (key.ctrl && inputChar === 'r') {
       return;
     }
-
     if (appState === 'welcome') {
       setAppState('theme-selection');
       return;
@@ -152,7 +151,7 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
   if (appState === 'welcome') return <WelcomeScreen onDismiss={handleWelcomeDismiss} />;
   if (appState === 'theme-selection') return <ThemeSelectorWithPreview onThemeSelected={handleThemeSelected} onCancel={() => setAppState('welcome')} />;
 
-  return <MainUI sessionService={sessionService} />;
+  return <MainUI sessionService={sessionService} exit={exit} />;
 };
 
 const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => (
@@ -163,14 +162,15 @@ const CodeAssistantApp: React.FC<CodeAssistantAppProps> = (props) => (
 
 export const startInkUI = async (sessionService: SessionService) => {
   console.log('Starting InkUI Interface...');
-
   const exitFn = () => {
     sessionService.interrupt();
     process.exit(0);
   };
 
-  process.on('SIGINT', exitFn);
   process.on('SIGTERM', exitFn);
 
-  render(<CodeAssistantApp sessionService={sessionService} />, { patchConsole: false });
+  render(<CodeAssistantApp sessionService={sessionService} />, {
+    patchConsole: false,
+    exitOnCtrlC: false,
+  });
 };

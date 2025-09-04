@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { SessionService } from '../../services/SessionService.js';
 import { UIEvent, UIEventType, ToolConfirmationResponseEvent, SystemInfoEvent, TodoStartEvent, TodoEndEvent } from '../../events/index.js';
 import { ConfirmationChoice } from '../../services/HITLManager.js';
+import { useUiStore } from '../stores/uiStore.js';
 
 export interface PendingConfirmation {
     confirmationId: string;
@@ -100,6 +101,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
     const [currentActivity, setCurrentActivity] = useState<string>('');
     const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
     const [toolExecutions, setToolExecutions] = useState<Map<string, ToolExecutionState>>(new Map());
+    const { setActivePanel } = useUiStore((state) => state.actions);
 
     const convertToCLIEvent = useCallback((uiEvent: UIEvent): CLIEvent | null => {
         const baseEvent = {
@@ -240,7 +242,14 @@ export const useSessionEvents = (sessionService: SessionService) => {
 
             case UIEventType.ToolConfirmationRequest:
             case UIEventType.ToolConfirmationResponse:
+                return {
+                    ...baseEvent,
+                    type: CLIEventType.SYSTEM_INFO,
+                    symbol: CLISymbol.WAITING_INPUT,
+                    content: uiEvent.type,
+                };
             case UIEventType.TaskStart:
+                // This is a pure control event to show the spinner, it shouldn't be a chat bubble.
                 return null;
 
             default:
@@ -446,6 +455,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
                         description: confirmEvent.description,
                         options: confirmEvent.options,
                     });
+                    setActivePanel('CONFIRMATION');
                     break;
 
                 case UIEventType.ToolConfirmationResponse:
@@ -466,8 +476,7 @@ export const useSessionEvents = (sessionService: SessionService) => {
             }
             flushEvents();
         };
-    }, [sessionService, pendingConfirmation, mergeToolExecutionEvents, handleSystemInfoError]);
-
+    }, [sessionService, pendingConfirmation, mergeToolExecutionEvents, handleSystemInfoError, setActivePanel]);
     useEffect(() => {
         const convertedEvents = events
             .map(convertToCLIEvent)

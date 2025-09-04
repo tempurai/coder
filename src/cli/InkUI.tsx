@@ -81,7 +81,8 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
       const newNodes = newEvents
         .filter((event) => {
           const hiddenEventTypes = ['tool_confirmation_request', 'tool_confirmation_response'];
-          return !hiddenEventTypes.includes(event.type);
+          // FIX: Check the originalEvent's type, not the converted CLI event's type.
+          return event.originalEvent ? !hiddenEventTypes.includes(event.originalEvent.type) : true;
         })
         .map((event, index) => (
           <Box key={event.id || `static-${currentStaticEventCount + index}`} marginBottom={1}>
@@ -117,7 +118,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
 
   const handlePanelClose = useCallback(() => {
     setActivePanel('INPUT');
-    setInputKey((k) => k + 1); // Force re-mount of InputContainer to regain focus reliably
+    setInputKey((k) => k + 1);
   }, [setActivePanel]);
 
   const getChoiceText = (choice: ConfirmationChoice): string => {

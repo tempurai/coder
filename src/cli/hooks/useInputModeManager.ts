@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 
-type InputMode = 'normal' | 'command' | 'execution' | 'help';
+type InputMode = 'normal' | 'command' | 'execution' | 'help' | 'theme';
 
 interface InputModeManager {
     currentMode: InputMode;

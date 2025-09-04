@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../themes/index.js';
 import { ExecutionMode } from '../../services/ExecutionModeManager.js';
@@ -7,6 +7,7 @@ import { BaseInputField } from './BaseInputField.js';
 import { CommandPalette } from './CommandPalette.js';
 import { ExecutionModeSelector } from './ExecutionModeSelector.js';
 import { HelpPanel } from './HelpPanel.js';
+import { ThemeSelector } from './ThemeSelector.js';
 import { useInputModeManager } from '../hooks/useInputModeManager.js';
 
 interface ConfirmationData {
@@ -31,25 +32,44 @@ interface InputContainerProps {
   onEditModeToggle?: () => void;
   executionMode?: ExecutionMode;
   onExecutionModeChange?: (mode: ExecutionMode) => void;
+  sessionService: any;
 }
 
-export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProcessing, confirmationData, onConfirm, editModeStatus, onEditModeToggle, executionMode = ExecutionMode.CODE, onExecutionModeChange }) => {
+export const InputContainer: React.FC<InputContainerProps> = ({
+  onSubmit,
+  isProcessing,
+  confirmationData,
+  onConfirm,
+  editModeStatus,
+  onEditModeToggle,
+  executionMode = ExecutionMode.CODE,
+  onExecutionModeChange,
+  sessionService,
+}) => {
   const { currentTheme } = useTheme();
   const [input, setInput] = useState('');
   const [selectedChoice, setSelectedChoice] = useState<ConfirmationChoice>(confirmationData?.options?.defaultChoice ?? ConfirmationChoice.YES);
-
   const { currentMode, setMode, isPanelMode } = useInputModeManager();
+  const [ctrlCCount, setCtrlCCount] = useState<number>(0);
 
   const isConfirmationMode = !!confirmationData;
   const showRememberOption = confirmationData?.options?.showRememberOption !== false;
   const isEditOperation = confirmationData?.options?.isEditOperation || false;
+
   const choices: ConfirmationChoice[] = showRememberOption ? [ConfirmationChoice.YES, ConfirmationChoice.NO, ConfirmationChoice.YES_AND_REMEMBER] : [ConfirmationChoice.YES, ConfirmationChoice.NO];
+
+  useEffect(() => {
+    if (ctrlCCount > 0) {
+      const timer = setTimeout(() => setCtrlCCount(0), 2000);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [ctrlCCount]);
 
   const handleInputChange = useCallback(
     (value: string) => {
       setInput(value);
 
-      // Check for special triggers
       if (value === '/') {
         setMode('command');
         setInput('');
@@ -84,6 +104,14 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
     [setMode],
   );
 
+  const handleCommandModeSelect = useCallback(() => {
+    setMode('execution');
+  }, [setMode]);
+
+  const handleCommandThemeSelect = useCallback(() => {
+    setMode('theme');
+  }, [setMode]);
+
   const handleExecutionModeSelect = useCallback(
     (mode: ExecutionMode) => {
       if (onExecutionModeChange) {
@@ -94,18 +122,55 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
     [onExecutionModeChange, setMode],
   );
 
+  const handleThemeSelected = useCallback(() => {
+    setMode('normal');
+  }, [setMode]);
+
   const handleCancel = useCallback(() => {
     setMode('normal');
   }, [setMode]);
 
-  // Handle confirmation mode input
+  // Handle global shortcuts - 这里是主要的输入处理逻辑
   useInput(
     (char, key) => {
-      if (key.shift && key.tab && !isConfirmationMode && onEditModeToggle && currentMode === 'normal') {
-        onEditModeToggle();
-        return;
+      // 只在 normal 模式下处理快捷键
+      if (currentMode === 'normal' && !isConfirmationMode) {
+        // Handle Ctrl+C
+        if (key.ctrl && char === 'c') {
+          if (input.trim()) {
+            // 清空输入，保持焦点
+            setInput('');
+            return;
+          } else {
+            // 输入为空时，开始计数退出
+            setCtrlCCount((prev) => prev + 1);
+            if (ctrlCCount >= 1) {
+              sessionService.interrupt();
+              process.exit(0);
+            }
+            return;
+          }
+        } else {
+          // 其他按键重置退出计数
+          if (ctrlCCount > 0) {
+            setCtrlCCount(0);
+          }
+        }
+
+        // Handle Ctrl+T for theme selection
+        if (key.ctrl && char === 't') {
+          setMode('theme');
+          return;
+        }
+
+        // Handle Shift+Tab for edit mode toggle
+        if (key.shift && key.tab && onEditModeToggle) {
+          onEditModeToggle();
+          return;
+        }
       }
 
+      // Handle confirmation mode input
       if (isConfirmationMode) {
         if (key.upArrow) {
           const currentIndex = choices.indexOf(selectedChoice);
@@ -173,14 +238,12 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
                 {isEditOperation ? 'File Edit Confirmation' : 'Command Confirmation Required'}
               </Text>
             </Box>
-
             <Box flexDirection='column' marginBottom={1}>
               <Text color={currentTheme.colors.text.primary} bold>
                 Tool: {confirmationData.toolName}
               </Text>
               <Text color={currentTheme.colors.text.secondary}>{confirmationData.description}</Text>
             </Box>
-
             {confirmationData.args && Object.keys(confirmationData.args).length > 0 && (
               <Box flexDirection='column' marginBottom={1}>
                 <Text color={currentTheme.colors.text.muted}>Parameters:</Text>
@@ -189,7 +252,6 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
                 </Box>
               </Box>
             )}
-
             <Box flexDirection='column' marginBottom={1}>
               <Text color={currentTheme.colors.text.primary} bold>
                 Do you want to proceed?
@@ -204,7 +266,6 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
               ))}
             </Box>
           </Box>
-
           <Text color={currentTheme.colors.text.muted}>
             <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate •<Text color={currentTheme.colors.accent}>Enter</Text> Confirm •<Text color={currentTheme.colors.accent}>Esc</Text> Cancel
             {showRememberOption && (
@@ -222,18 +283,17 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
         <Box flexDirection='column'>
           <BaseInputField value={input} onChange={handleInputChange} onSubmit={handleInputSubmit} isProcessing={isProcessing} isActive={currentMode === 'normal'} />
 
-          {/* Panel Modes */}
+          {/* Mode Panels */}
           {isPanelMode && (
             <Box marginTop={1}>
-              {currentMode === 'command' && <CommandPalette onSelect={handleCommandSelect} onCancel={handleCancel} />}
-
+              {currentMode === 'command' && <CommandPalette onSelect={handleCommandSelect} onCancel={handleCancel} onModeSelect={handleCommandModeSelect} onThemeSelect={handleCommandThemeSelect} />}
               {currentMode === 'execution' && onExecutionModeChange && <ExecutionModeSelector currentMode={executionMode} onModeSelected={handleExecutionModeSelect} onCancel={handleCancel} />}
-
               {currentMode === 'help' && <HelpPanel onCancel={handleCancel} />}
+              {currentMode === 'theme' && <ThemeSelector onThemeSelected={handleThemeSelected} onCancel={handleCancel} />}
             </Box>
           )}
 
-          {/* Status and Help Text */}
+          {/* Status Info */}
           <Box flexDirection='column'>
             {editModeStatus && (
               <Box marginBottom={0}>
@@ -242,7 +302,6 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
                 </Text>
               </Box>
             )}
-
             <Text color={currentTheme.colors.text.muted}>
               {isProcessing ? (
                 <>
@@ -250,7 +309,8 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
                 </>
               ) : (
                 <>
-                  Type <Text color={currentTheme.colors.accent}>:</Text> for execution mode •<Text color={currentTheme.colors.accent}>/help</Text> for commands •<Text color={currentTheme.colors.accent}>Ctrl+C</Text> to exit
+                  Type <Text color={currentTheme.colors.accent}>:</Text> for execution mode •<Text color={currentTheme.colors.accent}>/help</Text> for commands •<Text color={currentTheme.colors.accent}>Ctrl+T</Text> for themes •
+                  <Text color={currentTheme.colors.accent}>Ctrl+C</Text> to clear/exit
                   {editModeStatus && (
                     <>
                       {' '}

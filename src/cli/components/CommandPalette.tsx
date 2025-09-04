@@ -11,9 +11,11 @@ interface Command {
 interface CommandPaletteProps {
   onSelect: (command: string) => void;
   onCancel: () => void;
+  onModeSelect?: () => void;
+  onThemeSelect?: () => void;
 }
 
-export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCancel }) => {
+export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCancel, onModeSelect, onThemeSelect }) => {
   const { currentTheme } = useTheme();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -26,11 +28,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
     {
       name: 'theme',
       description: 'Switch theme or list available themes',
-      usage: '/theme [theme-name]',
+      usage: '/theme',
     },
     {
       name: 'mode',
-      description: 'Show current execution and edit modes',
+      description: 'Show execution mode selector',
       usage: '/mode',
     },
   ];
@@ -41,7 +43,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
     } else if (key.downArrow) {
       setSelectedIndex((prev) => (prev < commands.length - 1 ? prev + 1 : 0));
     } else if (key.return) {
-      onSelect(commands[selectedIndex].usage);
+      const selectedCommand = commands[selectedIndex];
+      if (selectedCommand.name === 'mode' && onModeSelect) {
+        onModeSelect();
+      } else if (selectedCommand.name === 'theme' && onThemeSelect) {
+        onThemeSelect();
+      } else {
+        onSelect(selectedCommand.usage);
+      }
     } else if (key.escape) {
       onCancel();
     }
@@ -54,7 +63,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
           Available Commands
         </Text>
       </Box>
-
       <Box flexDirection='column'>
         {commands.map((command, index) => (
           <Box key={command.name} flexDirection='row' marginY={0}>
@@ -68,10 +76,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
           </Box>
         ))}
       </Box>
-
       <Box marginTop={1}>
         <Text color={currentTheme.colors.text.muted}>
-          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate • <Text color={currentTheme.colors.accent}>Enter</Text> Select •<Text color={currentTheme.colors.accent}>Esc</Text> Cancel
+          <Text color={currentTheme.colors.accent}>↑/↓</Text> Navigate • <Text color={currentTheme.colors.accent}>Enter</Text> Select • <Text color={currentTheme.colors.accent}>Esc</Text> Cancel
         </Text>
       </Box>
     </Box>

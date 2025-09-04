@@ -3,7 +3,7 @@ import { render, Text, Box, useInput, Static } from 'ink';
 import { SessionService } from '../services/SessionService.js';
 import { ThemeName, ThemeProvider, useTheme } from './themes/index.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
-import { ThemeSelector } from './components/ThemeSelector.js';
+import { ThemeSelector, ThemeSelectorWithPreview } from './components/ThemeSelector.js';
 import { InputContainer } from './components/InputContainer.js';
 import { useSessionEvents } from './hooks/useSessionEvents.js';
 import { useEventSeparation } from './hooks/useEventSeparation.js';
@@ -119,6 +119,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
           onEditModeToggle={handleEditModeToggle}
           executionMode={executionMode}
           onExecutionModeChange={handleExecutionModeChange}
+          sessionService={sessionService}
         />
       </Box>
     </Box>
@@ -128,28 +129,8 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService }) => {
 const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService }) => {
   const { setTheme, availableThemes, themeName } = useTheme();
   const [appState, setAppState] = useState<AppState>('welcome');
-  const [ctrlCCount, setCtrlCCount] = useState<number>(0);
-
-  useEffect(() => {
-    if (ctrlCCount > 0) {
-      const timer = setTimeout(() => setCtrlCCount(0), 2000);
-      return () => clearTimeout(timer);
-    }
-    return undefined;
-  }, [ctrlCCount]);
 
   useInput((inputChar: string, key: any) => {
-    if (key.ctrl && inputChar === 'c') {
-      setCtrlCCount((prev) => prev + 1);
-      if (ctrlCCount >= 1) {
-        sessionService.interrupt();
-        process.exit(0);
-      }
-      return;
-    } else {
-      setCtrlCCount(0);
-    }
-
     if (key.escape) {
       sessionService.interrupt();
       return;
@@ -163,21 +144,13 @@ const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService 
       setAppState('theme-selection');
       return;
     }
-
-    if (appState === 'ready') {
-      if (key.ctrl && inputChar === 't') {
-        const currentIndex = availableThemes.indexOf(themeName);
-        const nextIndex = (currentIndex + 1) % availableThemes.length;
-        setTheme(availableThemes[nextIndex]);
-      }
-    }
   });
 
   const handleWelcomeDismiss = useCallback(() => setAppState('theme-selection'), []);
   const handleThemeSelected = useCallback(() => setAppState('ready'), []);
 
   if (appState === 'welcome') return <WelcomeScreen onDismiss={handleWelcomeDismiss} />;
-  if (appState === 'theme-selection') return <ThemeSelector onThemeSelected={handleThemeSelected} />;
+  if (appState === 'theme-selection') return <ThemeSelectorWithPreview onThemeSelected={handleThemeSelected} onCancel={() => setAppState('welcome')} />;
 
   return <MainUI sessionService={sessionService} />;
 };

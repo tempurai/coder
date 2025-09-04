@@ -120,7 +120,7 @@ export const CodePreview: React.FC<CodePreviewProps> = ({ theme }) => {
 
   return (
     <ThemeProvider defaultTheme={theme.name as any}>
-      <Box flexDirection='column' borderStyle='round' borderColor={theme.colors.ui.border} paddingX={1} paddingY={1} marginTop={1} width={85}>
+      <Box flexDirection='column' borderStyle='round' borderColor={theme.colors.ui.border} paddingX={1} marginTop={1} width={90}>
         <Text color={theme.colors.text.muted} bold>
           {theme.displayName} - Live Preview
         </Text>
@@ -135,7 +135,6 @@ export const CodePreview: React.FC<CodePreviewProps> = ({ theme }) => {
 
         <Box marginTop={1} justifyContent='space-between' borderStyle='round' borderColor={theme.colors.ui.border} paddingX={1}>
           <Text color={theme.colors.info}>Preview Mode • {mockEvents.length} events</Text>
-          <Text color={theme.colors.text.muted}>Authentication security workflow</Text>
         </Box>
       </Box>
     </ThemeProvider>

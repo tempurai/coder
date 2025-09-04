@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import glob from 'fast-glob';
-import yaml from 'js-yaml';
+import glob = require('fast-glob');
+import yaml = require('js-yaml');
 import { IndentLogger } from '../utils/IndentLogger.js';
 
 interface ConfigEvidence {
@@ -237,9 +237,9 @@ export class EvidenceCollector {
                     p.includes(pattern) ? Math.max(w, weight) : w, 0
                 ),
             }))
-            .sort((a, b) => b.weight - a.weight)
+            .sort((a: { path: string; weight: number }, b: { path: string; weight: number }) => b.weight - a.weight)
             .slice(0, 100)
-            .map(({ path }) => path);
+            .map(({ path }: { path: string; weight: number }) => path);
 
         return result;
     }

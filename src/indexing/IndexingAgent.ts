@@ -1,4 +1,4 @@
-import { generateObject, generateText } from 'ai';
+import { generateObject } from 'ai';
 import type { LanguageModel } from 'ai';
 import { getContainer } from '../di/container.js';
 import { TYPES } from '../di/types.js';
@@ -13,44 +13,41 @@ export class IndexingAgent {
     private config!: Config;
     private initialized = false;
 
-    async initialize(): Promise<void> {
+    private async initialize(): Promise<void> {
         if (this.initialized) return;
 
+        console.log('   Initializing LLM for project analysis...');
         const container = getContainer();
         this.model = await container.getAsync<LanguageModel>(TYPES.LanguageModel);
         this.config = container.get<Config>(TYPES.Config);
+        console.log(`   LLM initialized: ${this.config.models?.[0]?.provider}:${this.config.models?.[0]?.name}`);
         this.initialized = true;
-    }
-
-    async generateText(messages: IndexingMessages): Promise<string> {
-        await this.initialize();
-
-        try {
-            const result = await generateText({
-                model: this.model,
-                messages,
-                maxOutputTokens: this.config.maxTokens,
-                temperature: this.config.temperature,
-            });
-            return result.text;
-        } catch (error) {
-            throw new Error(`Indexing text generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
     }
 
     async generateObject<T>(messages: IndexingMessages, schema: ZodSchema<T>): Promise<T> {
         await this.initialize();
 
+        const totalInputChars = messages.map(m => m.content).join('').length;
+        console.log('   Making LLM object generation request...');
+        console.log(`     - Model: ${this.config.models?.[0]?.provider}:${this.config.models?.[0]?.name}`);
+        console.log(`     - Input messages: ${messages.length}`);
+        console.log(`     - Total input characters: ~${(totalInputChars / 1024).toFixed(1)} KB`);
+
         try {
-            const result = await generateObject({
+            const { object } = await generateObject({
                 model: this.model,
                 messages,
                 schema,
                 maxTokens: this.config.maxTokens,
                 temperature: this.config.temperature,
             });
-            return result.object;
+            console.log('   LLM object generation successful.');
+            return object;
         } catch (error) {
+            console.error('   LLM object generation failed:', error instanceof Error ? error.message : 'Unknown error');
+            if (error instanceof Error && error.stack) {
+                console.error('   Error stack trace:', error.stack);
+            }
             throw new Error(`Indexing object generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }

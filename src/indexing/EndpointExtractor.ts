@@ -42,28 +42,63 @@ export class EndpointExtractor {
     ];
 
     async extractFromFiles(files: Array<{ path: string; content: string }>): Promise<ExtractedEndpoint[]> {
+        console.log(`   Analyzing ${files.length} files for endpoints...`);
+
         const endpoints: ExtractedEndpoint[] = [];
+        let frameworkEndpoints = 0;
+        let genericEndpoints = 0;
+        let configEndpoints = 0;
 
         for (const file of files) {
             const fileEndpoints = await this.extractFromFile(file.path, file.content);
+
+            // Count by detection method
+            fileEndpoints.forEach(ep => {
+                if (ep.confidence === 'high') frameworkEndpoints++;
+                else if (ep.evidence === 'OpenAPI specification') configEndpoints++;
+                else genericEndpoints++;
+            });
+
             endpoints.push(...fileEndpoints);
         }
 
-        return this.deduplicateEndpoints(endpoints);
+        const deduplicatedEndpoints = this.deduplicateEndpoints(endpoints);
+        const originalCount = endpoints.length;
+        const finalCount = deduplicatedEndpoints.length;
+
+        console.log('   Endpoint extraction summary:');
+        console.log(`     Framework-specific patterns: ${frameworkEndpoints}`);
+        console.log(`     Generic patterns: ${genericEndpoints}`);
+        console.log(`     Configuration files: ${configEndpoints}`);
+        console.log(`     Before deduplication: ${originalCount}`);
+        console.log(`     After deduplication: ${finalCount}`);
+
+        if (finalCount > 0) {
+            const methodBreakdown = this.getMethodBreakdown(deduplicatedEndpoints);
+            console.log(`     Method breakdown: ${methodBreakdown.map(m => `${m.method}(${m.count})`).join(', ')}`);
+
+            const confidenceBreakdown = this.getConfidenceBreakdown(deduplicatedEndpoints);
+            console.log(`     Confidence levels: ${confidenceBreakdown.map(c => `${c.level}(${c.count})`).join(', ')}`);
+        }
+
+        return deduplicatedEndpoints;
     }
 
     private async extractFromFile(filePath: string, content: string): Promise<ExtractedEndpoint[]> {
         const endpoints: ExtractedEndpoint[] = [];
         const lines = content.split('\n');
-
         const framework = this.detectFramework(filePath, content);
+
+        // Try framework-specific patterns first
         if (framework && this.frameworkPatterns[framework]) {
+            console.log(`     Detected ${framework} in ${filePath}`);
             for (const pattern of this.frameworkPatterns[framework]) {
                 const matches = this.extractWithPattern(content, pattern, filePath, lines);
                 endpoints.push(...matches);
             }
         }
 
+        // If no framework matches found, try generic patterns
         if (endpoints.length === 0) {
             for (const pattern of this.genericPatterns) {
                 const matches = this.extractWithPattern(content, pattern, filePath, lines, 'low');
@@ -71,6 +106,7 @@ export class EndpointExtractor {
             }
         }
 
+        // Always try config-based extraction
         const configEndpoints = await this.extractFromConfig(filePath, content);
         endpoints.push(...configEndpoints);
 
@@ -127,37 +163,31 @@ export class EndpointExtractor {
         if (content.includes('@Controller') || content.includes('@Get(') || content.includes('@nestjs/')) {
             return 'nestjs';
         }
-
         if (content.includes('express') && (content.includes('app.get') || content.includes('router.get'))) {
             return 'express';
         }
-
         if (content.includes('fastapi') || content.includes('@app.get')) {
             return 'fastapi';
         }
-
         if (content.includes('@app.route') || content.includes('from flask')) {
             return 'flask';
         }
-
         if (path.basename(filePath) === 'urls.py' || content.includes('django.urls')) {
             return 'django';
         }
-
         if (content.includes('gin.') && content.includes('r.GET')) {
             return 'gin';
         }
-
         if (content.includes('@RestController') || content.includes('@GetMapping')) {
             return 'spring';
         }
-
         return null;
     }
 
     private async extractFromConfig(filePath: string, content: string): Promise<ExtractedEndpoint[]> {
         const endpoints: ExtractedEndpoint[] = [];
 
+        // Check if this looks like an OpenAPI/Swagger spec
         if (filePath.includes('openapi') || filePath.includes('swagger')) {
             try {
                 const spec = JSON.parse(content);
@@ -176,7 +206,9 @@ export class EndpointExtractor {
                         });
                     });
                 }
-            } catch { }
+            } catch {
+                // Not valid JSON, ignore
+            }
         }
 
         return endpoints;
@@ -194,9 +226,41 @@ export class EndpointExtractor {
             }
         }
 
+        // Sort by confidence, then by method and path
         return unique.sort((a, b) => {
             const confScore = { high: 3, medium: 2, low: 1 };
-            return confScore[b.confidence] - confScore[a.confidence];
+            const confDiff = confScore[b.confidence] - confScore[a.confidence];
+            if (confDiff !== 0) return confDiff;
+
+            const methodDiff = a.method.localeCompare(b.method);
+            if (methodDiff !== 0) return methodDiff;
+
+            return a.path.localeCompare(b.path);
         });
+    }
+
+    private getMethodBreakdown(endpoints: ExtractedEndpoint[]): Array<{ method: string; count: number }> {
+        const counts: Record<string, number> = {};
+        endpoints.forEach(ep => {
+            counts[ep.method] = (counts[ep.method] || 0) + 1;
+        });
+
+        return Object.entries(counts)
+            .map(([method, count]) => ({ method, count }))
+            .sort((a, b) => b.count - a.count);
+    }
+
+    private getConfidenceBreakdown(endpoints: ExtractedEndpoint[]): Array<{ level: string; count: number }> {
+        const counts: Record<string, number> = {};
+        endpoints.forEach(ep => {
+            counts[ep.confidence] = (counts[ep.confidence] || 0) + 1;
+        });
+
+        return Object.entries(counts)
+            .map(([level, count]) => ({ level, count }))
+            .sort((a, b) => {
+                const order = { high: 3, medium: 2, low: 1 };
+                return (order[b.level as keyof typeof order] || 0) - (order[a.level as keyof typeof order] || 0);
+            });
     }
 }

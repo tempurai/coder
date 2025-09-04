@@ -33,7 +33,7 @@ export interface Evidence {
     config: ConfigEvidence;
     dependencies: DependencyInfo[];
     ports: PortInfo[];
-    languages: Record<string, number>;
+    languages: Array<{ name: string; count: number }>;
     importantPaths: string[];
     frameworks: string[];
     databases: string[];
@@ -43,16 +43,35 @@ export class EvidenceCollector {
     constructor(private readonly projectRoot: string) { }
 
     async collect(): Promise<Evidence> {
-        const [config, languages, importantPaths] = await Promise.all([
-            this.collectConfig(),
-            this.analyzeLanguages(),
-            this.findImportantPaths(),
-        ]);
+        console.log('   Collecting configuration files...');
+        const config = await this.collectConfig();
 
+        console.log('   Analyzing programming languages...');
+        const languages = await this.analyzeLanguages();
+
+        console.log('   Finding important file paths...');
+        const importantPaths = await this.findImportantPaths();
+
+        console.log('   Extracting dependencies...');
         const dependencies = this.extractDependencies(config);
+
+        console.log('   Extracting port configurations...');
         const ports = this.extractPorts(config);
+
+        console.log('   Detecting frameworks...');
         const frameworks = this.detectFrameworks(config, dependencies);
+
+        console.log('   Detecting databases...');
         const databases = this.detectDatabases(dependencies, config);
+
+        // Print findings overview
+        console.log('   Evidence collection findings:');
+        console.log(`     Languages detected: ${languages.map(l => `${l.name}(${l.count})`).join(', ') || 'None'}`);
+        console.log(`     Frameworks found: ${frameworks.join(', ') || 'None'}`);
+        console.log(`     Databases detected: ${databases.join(', ') || 'None'}`);
+        console.log(`     Dependencies: ${dependencies.length}`);
+        console.log(`     Important paths: ${importantPaths.length}`);
+        console.log(`     Ports configured: ${ports.length}`);
 
         return {
             config,
@@ -80,7 +99,10 @@ export class EvidenceCollector {
             try {
                 const content = await fs.readFile(path.join(this.projectRoot, composeFiles[0]), 'utf-8');
                 config.dockerCompose = yaml.load(content);
-            } catch { }
+                console.log(`     Found docker-compose: ${composeFiles[0]}`);
+            } catch {
+                console.log(`     Failed to read docker-compose: ${composeFiles[0]}`);
+            }
         }
 
         config.dockerfiles = await glob(['**/Dockerfile*'], {
@@ -88,23 +110,30 @@ export class EvidenceCollector {
             absolute: false,
             ignore: ['node_modules/**', '.git/**', 'dist/**', 'build/**'],
         });
+        if (config.dockerfiles.length > 0) {
+            console.log(`     Found ${config.dockerfiles.length} Dockerfile(s)`);
+        }
 
         try {
             const pkgPath = path.join(this.projectRoot, 'package.json');
             const content = await fs.readFile(pkgPath, 'utf-8');
             config.packageJson = JSON.parse(content);
+            console.log('     Found package.json');
         } catch { }
 
         try {
             config.pyprojectToml = await fs.readFile(path.join(this.projectRoot, 'pyproject.toml'), 'utf-8');
+            console.log('     Found pyproject.toml');
         } catch { }
 
         try {
             config.goMod = await fs.readFile(path.join(this.projectRoot, 'go.mod'), 'utf-8');
+            console.log('     Found go.mod');
         } catch { }
 
         try {
             config.cargoToml = await fs.readFile(path.join(this.projectRoot, 'Cargo.toml'), 'utf-8');
+            console.log('     Found Cargo.toml');
         } catch { }
 
         const openApiFiles = await glob(['**/openapi.{yml,yaml,json}', '**/swagger.{yml,yaml,json}'], {
@@ -120,7 +149,10 @@ export class EvidenceCollector {
                 } else {
                     config.openApi = yaml.load(content);
                 }
-            } catch { }
+                console.log(`     Found OpenAPI spec: ${openApiFiles[0]}`);
+            } catch {
+                console.log(`     Failed to parse OpenAPI spec: ${openApiFiles[0]}`);
+            }
         }
 
         const k8sFiles = await glob(['k8s/**/*.{yml,yaml}', '**/*k8s*.{yml,yaml}', '**/deployment*.{yml,yaml}'], {
@@ -134,17 +166,23 @@ export class EvidenceCollector {
                 config.kubernetes.push(yaml.load(content));
             } catch { }
         }
+        if (config.kubernetes.length > 0) {
+            console.log(`     Found ${config.kubernetes.length} Kubernetes manifest(s)`);
+        }
 
         config.envFiles = await glob(['.env*', '**/.env*'], {
             cwd: this.projectRoot,
             absolute: false,
             ignore: ['node_modules/**', '.git/**'],
         });
+        if (config.envFiles.length > 0) {
+            console.log(`     Found ${config.envFiles.length} environment file(s)`);
+        }
 
         return config;
     }
 
-    private async analyzeLanguages(): Promise<Record<string, number>> {
+    private async analyzeLanguages(): Promise<Array<{ name: string; count: number }>> {
         const extensions: Record<string, string> = {
             '.js': 'JavaScript',
             '.ts': 'TypeScript',
@@ -170,7 +208,6 @@ export class EvidenceCollector {
         });
 
         const counts: Record<string, number> = {};
-
         for (const file of files) {
             const ext = path.extname(file);
             const lang = extensions[ext];
@@ -179,7 +216,12 @@ export class EvidenceCollector {
             }
         }
 
-        return counts;
+        const result = Object.entries(counts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+
+        console.log(`     Scanned ${files.length} files, found ${result.length} programming languages`);
+        return result;
     }
 
     private async findImportantPaths(): Promise<string[]> {
@@ -225,7 +267,7 @@ export class EvidenceCollector {
             'config/': 3,
         };
 
-        return paths
+        const result = paths
             .map((p: string) => ({
                 path: p,
                 weight: Object.entries(weights).reduce((w: number, [pattern, weight]: [string, number]) =>
@@ -235,6 +277,9 @@ export class EvidenceCollector {
             .sort((a, b) => b.weight - a.weight)
             .slice(0, 100)
             .map(({ path }) => path);
+
+        console.log(`     Identified ${result.length} important paths from ${paths.length} candidates`);
+        return result;
     }
 
     private extractDependencies(config: ConfigEvidence): DependencyInfo[] {
@@ -242,13 +287,11 @@ export class EvidenceCollector {
 
         if (config.packageJson) {
             const pkg = config.packageJson;
-
             if (pkg.dependencies) {
                 Object.entries(pkg.dependencies as Record<string, string>).forEach(([name, version]) => {
                     deps.push({ name, version, type: 'runtime' });
                 });
             }
-
             if (pkg.devDependencies) {
                 Object.entries(pkg.devDependencies as Record<string, string>).forEach(([name, version]) => {
                     deps.push({ name, version, type: 'dev' });

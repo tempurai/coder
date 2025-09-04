@@ -19,8 +19,20 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
   const { currentTheme } = useTheme();
   const [input, setInput] = useState('');
   const [ctrlCCount, setCtrlCCount] = useState<number>(0);
-  const { executionMode } = useUiStore();
-  const { setActivePanel } = useUiStore((state) => state.actions);
+
+  // 从 store 中获取状态和 actions
+  const { executionMode, initialInputValue, actions } = useUiStore();
+  const { setActivePanel } = actions;
+
+  // 当 store 中的 initialInputValue 更新时，同步到本地 input state
+  useEffect(() => {
+    if (initialInputValue) {
+      setInput(initialInputValue);
+      // 消费掉 initialValue 后，立即将其在 store 中重置，
+      // 并确保 activePanel 是 'INPUT'
+      setActivePanel('INPUT');
+    }
+  }, [initialInputValue, setInput, setActivePanel]);
 
   useEffect(() => {
     if (ctrlCCount > 0) {
@@ -32,22 +44,23 @@ export const InputContainer: React.FC<InputContainerProps> = ({ onSubmit, isProc
 
   const handleInputChange = useCallback(
     (value: string) => {
-      setInput(value);
-      if (value.startsWith('/')) {
-        setActivePanel('COMMAND_PALETTE');
-        setInput('');
-        return;
-      }
-      if (value.startsWith(':')) {
+      // 触发逻辑现在只处理打开面板的情况
+      if (value === ':') {
         setActivePanel('EXECUTION_MODE');
         setInput('');
         return;
       }
-      if (value.startsWith('?')) {
+      if (value === '/') {
+        setActivePanel('COMMAND_PALETTE');
+        setInput('');
+        return;
+      }
+      if (value === '?') {
         setActivePanel('HELP');
         setInput('');
         return;
       }
+      setInput(value);
     },
     [setActivePanel],
   );

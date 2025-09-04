@@ -249,7 +249,7 @@ Examples:
                 } as SystemInfoEvent);
 
                 return {
-                    error: 'Security policy violations detected',
+                    error: 'Security policy violations detected: ',
                     results: [],
                     summary: `Security policy violations detected: ${blockedList}`,
                     workingDirectory: workingDirectory || process.cwd(),

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../themes/index.js';
+import { useUiStore } from '../stores/uiStore.js';
 
 interface HelpPanelProps {
   onCancel: () => void;
@@ -9,9 +10,14 @@ interface HelpPanelProps {
 
 export const HelpPanel: React.FC<HelpPanelProps> = ({ onCancel, isFocused }) => {
   const { currentTheme } = useTheme();
+  const { setActivePanel } = useUiStore((state) => state.actions);
 
   useInput(
     (input, key) => {
+      if (input === '?') {
+        setActivePanel('INPUT', '?');
+        return;
+      }
       if (key.escape || key.return) {
         onCancel();
       }

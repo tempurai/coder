@@ -7,17 +7,25 @@ export type ActivePanel = 'INPUT' | 'CONFIRMATION' | PanelMode;
 interface UiState {
     executionMode: ExecutionMode;
     activePanel: ActivePanel;
+    initialInputValue: string | null; // 新增状态
     actions: {
         setExecutionMode: (mode: ExecutionMode) => void;
-        setActivePanel: (panel: ActivePanel) => void;
+        // 接收可选的初始值
+        setActivePanel: (panel: ActivePanel, initialValue?: string) => void;
     };
 }
 
 export const useUiStore = create<UiState>((set) => ({
     executionMode: ExecutionMode.CODE,
     activePanel: 'INPUT',
+    initialInputValue: null, // 初始化
     actions: {
         setExecutionMode: (mode) => set({ executionMode: mode }),
-        setActivePanel: (panel) => set({ activePanel: panel }),
+        // 实现新的 action 逻辑
+        setActivePanel: (panel, initialValue) =>
+            set({
+                activePanel: panel,
+                initialInputValue: initialValue ?? null
+            }),
     },
 }));

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../themes/index.js';
+import { useUiStore } from '../stores/uiStore.js';
 
 interface Command {
   name: string;
@@ -18,6 +19,7 @@ interface CommandPaletteProps {
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCancel, onModeSelect, onThemeSelect, isFocused }) => {
   const { currentTheme } = useTheme();
+  const { setActivePanel } = useUiStore((state) => state.actions);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const commands: Command[] = [
     {
@@ -39,6 +41,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
 
   useInput(
     (input, key) => {
+      if (input === '/') {
+        setActivePanel('INPUT', '/');
+        return;
+      }
       if (key.upArrow) {
         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : commands.length - 1));
       } else if (key.downArrow) {

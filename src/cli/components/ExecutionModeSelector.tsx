@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../themes/index.js';
 import { ExecutionMode, ExecutionModeData } from '../../services/ExecutionModeManager.js';
+import { useUiStore } from '../stores/uiStore.js';
 
 interface ExecutionModeSelectorProps {
   currentMode: ExecutionMode;
@@ -12,6 +13,7 @@ interface ExecutionModeSelectorProps {
 
 export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ currentMode, onModeSelected, onCancel, isFocused }) => {
   const { currentTheme } = useTheme();
+  const { setActivePanel } = useUiStore((state) => state.actions);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   useEffect(() => {
@@ -23,6 +25,10 @@ export const ExecutionModeSelector: React.FC<ExecutionModeSelectorProps> = ({ cu
 
   useInput(
     (input, key) => {
+      if (input === ':') {
+        setActivePanel('INPUT', ':');
+        return;
+      }
       if (key.upArrow) {
         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : ExecutionModeData.length - 1));
       } else if (key.downArrow) {

@@ -59,7 +59,6 @@ export class Logger {
     };
 
     this.initLogFile();
-    this.interceptConsole();
   }
 
   private initLogFile(): void {
@@ -105,7 +104,7 @@ export class Logger {
     }).join(' ');
   }
 
-  private interceptConsole(): void {
+  public interceptConsole(): void {
     // 拦截console.log并重定向到logger
     console.log = (...args: any[]) => {
       const message = this.formatMessage(...args);

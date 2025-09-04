@@ -9,16 +9,22 @@ export type IndexingMessage = { role: 'system' | 'user' | 'assistant', content: 
 export type IndexingMessages = IndexingMessage[];
 
 export class IndexingAgent {
-    private model: LanguageModel;
-    private config: Config;
+    private model!: LanguageModel;
+    private config!: Config;
+    private initialized = false;
 
-    constructor() {
+    async initialize(): Promise<void> {
+        if (this.initialized) return;
+
         const container = getContainer();
-        this.model = container.get<LanguageModel>(TYPES.LanguageModel);
+        this.model = await container.getAsync<LanguageModel>(TYPES.LanguageModel);
         this.config = container.get<Config>(TYPES.Config);
+        this.initialized = true;
     }
 
     async generateText(messages: IndexingMessages): Promise<string> {
+        await this.initialize();
+
         try {
             const result = await generateText({
                 model: this.model,
@@ -33,6 +39,8 @@ export class IndexingAgent {
     }
 
     async generateObject<T>(messages: IndexingMessages, schema: ZodSchema<T>): Promise<T> {
+        await this.initialize();
+
         try {
             const result = await generateObject({
                 model: this.model,

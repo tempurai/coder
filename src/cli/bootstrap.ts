@@ -116,6 +116,9 @@ export class ApplicationBootstrap {
       console.log('✅ 新的依赖注入架构已初始化');
       this.logger.info('Dependency injection architecture initialized successfully');
 
+      // 拦截console输出，确保日志记录
+      this.logger.interceptConsole();
+
       // 启动InkUI界面
       this.logger.info('Starting Ink UI interface');
       await startInkUI(this.currentSession.sessionService);
@@ -239,12 +242,13 @@ export class ApplicationBootstrap {
       const indexer = new ProjectIndexer();
       if (mode === '--full' || mode === '-f') {
         console.log('Starting full project analysis...');
-        await indexer.analyze({ force: true });
+        let result = await indexer.analyze({ force: true });
+        console.log('Project index generation completed', result);
       } else {
         console.log('Starting incremental project analysis...');
-        await indexer.analyze({ force: false });
+        let result = await indexer.analyze({ force: false });
+        console.log('Project index generation completed', result);
       }
-      console.log('Project index generation completed');
     } catch (error) {
       console.error('Project index generation failed:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);

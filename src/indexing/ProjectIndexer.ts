@@ -60,13 +60,21 @@ export class ProjectIndexer {
             const status = await this.getStatus();
             const currentHash = await this.gitTracker.getCurrentHash();
 
+            if (!options.force && !status.exists) {
+                console.log('No existing index found, automatically switching to full analysis mode...');
+                options.force = true;
+            }
+
             if (!options.force && status.exists && status.gitHash === currentHash) {
+                console.log('Index is up to date, using existing results...');
                 return {
                     success: true,
                     indexPath: this.outputPath,
                     stats: await this.getStatsFromExisting(),
                 };
             }
+
+            console.log(`Starting ${options.force ? 'full' : 'incremental'} project analysis...`);
 
             const evidenceCollector = new EvidenceCollector(this.projectRoot);
             const evidence = await evidenceCollector.collect();

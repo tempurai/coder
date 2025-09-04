@@ -43,7 +43,7 @@ export class ApplicationBootstrap {
     // 早期初始化logger，确保后续所有操作都能被记录
     this.logger = this.container.get<Logger>(TYPES.Logger);
     this.logger.info('Application bootstrap started');
-    
+
     // 清理旧日志文件
     this.logger.cleanupOldLogs();
   }
@@ -169,6 +169,10 @@ export class ApplicationBootstrap {
           await this.displayConfig();
           break;
 
+        case 'index':
+          await this.handleIndexCommand(subArgs);
+          break;
+
         default:
           if (command && command.startsWith('-')) {
             console.error(`未知选项: ${command}`);
@@ -190,18 +194,19 @@ export class ApplicationBootstrap {
    * 显示帮助信息
    */
   private displayHelp(): void {
-    console.log('Tempurai - AI辅助编程CLI工具\\n');
+    console.log('Tempurai Coder - AI辅助编程CLI工具\\n');
     console.log('使用方法:');
-    console.log('  tempurai              启动代码编辑界面 (主要模式)');
-    console.log('  tempurai config       显示配置信息');
-    console.log('  tempurai version      显示版本信息');
-    console.log('  tempurai help         显示此帮助信息\\n');
+    console.log('  coder              启动代码编辑界面 (主要模式)');
+    console.log('  coder config       显示配置信息');
+    console.log('  coder version      显示版本信息');
+    console.log('  coder help         显示此帮助信息\\n');
+    console.log('  coder index        分析项目结构并生成索引');
     console.log('选项:');
     console.log('  -h, --help           显示帮助');
     console.log('  -v, --version        显示版本\\n');
     console.log('示例:');
-    console.log('  tempurai             # 启动交互式代码编辑界面');
-    console.log('  tempurai config      # 显示当前配置');
+    console.log('  coder               # 启动交互式代码编辑界面');
+    console.log('  coder config        # 显示当前配置');
   }
 
   /**
@@ -211,7 +216,7 @@ export class ApplicationBootstrap {
     const configLoader = this.container.get<ConfigLoader>(TYPES.ConfigLoader);
     const config = configLoader.getConfig();
 
-    console.log('🔧 Tempurai 配置信息:');
+    console.log('🔧 Tempurai Coder 配置信息:');
     console.log(`   模型: ${configLoader.getModelDisplayName()}`);
     console.log(`   温度: ${config.temperature}`);
     console.log(`   最大Token: ${config.maxTokens}`);
@@ -219,6 +224,31 @@ export class ApplicationBootstrap {
     console.log(`   自定义上下文: ${config.customContext ? '✅ 已加载' : '❌ 未找到'}`);
     console.log(`   网页搜索: ${config.tools.tavilyApiKey ? '✅ 启用' : '❌ 禁用'}`);
     console.log(`   配置文件: ${configLoader.getConfigPath()}`);
+  }
+
+  /**
+   * @param args 命令行参数
+   * 处理项目索引命令
+   * 支持全量索引 (--full) 和增量索引 (默认)
+   */
+  private async handleIndexCommand(args: string[]): Promise<void> {
+    const [mode] = args;
+    const { ProjectIndexer } = await import('../indexing/ProjectIndexer.js');
+
+    try {
+      const indexer = new ProjectIndexer();
+      if (mode === '--full' || mode === '-f') {
+        console.log('Starting full project analysis...');
+        await indexer.analyze({ force: true });
+      } else {
+        console.log('Starting incremental project analysis...');
+        await indexer.analyze({ force: false });
+      }
+      console.log('Project index generation completed');
+    } catch (error) {
+      console.error('Project index generation failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
   }
 
   /**

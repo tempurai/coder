@@ -37,6 +37,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
       description: 'Show execution mode selector',
       usage: '/mode',
     },
+    {
+      name: 'index',
+      description: 'Analyze project structure and generate index',
+      usage: '/index',
+    },
   ];
 
   useInput(
@@ -55,6 +60,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onSelect, onCanc
           onModeSelect();
         } else if (selectedCommand.name === 'theme' && onThemeSelect) {
           onThemeSelect();
+        } else if (selectedCommand.name === 'index') {
+          setActivePanel('INPUT', '/index');
         } else {
           onSelect(selectedCommand.usage);
         }

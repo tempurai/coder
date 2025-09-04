@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import glob from 'fast-glob';
 import yaml from 'js-yaml';
+import { IndentLogger } from '../utils/IndentLogger.js';
 
 interface ConfigEvidence {
     dockerCompose?: any;
@@ -43,35 +44,13 @@ export class EvidenceCollector {
     constructor(private readonly projectRoot: string) { }
 
     async collect(): Promise<Evidence> {
-        console.log('   Collecting configuration files...');
         const config = await this.collectConfig();
-
-        console.log('   Analyzing programming languages...');
         const languages = await this.analyzeLanguages();
-
-        console.log('   Finding important file paths...');
         const importantPaths = await this.findImportantPaths();
-
-        console.log('   Extracting dependencies...');
         const dependencies = this.extractDependencies(config);
-
-        console.log('   Extracting port configurations...');
         const ports = this.extractPorts(config);
-
-        console.log('   Detecting frameworks...');
         const frameworks = this.detectFrameworks(config, dependencies);
-
-        console.log('   Detecting databases...');
         const databases = this.detectDatabases(dependencies, config);
-
-        // Print findings overview
-        console.log('   Evidence collection findings:');
-        console.log(`     Languages detected: ${languages.map(l => `${l.name}(${l.count})`).join(', ') || 'None'}`);
-        console.log(`     Frameworks found: ${frameworks.join(', ') || 'None'}`);
-        console.log(`     Databases detected: ${databases.join(', ') || 'None'}`);
-        console.log(`     Dependencies: ${dependencies.length}`);
-        console.log(`     Important paths: ${importantPaths.length}`);
-        console.log(`     Ports configured: ${ports.length}`);
 
         return {
             config,
@@ -99,9 +78,8 @@ export class EvidenceCollector {
             try {
                 const content = await fs.readFile(path.join(this.projectRoot, composeFiles[0]), 'utf-8');
                 config.dockerCompose = yaml.load(content);
-                console.log(`     Found docker-compose: ${composeFiles[0]}`);
             } catch {
-                console.log(`     Failed to read docker-compose: ${composeFiles[0]}`);
+                // Ignore parsing errors
             }
         }
 
@@ -110,30 +88,23 @@ export class EvidenceCollector {
             absolute: false,
             ignore: ['node_modules/**', '.git/**', 'dist/**', 'build/**'],
         });
-        if (config.dockerfiles.length > 0) {
-            console.log(`     Found ${config.dockerfiles.length} Dockerfile(s)`);
-        }
 
         try {
             const pkgPath = path.join(this.projectRoot, 'package.json');
             const content = await fs.readFile(pkgPath, 'utf-8');
             config.packageJson = JSON.parse(content);
-            console.log('     Found package.json');
         } catch { }
 
         try {
             config.pyprojectToml = await fs.readFile(path.join(this.projectRoot, 'pyproject.toml'), 'utf-8');
-            console.log('     Found pyproject.toml');
         } catch { }
 
         try {
             config.goMod = await fs.readFile(path.join(this.projectRoot, 'go.mod'), 'utf-8');
-            console.log('     Found go.mod');
         } catch { }
 
         try {
             config.cargoToml = await fs.readFile(path.join(this.projectRoot, 'Cargo.toml'), 'utf-8');
-            console.log('     Found Cargo.toml');
         } catch { }
 
         const openApiFiles = await glob(['**/openapi.{yml,yaml,json}', '**/swagger.{yml,yaml,json}'], {
@@ -149,9 +120,8 @@ export class EvidenceCollector {
                 } else {
                     config.openApi = yaml.load(content);
                 }
-                console.log(`     Found OpenAPI spec: ${openApiFiles[0]}`);
             } catch {
-                console.log(`     Failed to parse OpenAPI spec: ${openApiFiles[0]}`);
+                // Ignore parsing errors
             }
         }
 
@@ -166,18 +136,12 @@ export class EvidenceCollector {
                 config.kubernetes.push(yaml.load(content));
             } catch { }
         }
-        if (config.kubernetes.length > 0) {
-            console.log(`     Found ${config.kubernetes.length} Kubernetes manifest(s)`);
-        }
 
         config.envFiles = await glob(['.env*', '**/.env*'], {
             cwd: this.projectRoot,
             absolute: false,
             ignore: ['node_modules/**', '.git/**'],
         });
-        if (config.envFiles.length > 0) {
-            console.log(`     Found ${config.envFiles.length} environment file(s)`);
-        }
 
         return config;
     }
@@ -220,7 +184,6 @@ export class EvidenceCollector {
             .map(([name, count]) => ({ name, count }))
             .sort((a, b) => b.count - a.count);
 
-        console.log(`     Scanned ${files.length} files, found ${result.length} programming languages`);
         return result;
     }
 
@@ -278,7 +241,6 @@ export class EvidenceCollector {
             .slice(0, 100)
             .map(({ path }) => path);
 
-        console.log(`     Identified ${result.length} important paths from ${paths.length} candidates`);
         return result;
     }
 

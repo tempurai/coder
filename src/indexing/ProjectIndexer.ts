@@ -7,6 +7,7 @@ import { EvidenceCollector } from './EvidenceCollector.js';
 import { FileContentCollector } from './FileContentCollector.js';
 import { ProjectAnalyzer, type ProjectIndex } from './ProjectAnalyzer.js';
 import { GitTracker } from './GitTracker.js';
+import { IndentLogger } from '../utils/IndentLogger.js';
 import type { IndexOptions, ProjectIndexResult } from './index.js';
 
 @injectable()
@@ -22,16 +23,16 @@ export class ProjectIndexer {
         const outputPath = this.configLoader.getIndexingFilePath();
 
         try {
-            console.log('Starting project analysis...');
-            console.log(`   Project root: ${this.projectRoot}`);
-            console.log(`   Output path: ${outputPath}`);
+            IndentLogger.log('Starting project analysis...');
+            IndentLogger.log(`Project root: ${this.projectRoot}`, 1);
+            IndentLogger.log(`Output path: ${outputPath}`, 1);
 
             const status = await this.getStatus();
             const currentHash = await this.gitTracker.getCurrentHash();
-            console.log(`   Current Git hash: ${currentHash.substring(0, 8)}...`);
+            IndentLogger.log(`Current Git hash: ${currentHash.substring(0, 8)}...`, 1);
 
             if (!options.force && status.exists && status.gitHash === currentHash) {
-                console.log('Index is up to date with current Git HEAD. Using existing index.');
+                IndentLogger.log('Index is up to date with current Git HEAD. Using existing index.', 1);
                 return {
                     success: true,
                     indexPath: outputPath,
@@ -39,32 +40,45 @@ export class ProjectIndexer {
                 };
             }
 
-            console.log(`Starting ${options.force ? 'full' : 'incremental'} project analysis...`);
+            IndentLogger.log(`Starting ${options.force ? 'full' : 'incremental'} project analysis...`);
 
             // Phase 1: 收集项目证据
-            console.log('\nPhase 1: Collecting project evidence...');
+            IndentLogger.log('Phase 1: Collecting project evidence...');
             const evidenceCollector = new EvidenceCollector(this.projectRoot);
             const evidence = await evidenceCollector.collect();
-            console.log('Evidence collection complete.');
+            IndentLogger.log(`Found ${evidence.languages.length} programming languages`, 1);
+            IndentLogger.log(`Detected frameworks: ${evidence.frameworks.join(', ') || 'None'}`, 1);
+            IndentLogger.log(`Located ${evidence.importantPaths.length} important files`, 1);
+            IndentLogger.log('Evidence collection complete.', 1);
 
             // Phase 2: 收集重要文件内容
-            console.log('\nPhase 2: Collecting important file contents...');
+            IndentLogger.log('Phase 2: Collecting important file contents...');
             const contentCollector = new FileContentCollector(this.projectRoot);
             const fileContents = await contentCollector.collect(evidence.importantPaths);
-            console.log(`File content collection complete (${fileContents.length} files).`);
+            IndentLogger.log(`Processed ${fileContents.length} files`, 1);
+            const totalTokens = fileContents.reduce((sum, f) => sum + f.tokens, 0);
+            IndentLogger.log(`Collected ~${totalTokens} tokens`, 1);
+            this.logTruncationSummary(fileContents);
+            IndentLogger.log('File content collection complete.', 1);
 
             // Phase 3: AI驱动的项目分析
-            console.log('\nPhase 3: AI-powered project analysis...');
+            IndentLogger.log('Phase 3: AI-powered project analysis...');
             const analyzer = new ProjectAnalyzer();
             const analysis = await analyzer.analyze({
                 evidence,
                 fileContents,
                 projectRoot: this.projectRoot,
             });
-            console.log('AI analysis complete.');
+            IndentLogger.log(`Analyzed ${analysis.directories.length} directories`, 1);
+            IndentLogger.log(`Identified ${analysis.services.length} services`, 1);
+            const endpointCount = analysis.services.reduce((sum, s) => sum + (s.endpoints?.length || 0), 0);
+            if (endpointCount > 0) {
+                IndentLogger.log(`Found ${endpointCount} API endpoints`, 1);
+            }
+            IndentLogger.log('AI analysis complete.', 1);
 
             // Phase 4: 最终处理和保存项目索引
-            console.log('\nPhase 4: Finalizing and saving project index...');
+            IndentLogger.log('Phase 4: Finalizing and saving project index...');
             const index: ProjectIndex = {
                 schemaVersion: '1.1.0',
                 generatedAt: new Date().toISOString(),
@@ -76,20 +90,22 @@ export class ProjectIndexer {
 
             await this.ensureOutputDir(outputPath);
             await fs.writeFile(outputPath, JSON.stringify(index, null, 2));
-            console.log(`Project index saved to: ${outputPath}`);
+            IndentLogger.log(`Project index saved successfully`, 1);
 
             const stats = {
                 filesAnalyzed: fileContents.length,
                 servicesFound: analysis.services.length,
-                endpointsFound: analysis.services.reduce((sum, s) => sum + (s.endpoints?.length || 0), 0),
+                endpointsFound: endpointCount,
                 directoriesAnalyzed: analysis.directories.length,
             };
 
-            console.log('\nAnalysis Summary:');
-            console.log(`   Files analyzed: ${stats.filesAnalyzed}`);
-            console.log(`   Services found: ${stats.servicesFound}`);
-            console.log(`   Endpoints found: ${stats.endpointsFound}`);
-            console.log(`   Directories analyzed: ${stats.directoriesAnalyzed}`);
+            IndentLogger.log('Analysis Summary:');
+            IndentLogger.log(`Files analyzed: ${stats.filesAnalyzed}`, 1);
+            IndentLogger.log(`Services found: ${stats.servicesFound}`, 1);
+            if (stats.endpointsFound > 0) {
+                IndentLogger.log(`Endpoints found: ${stats.endpointsFound}`, 1);
+            }
+            IndentLogger.log(`Directories analyzed: ${stats.directoriesAnalyzed}`, 1);
 
             return {
                 success: true,
@@ -98,7 +114,8 @@ export class ProjectIndexer {
             };
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.error('\n❌ Project analysis failed:', errorMessage);
+            IndentLogger.log('Project analysis failed');
+            IndentLogger.log(errorMessage, 1);
             if (error instanceof Error && error.stack) {
                 console.error('Stack trace:', error.stack);
             }
@@ -108,6 +125,13 @@ export class ProjectIndexer {
                 stats: { filesAnalyzed: 0, servicesFound: 0, endpointsFound: 0, directoriesAnalyzed: 0 },
                 error: errorMessage,
             };
+        }
+    }
+
+    private logTruncationSummary(fileContents: any[]): void {
+        const truncated = fileContents.filter(f => f.truncated).length;
+        if (truncated > 0) {
+            IndentLogger.log(`${truncated} files truncated due to size limits`, 1);
         }
     }
 

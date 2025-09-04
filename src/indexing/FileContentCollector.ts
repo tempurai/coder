@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { encode } from 'gpt-tokenizer';
+import { IndentLogger } from '../utils/IndentLogger.js';
 
 export interface FileContent {
     path: string;
@@ -12,13 +13,11 @@ export interface FileContent {
 
 export class FileContentCollector {
     private readonly maxTokensPerFile = 4000;
-    private readonly maxTotalTokens = 800000; // Increased to allow larger projects before stopping collection
+    private readonly maxTotalTokens = 800000;
 
     constructor(private readonly projectRoot: string) { }
 
     async collect(importantPaths: string[]): Promise<FileContent[]> {
-        console.log(`   Collecting content from up to ${importantPaths.length} important files...`);
-
         const contents: FileContent[] = [];
         let totalTokens = 0;
         let processedFiles = 0;
@@ -30,7 +29,7 @@ export class FileContentCollector {
         for (const relativePath of importantPaths) {
             if (totalTokens >= this.maxTotalTokens) {
                 skippedForTokenLimit = importantPaths.length - processedFiles;
-                console.log(`   Reached total token limit (${this.maxTotalTokens}). Skipping remaining ${skippedForTokenLimit} files.`);
+                IndentLogger.log(`Token limit reached, skipping ${skippedForTokenLimit} remaining files`, 1);
                 break;
             }
 
@@ -47,28 +46,27 @@ export class FileContentCollector {
                 const language = this.detectLanguage(relativePath);
 
                 contents.push({ path: relativePath, content, tokens, language, truncated });
-
                 totalTokens += tokens;
                 processedFiles++;
                 if (truncated) truncatedFiles++;
 
+                // 每20个文件输出一次进度
                 if (processedFiles % 20 === 0 && processedFiles < importantPaths.length) {
-                    console.log(`   ...processed ${processedFiles}/${importantPaths.length} files, ~${totalTokens} tokens collected.`);
+                    IndentLogger.log(`Processing files: ${processedFiles}/${importantPaths.length} (~${totalTokens} tokens)`, 1);
                 }
             } catch (error) {
-                console.warn(`   Warning: Could not read file ${relativePath}: ${error instanceof Error ? error.message : 'Skipping'}`);
                 errorFiles++;
                 continue;
             }
         }
 
-        console.log('   File collection summary:');
-        console.log(`     Successfully processed: ${processedFiles} files`);
-        console.log(`     Total tokens collected: ~${totalTokens}`);
-        console.log(`     Truncated files (exceeded ${this.maxTokensPerFile} tokens): ${truncatedFiles}`);
-        console.log(`     Skipped (binary/too large): ${binaryOrLargeFiles}`);
-        console.log(`     Skipped (token limit reached): ${skippedForTokenLimit}`);
-        console.log(`     Errors: ${errorFiles}`);
+        // 简化的总结信息
+        if (errorFiles > 0) {
+            IndentLogger.log(`Skipped ${errorFiles} files due to read errors`, 1);
+        }
+        if (binaryOrLargeFiles > 0) {
+            IndentLogger.log(`Skipped ${binaryOrLargeFiles} binary or oversized files`, 1);
+        }
 
         return contents;
     }
@@ -76,15 +74,12 @@ export class FileContentCollector {
     private async readFileWithLimit(filePath: string): Promise<{ content: string; truncated: boolean } | null> {
         try {
             const stats = await fs.stat(filePath);
-            if (stats.size > 1_000_000) { // 1MB hard limit
-                console.log(`     Skipping very large file: ${path.basename(filePath)} (${(stats.size / 1024).toFixed(1)}KB)`);
+            if (stats.size > 1_000_000) {
                 return null;
             }
 
             const content = await fs.readFile(filePath, 'utf-8');
-
             if (this.isBinary(content)) {
-                console.log(`     Skipping binary file: ${path.basename(filePath)}`);
                 return null;
             }
 
@@ -96,10 +91,10 @@ export class FileContentCollector {
             const lines = content.split('\n');
             let truncatedContent = '';
             let currentTokens = 0;
+
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i] + '\n';
                 const lineTokens = encode(line).length;
-
                 if (currentTokens + lineTokens > this.maxTokensPerFile) {
                     truncatedContent += `\n... [File truncated after ${i} lines] ...`;
                     break;
@@ -107,9 +102,9 @@ export class FileContentCollector {
                 truncatedContent += line;
                 currentTokens += lineTokens;
             }
+
             return { content: truncatedContent, truncated: true };
         } catch (error) {
-            // Errors will be caught in the main collect loop
             throw error;
         }
     }

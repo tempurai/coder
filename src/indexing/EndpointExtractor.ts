@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { IndentLogger } from '../utils/IndentLogger.js';
 
 interface ExtractedEndpoint {
     method: string;
@@ -42,8 +43,6 @@ export class EndpointExtractor {
     ];
 
     async extractFromFiles(files: Array<{ path: string; content: string }>): Promise<ExtractedEndpoint[]> {
-        console.log(`   Analyzing ${files.length} files for endpoints...`);
-
         const endpoints: ExtractedEndpoint[] = [];
         let frameworkEndpoints = 0;
         let genericEndpoints = 0;
@@ -52,33 +51,22 @@ export class EndpointExtractor {
         for (const file of files) {
             const fileEndpoints = await this.extractFromFile(file.path, file.content);
 
-            // Count by detection method
             fileEndpoints.forEach(ep => {
                 if (ep.confidence === 'high') frameworkEndpoints++;
                 else if (ep.evidence === 'OpenAPI specification') configEndpoints++;
                 else genericEndpoints++;
             });
-
             endpoints.push(...fileEndpoints);
         }
 
         const deduplicatedEndpoints = this.deduplicateEndpoints(endpoints);
-        const originalCount = endpoints.length;
-        const finalCount = deduplicatedEndpoints.length;
 
-        console.log('   Endpoint extraction summary:');
-        console.log(`     Framework-specific patterns: ${frameworkEndpoints}`);
-        console.log(`     Generic patterns: ${genericEndpoints}`);
-        console.log(`     Configuration files: ${configEndpoints}`);
-        console.log(`     Before deduplication: ${originalCount}`);
-        console.log(`     After deduplication: ${finalCount}`);
-
-        if (finalCount > 0) {
+        if (deduplicatedEndpoints.length > 0) {
+            IndentLogger.log(`Found endpoints: framework(${frameworkEndpoints}), generic(${genericEndpoints}), config(${configEndpoints})`, 1);
             const methodBreakdown = this.getMethodBreakdown(deduplicatedEndpoints);
-            console.log(`     Method breakdown: ${methodBreakdown.map(m => `${m.method}(${m.count})`).join(', ')}`);
-
-            const confidenceBreakdown = this.getConfidenceBreakdown(deduplicatedEndpoints);
-            console.log(`     Confidence levels: ${confidenceBreakdown.map(c => `${c.level}(${c.count})`).join(', ')}`);
+            if (methodBreakdown.length > 0) {
+                IndentLogger.log(`Methods: ${methodBreakdown.map(m => `${m.method}(${m.count})`).join(', ')}`, 1);
+            }
         }
 
         return deduplicatedEndpoints;
@@ -89,16 +77,15 @@ export class EndpointExtractor {
         const lines = content.split('\n');
         const framework = this.detectFramework(filePath, content);
 
-        // Try framework-specific patterns first
+        // 使用框架特定模式
         if (framework && this.frameworkPatterns[framework]) {
-            console.log(`     Detected ${framework} in ${filePath}`);
             for (const pattern of this.frameworkPatterns[framework]) {
                 const matches = this.extractWithPattern(content, pattern, filePath, lines);
                 endpoints.push(...matches);
             }
         }
 
-        // If no framework matches found, try generic patterns
+        // 如果没有找到框架端点，尝试通用模式
         if (endpoints.length === 0) {
             for (const pattern of this.genericPatterns) {
                 const matches = this.extractWithPattern(content, pattern, filePath, lines, 'low');
@@ -106,7 +93,7 @@ export class EndpointExtractor {
             }
         }
 
-        // Always try config-based extraction
+        // 从配置文件提取
         const configEndpoints = await this.extractFromConfig(filePath, content);
         endpoints.push(...configEndpoints);
 
@@ -187,7 +174,7 @@ export class EndpointExtractor {
     private async extractFromConfig(filePath: string, content: string): Promise<ExtractedEndpoint[]> {
         const endpoints: ExtractedEndpoint[] = [];
 
-        // Check if this looks like an OpenAPI/Swagger spec
+        // 处理OpenAPI/Swagger文件
         if (filePath.includes('openapi') || filePath.includes('swagger')) {
             try {
                 const spec = JSON.parse(content);
@@ -207,7 +194,7 @@ export class EndpointExtractor {
                     });
                 }
             } catch {
-                // Not valid JSON, ignore
+                // 忽略解析错误
             }
         }
 
@@ -226,15 +213,13 @@ export class EndpointExtractor {
             }
         }
 
-        // Sort by confidence, then by method and path
+        // 按置信度和方法排序
         return unique.sort((a, b) => {
             const confScore = { high: 3, medium: 2, low: 1 };
             const confDiff = confScore[b.confidence] - confScore[a.confidence];
             if (confDiff !== 0) return confDiff;
-
             const methodDiff = a.method.localeCompare(b.method);
             if (methodDiff !== 0) return methodDiff;
-
             return a.path.localeCompare(b.path);
         });
     }
@@ -244,23 +229,8 @@ export class EndpointExtractor {
         endpoints.forEach(ep => {
             counts[ep.method] = (counts[ep.method] || 0) + 1;
         });
-
         return Object.entries(counts)
             .map(([method, count]) => ({ method, count }))
             .sort((a, b) => b.count - a.count);
-    }
-
-    private getConfidenceBreakdown(endpoints: ExtractedEndpoint[]): Array<{ level: string; count: number }> {
-        const counts: Record<string, number> = {};
-        endpoints.forEach(ep => {
-            counts[ep.confidence] = (counts[ep.confidence] || 0) + 1;
-        });
-
-        return Object.entries(counts)
-            .map(([level, count]) => ({ level, count }))
-            .sort((a, b) => {
-                const order = { high: 3, medium: 2, low: 1 };
-                return (order[b.level as keyof typeof order] || 0) - (order[a.level as keyof typeof order] || 0);
-            });
     }
 }

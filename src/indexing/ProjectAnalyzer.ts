@@ -3,10 +3,9 @@ import { z } from 'zod';
 import { IndexingAgent } from './IndexingAgent.js';
 import { EndpointExtractor } from './EndpointExtractor.js';
 import { UNIFIED_ANALYSIS_PROMPT } from './IndexingAgentPrompt.js';
+import { IndentLogger } from '../utils/IndentLogger.js';
 import type { Evidence } from './EvidenceCollector.js';
 import type { FileContent } from './FileContentCollector.js';
-
-// --- Centralized Type Definitions ---
 
 export interface LanguageInfo {
     name: string;
@@ -94,7 +93,7 @@ const InitialAnalysisSchema = z.object({
         description: z.string(),
         techStack: z.array(z.string()),
         languages: z.array(z.object({ name: z.string(), count: z.number() })),
-        totalFiles: z.number().optional(), // BUG FIX: Make optional to solve compile error
+        totalFiles: z.number().optional(),
     }),
     services: z.array(z.object({
         name: z.string(),
@@ -112,28 +111,32 @@ const InitialAnalysisSchema = z.object({
     })).optional(),
 });
 
-
 export class ProjectAnalyzer {
     private readonly agent = new IndexingAgent();
     private readonly BATCH_TOKEN_LIMIT = 200000;
 
     async analyze(input: AnalysisInput): Promise<ProjectAnalysis> {
-        console.log('   Extracting endpoints from all collected files...');
+        IndentLogger.log('Extracting API endpoints from files', 1);
         const endpointExtractor = new EndpointExtractor();
         const extractedEndpoints = await endpointExtractor.extractFromFiles(input.fileContents);
-        console.log(`   Found ${extractedEndpoints.length} potential endpoints.`);
+        if (extractedEndpoints.length > 0) {
+            IndentLogger.log(`Found ${extractedEndpoints.length} potential endpoints`, 1);
+        }
 
-        console.log('   Grouping files by directory for batch processing...');
+        IndentLogger.log('Creating analysis batches for AI processing', 1);
         const directoryGroups = this.groupFilesByDirectory(input.fileContents);
         const analysisBatches = this.createAnalysisBatches(directoryGroups);
-        console.log(`   Created ${analysisBatches.length} batches for analysis.`);
+        IndentLogger.log(`Created ${analysisBatches.length} batches for analysis`, 1);
 
         let finalAnalysis: ProjectAnalysis | null = null;
         let processedDirectories: DirectoryInfo[] = [];
 
         for (let i = 0; i < analysisBatches.length; i++) {
             const batch = analysisBatches[i];
-            console.log(`\n   Analyzing Batch ${i + 1}/${analysisBatches.length} (${batch.files.length} files, ~${batch.tokenCount} tokens)...`);
+
+            if (i === 0) {
+                IndentLogger.log(`Processing initial batch (${batch.files.length} files)`, 1);
+            }
 
             const prompt = this.buildAnalysisPrompt(input.evidence, extractedEndpoints, batch.files, finalAnalysis);
 
@@ -143,13 +146,9 @@ export class ProjectAnalyzer {
                         [{ role: 'system', content: UNIFIED_ANALYSIS_PROMPT }, { role: 'user', content: prompt }],
                         InitialAnalysisSchema
                     );
-
                     const safeAnalysis = { ...initialAnalysis, services: initialAnalysis.services || [], directories: initialAnalysis.directories || [] } as ProjectAnalysis;
                     finalAnalysis = this.postProcessAnalysis(safeAnalysis, extractedEndpoints, input);
-
                     processedDirectories.push(...(finalAnalysis.directories || []));
-
-                    console.log(`   Batch ${i + 1}: Initial analysis successful. Found ${finalAnalysis.services.length} services and ${finalAnalysis.directories.length} directories.`);
                 } else {
                     const directoryBatch = await this.agent.generateObject(
                         [{ role: 'system', content: UNIFIED_ANALYSIS_PROMPT }, { role: 'user', content: prompt }],
@@ -157,11 +156,9 @@ export class ProjectAnalyzer {
                     );
                     const newDirectories = this.postProcessBatch(directoryBatch.directories, batch.files);
                     processedDirectories.push(...newDirectories);
-                    console.log(`   Batch ${i + 1}: Successfully analyzed and added ${newDirectories.length} new directories.`);
                 }
             } catch (error) {
-                console.error(`   LLM analysis for Batch ${i + 1} failed:`, error instanceof Error ? error.message : 'Unknown error');
-                if (error instanceof Error && error.stack) console.error('   Stack trace:', error.stack);
+                IndentLogger.log(`Batch ${i + 1} AI analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 1);
             }
         }
 
@@ -170,12 +167,6 @@ export class ProjectAnalyzer {
         }
 
         finalAnalysis.directories = processedDirectories;
-        console.log('\n   Final analysis results:');
-        console.log(`     Project name: ${finalAnalysis.overview.name}`);
-        console.log(`     Tech stack: ${finalAnalysis.overview.techStack.join(', ')}`);
-        console.log(`     Total services identified: ${(finalAnalysis.services || []).length}`);
-        console.log(`     Total directories analyzed: ${(finalAnalysis.directories || []).length}`);
-
         return finalAnalysis;
     }
 
@@ -214,6 +205,7 @@ export class ProjectAnalyzer {
 
     private buildAnalysisPrompt(evidence: Evidence, endpoints: any[], files: FileContent[], existingAnalysis: ProjectAnalysis | null): string {
         let prompt = '';
+
         if (existingAnalysis) {
             prompt += `You are continuing an analysis. Here is the "Existing Analysis Context":\n\n\`\`\`json\n${JSON.stringify(existingAnalysis, null, 2)}\n\`\`\`\n\n`;
             prompt += `Now, analyze the following NEW files and provide ONLY the analysis for their parent directories.\n`;
@@ -221,6 +213,7 @@ export class ProjectAnalyzer {
             prompt += `Analyze this project based on its configuration and files to generate a complete project index.\n## Project Evidence\n`;
             prompt += `- Languages: ${evidence.languages.map((l: any) => `${l.name}(${l.count})`).join(', ')}\n`;
             prompt += `- Frameworks: ${evidence.frameworks.join(', ') || 'None'}\n`;
+
             if (endpoints.length > 0) {
                 prompt += `\n## Statically Extracted Endpoints\n`;
                 prompt += endpoints.slice(0, 20).map((ep: any) => `- ${ep.method} ${ep.path} in ${ep.file}`).join('\n') + '\n';

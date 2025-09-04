@@ -61,12 +61,13 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
 3. YOU: Call \`todo_manager({ action: 'add_todo', title: 'Identify all files using the old auth service' })\`.
 4. YOU: Call \`todo_manager({ action: 'add_todo', title: 'Replace old auth logic with JWT implementation' })\`.
 5. YOU: Call \`todo_manager({ action: 'get_next' })\` -> Returns the "Identify files" todo.
+5. YOU: Call \`todo_manager({ action: 'get_plan' })\` to review the full remaining plan in case of need to have global view.
 6. YOU: Call \`todo_manager({ action: 'update_status', todoId: '...', status: 'in_progress' })\`.
 7. YOU: Call \`search_in_files(...)\`.
 8. YOU: Call \`todo_manager({ action: 'update_status', todoId: '...', status: 'completed' })\`.
 `,
             inputSchema: z.object({
-                action: z.enum(['create_plan', 'add_todo', 'update_status', 'get_next', 'get_progress', 'list_all']),
+                action: z.enum(['create_plan', 'add_todo', 'update_status', 'get_next', 'get_plan', 'get_progress', 'list_all']),
                 summary: z.string().optional().describe('A concise summary of the overall task for \'create_plan\' action.'),
                 title: z.string().optional().describe('A short, actionable title for the todo item for \'add_todo\' action.'),
                 description: z.string().optional().describe('A detailed description of what needs to be done for a todo item.'),
@@ -100,6 +101,8 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
                         return this.updateTodoStatus(args.todoId, args.status);
                     case 'get_next':
                         return this.getNextTodo();
+                    case 'get_plan':
+                        return this.getPlanForLLM();
                     case 'get_progress':
                         return this.getProgress();
                     case 'list_all':
@@ -247,6 +250,14 @@ Use this tool to create a plan, add/update tasks, and track progress. It is ESSE
             },
             message: `Next todo to execute: "${nextTodo.title}"`
         };
+    }
+
+    private getPlanForLLM() {
+        if (!this.plan) {
+            return { success: false, error: 'No plan exists. Create a plan first.' };
+        }
+
+        return this.getPlan();
     }
 
     private getProgress() {

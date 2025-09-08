@@ -1,6 +1,6 @@
 {
   "name": "@tempurai/coder",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A next-generation intelligent code assistant built with TypeScript, featuring Multi Agent methodology and advanced CLI interface",
   "type": "module",
   "main": "dist/cli/index.js",

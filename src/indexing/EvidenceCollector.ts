@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import glob from 'fast-glob';
-import yaml from 'js-yaml';
+import * as glob from 'fast-glob';
+import * as yaml from 'js-yaml';
 import { IndentLogger } from '../utils/IndentLogger.js';
 
 interface ConfigEvidence {
@@ -70,7 +70,7 @@ export class EvidenceCollector {
             envFiles: [],
         };
 
-        const composeFiles = await glob(['docker-compose*.yml', 'docker-compose*.yaml'], {
+        const composeFiles = await glob.glob(['docker-compose*.yml', 'docker-compose*.yaml'], {
             cwd: this.projectRoot,
             absolute: false,
         });
@@ -83,7 +83,7 @@ export class EvidenceCollector {
             }
         }
 
-        config.dockerfiles = await glob(['**/Dockerfile*'], {
+        config.dockerfiles = await glob.glob(['**/Dockerfile*'], {
             cwd: this.projectRoot,
             absolute: false,
             ignore: ['node_modules/**', '.git/**', 'dist/**', 'build/**'],
@@ -107,7 +107,7 @@ export class EvidenceCollector {
             config.cargoToml = await fs.readFile(path.join(this.projectRoot, 'Cargo.toml'), 'utf-8');
         } catch { }
 
-        const openApiFiles = await glob(['**/openapi.{yml,yaml,json}', '**/swagger.{yml,yaml,json}'], {
+        const openApiFiles = await glob.glob(['**/openapi.{yml,yaml,json}', '**/swagger.{yml,yaml,json}'], {
             cwd: this.projectRoot,
             absolute: false,
             ignore: ['node_modules/**'],
@@ -125,7 +125,7 @@ export class EvidenceCollector {
             }
         }
 
-        const k8sFiles = await glob(['k8s/**/*.{yml,yaml}', '**/*k8s*.{yml,yaml}', '**/deployment*.{yml,yaml}'], {
+        const k8sFiles = await glob.glob(['k8s/**/*.{yml,yaml}', '**/*k8s*.{yml,yaml}', '**/deployment*.{yml,yaml}'], {
             cwd: this.projectRoot,
             absolute: false,
             ignore: ['node_modules/**'],
@@ -137,7 +137,7 @@ export class EvidenceCollector {
             } catch { }
         }
 
-        config.envFiles = await glob(['.env*', '**/.env*'], {
+        config.envFiles = await glob.glob(['.env*', '**/.env*'], {
             cwd: this.projectRoot,
             absolute: false,
             ignore: ['node_modules/**', '.git/**'],
@@ -165,7 +165,7 @@ export class EvidenceCollector {
             '.swift': 'Swift',
         };
 
-        const files = await glob(['**/*'], {
+        const files = await glob.glob(['**/*'], {
             cwd: this.projectRoot,
             ignore: ['node_modules/**', '.git/**', 'dist/**', 'build/**', 'vendor/**'],
             onlyFiles: true,
@@ -210,7 +210,7 @@ export class EvidenceCollector {
             'migrations/**',
         ];
 
-        const paths = await glob(patterns, {
+        const paths = await glob.glob(patterns, {
             cwd: this.projectRoot,
             ignore: ['node_modules/**', '.git/**', 'dist/**', 'build/**', 'test/**', 'tests/**'],
             onlyFiles: true,

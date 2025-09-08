@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import glob = require('fast-glob');
-import yaml = require('js-yaml');
+import glob from 'fast-glob';
+import yaml from 'js-yaml';
 import { IndentLogger } from '../utils/IndentLogger.js';
 
 interface ConfigEvidence {

@@ -75,8 +75,12 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
       }
     };
 
+    // 初始化状态
     updateStatus();
-    const interval = setInterval(updateStatus, 1000);
+    
+    // 减少轮询频率并仅在必要时更新
+    const interval = setInterval(updateStatus, 3000); // 3秒而不是1秒
+    
     return () => clearInterval(interval);
   }, [sessionService]);
 
@@ -132,23 +136,30 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
 
   return (
     <Box flexDirection='column'>
-      {/* Unified Rendering Logic */}
-      {headerItems.map((item) => item)}
-      {cliEvents.map((event, index) => (
-        <Box key={event.id || `event-${index}`} marginBottom={1}>
-          <EventRouter event={event} index={index} />
-        </Box>
-      ))}
+      {/* Static Header - 防止头部区域闪烁 */}
+      <Static items={headerItems}>
+        {(item) => item}
+      </Static>
+      
+      {/* Static Events - 防止已完成事件闪烁 */}
+      <Static items={cliEvents}>
+        {(event, index) => (
+          <Box key={event.id || `event-${index}`} marginBottom={1}>
+            <EventRouter event={event} index={index} />
+          </Box>
+        )}
+      </Static>
 
+      {/* Dynamic Progress - 仅在处理时显示 */}
       {(isProcessing || (cliEvents.length === 0 && !pendingConfirmation)) && (
         <Box marginY={0}>
           <ProgressIndicator phase='processing' message={currentActivity} isActive={isProcessing} sessionService={sessionService} />
         </Box>
       )}
 
-      {}
+      {/* Dynamic UI Panels */}
       <Box flexDirection='column' marginTop={1}>
-        {}
+        {/* Confirmation Panel */}
         {isModalPanelVisible && pendingConfirmation && (
           <Box marginBottom={1}>
             <ConfirmationPanel
@@ -164,8 +175,19 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
             />
           </Box>
         )}
-        <InputContainer key={inputKey} onSubmit={handleSubmit} isProcessing={isProcessing || !!pendingConfirmation} onEditModeToggle={handleEditModeToggle} sessionService={sessionService} exit={exit} focus={isInputFocused} />
-        {}
+        
+        {/* Input Container - 固定显示 */}
+        <InputContainer 
+          key={inputKey} 
+          onSubmit={handleSubmit} 
+          isProcessing={isProcessing || !!pendingConfirmation} 
+          onEditModeToggle={handleEditModeToggle} 
+          sessionService={sessionService} 
+          exit={exit} 
+          focus={isInputFocused} 
+        />
+        
+        {/* Menu Panels */}
         {isMenuPanelVisible && (
           <Box marginTop={1}>
             {activePanel === 'COMMAND_PALETTE' && (
@@ -197,7 +219,7 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
   );
 };
 
-const ConfirmationPanel = ({ confirmationData, onConfirm, getChoiceText, getChoiceColor, theme, isFocused }: any) => {
+const ConfirmationPanel = React.memo(({ confirmationData, onConfirm, getChoiceText, getChoiceColor, theme, isFocused }: any) => {
   const [selectedChoice, setSelectedChoice] = useState<ConfirmationChoice>(confirmationData?.options?.defaultChoice ?? ConfirmationChoice.YES);
   const showRememberOption = confirmationData?.options?.showRememberOption !== false;
   const choices: ConfirmationChoice[] = showRememberOption ? [ConfirmationChoice.YES, ConfirmationChoice.NO, ConfirmationChoice.YES_AND_REMEMBER] : [ConfirmationChoice.YES, ConfirmationChoice.NO];
@@ -275,7 +297,7 @@ const ConfirmationPanel = ({ confirmationData, onConfirm, getChoiceText, getChoi
       </Text>
     </Box>
   );
-};
+});
 
 const CodeAssistantAppCore: React.FC<CodeAssistantAppProps> = ({ sessionService }) => {
   const [appState, setAppState] = useState<AppState>('welcome');

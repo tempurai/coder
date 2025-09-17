@@ -25,7 +25,8 @@ interface TodoDisplayState {
   nextTodo?: string;
 }
 
-const HELP_TEXTS = ['Ready for your next task', 'Type : to select execution mode', 'Use /help for available commands', 'Waiting for instructions...', 'AI assistant ready to help'];
+// 使用固定文本而不是随机文本，避免不必要的重渲染
+const STABLE_HELP_TEXT = 'Ready for your next task';
 
 export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ phase, message, progress, isActive = true, showSpinner = true, sessionService }) => {
   const { currentTheme } = useTheme();
@@ -106,12 +107,11 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({ phase, mes
       );
     }
 
-    const randomHelp = HELP_TEXTS[Math.floor(Math.random() * HELP_TEXTS.length)];
     return (
       <Box>
         <Text color={currentTheme.colors.info}>●</Text>
         <Box marginLeft={1}>
-          <Text color={currentTheme.colors.text.muted}>{randomHelp}</Text>
+          <Text color={currentTheme.colors.text.muted}>{STABLE_HELP_TEXT}</Text>
         </Box>
       </Box>
     );

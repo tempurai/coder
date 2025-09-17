@@ -307,7 +307,8 @@ export const useSessionEvents = (sessionService: SessionService) => {
             if (batchTimeout) {
                 clearTimeout(batchTimeout);
             }
-            batchTimeout = setTimeout(flushEvents, 16);
+            // 增加批处理间隔从16ms到100ms，减少频繁渲染
+            batchTimeout = setTimeout(flushEvents, 100);
             switch (event.type) {
                 case UIEventType.TaskStart:
                     setIsProcessing(true);

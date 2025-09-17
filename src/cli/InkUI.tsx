@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { render, Text, Box, useInput, Static, useApp } from 'ink';
 import { SessionService } from '../services/SessionService.js';
 import { ThemeProvider, useTheme } from './themes/index.js';
@@ -64,10 +64,17 @@ const MainUI: React.FC<MainUIProps> = ({ sessionService, exit }) => {
     [currentTheme, editModeStatus, executionMode],
   );
 
+  const lastStatusRef = useRef('');
+
   useEffect(() => {
     const updateStatus = () => {
-      setEditModeStatus(sessionService.editModeManager.getStatusMessage());
+      const nextStatus = sessionService.editModeManager.getStatusMessage();
+      if (nextStatus !== lastStatusRef.current) {
+        lastStatusRef.current = nextStatus;
+        setEditModeStatus(nextStatus);
+      }
     };
+
     updateStatus();
     const interval = setInterval(updateStatus, 1000);
     return () => clearInterval(interval);
